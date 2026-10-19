@@ -22,6 +22,25 @@ TripMemories/
 └── README.md
 ```
 
+## Organización del backend
+
+El código Java se organiza por capas dentro de `es.upv.pin.backend`:
+
+| Paquete | Responsabilidad |
+| --- | --- |
+| `controller` | Endpoints HTTP; reciben peticiones y delegan en los servicios. |
+| `service` | Reglas de negocio y coordinación de las operaciones. |
+| `repository` | Acceso a PostgreSQL; reservado para las funcionalidades que lo necesiten. |
+| `model` | Objetos del dominio, como User o Trip; se añadirán al implementar esas funcionalidades. |
+| `dto` | Datos de entrada y salida de la API. |
+| `client` | Comunicación con APIs externas, como Geoapify. |
+| `config` | Configuración e inicialización de dependencias. |
+| `exception` | Excepciones y su conversión a respuestas HTTP. |
+
+`BackendApplication` permanece en el paquete raíz para que Spring detecte todas las
+capas. Los paquetes `model` y `repository` incluyen un `package-info.java` que documenta
+su propósito. Las pruebas reproducen la estructura de paquetes en `src/test/java`.
+
 ## Requisitos
 
 - Git
@@ -66,6 +85,12 @@ npm run dev
 ```
 
 Vite mostrará la URL local, normalmente <http://localhost:5173/>.
+
+## Formulario de itinerario
+
+El campo Destino permite escribir un lugar manualmente. El frontend funciona sin
+conectarse al backend y no requiere una clave de Geoapify. El autocompletado, la
+validación de lugares reales y el guardado del itinerario están pendientes de implementar.
 
 ## Datos de ejemplo
 
