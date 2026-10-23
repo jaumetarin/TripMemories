@@ -1,18 +1,20 @@
 import { useRef, useState } from 'react'
 import { Icon } from './graphics/Icon'
 import { Home } from './components/Home'
+import { BuscadorDestinos } from './components/BuscadorDestinos'
+import type { Destino } from './types/destino'
 import './App.css'
 
 type Pantalla = 'inicio' | 'crear' | 'viajes' | 'recuerdos'
 
 function App() {
   const [pantalla, setPantalla] = useState<Pantalla>('inicio')
-  const [destinoTexto, setDestinoTexto] = useState('')
+  const [destinoSeleccionado, setDestinoSeleccionado] = useState<Destino | null>(null)
   const contenido = useRef<HTMLElement>(null)
 
   function navegar(destino: Pantalla) {
     setPantalla(destino)
-    if (destino !== 'crear') setDestinoTexto('')
+    if (destino !== 'crear') setDestinoSeleccionado(null)
     contenido.current?.focus()
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
@@ -69,18 +71,7 @@ function App() {
               </nav>
               <div className="formulario-viaje">
                 <div className="titulo-formulario"><span className="icono-coleccion"><Icon name="ubicacion" /></span><div><h2>Tu viaje</h2><p>Elige dónde y cuándo.</p></div></div>
-                <div>
-                  <label htmlFor="destino">Destino</label>
-                  <input
-                    id="destino"
-                    name="destino"
-                    type="text"
-                    maxLength={120}
-                    placeholder="¿Qué lugar te gustaría descubrir?"
-                    value={destinoTexto}
-                    onChange={event => setDestinoTexto(event.target.value)}
-                  />
-                </div>
+                <BuscadorDestinos seleccionado={destinoSeleccionado} onSeleccionar={setDestinoSeleccionado} />
                 <div className="fechas">
                   <div><label htmlFor="inicio">Fecha de inicio</label><input id="inicio" name="fechaInicio" type="date" /></div>
                   <div><label htmlFor="fin">Fecha de fin</label><input id="fin" name="fechaFin" type="date" /></div>

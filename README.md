@@ -88,9 +88,55 @@ Vite mostrará la URL local, normalmente <http://localhost:5173/>.
 
 ## Formulario de itinerario
 
-El campo Destino permite escribir un lugar manualmente. El frontend funciona sin
-conectarse al backend y no requiere una clave de Geoapify. El autocompletado, la
-validación de lugares reales y el guardado del itinerario están pendientes de implementar.
+El campo Destino busca ciudades reales al escribir al menos tres caracteres.
+Espera una pausa de 350 ms y muestra hasta cinco sugerencias con su región y país.
+Puedes elegirlas con el ratón, tocando la pantalla o con las flechas y Enter; Escape
+cierra la lista. La selección conserva el identificador y las coordenadas del lugar.
+Si editas el nombre, tendrás que seleccionar de nuevo un resultado.
+
+La comunicación sigue este recorrido:
+
+```text
+BuscadorDestinos → GET /api/destinos?texto=Mad → DestinoController
+                → DestinoService → GeoapifyClient → Geoapify
+```
+
+Configura `GEOAPIFY_API_KEY` **en la terminal del backend antes de arrancarlo**.
+En PowerShell puedes introducirla sin mostrarla en pantalla ni guardarla en el historial:
+
+```powershell
+$env:GEOAPIFY_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Clave de Geoapify' -AsSecureString)).Password
+.\mvnw.cmd spring-boot:run
+```
+
+En Git Bash, dentro de `backend`:
+
+```bash
+read -rsp 'Clave de Geoapify: ' GEOAPIFY_API_KEY
+export GEOAPIFY_API_KEY
+./mvnw spring-boot:run
+```
+
+Si ya tienes la variable configurada en esa terminal, solo arranca el backend.
+La clave permanece en el servidor: no la pongas en archivos versionados ni en
+variables `VITE_*`. Cada terminal nueva necesita disponer de la variable.
+
+Arranca también el frontend y reinicia Vite si estaba abierto antes de estos cambios:
+el proxy de desarrollo redirige `/api` a `http://localhost:8080`, sin necesitar CORS.
+En un futuro despliegue habrá que redirigir `/api` al backend desde el alojamiento.
+El buscador comunica los errores de conexión, de configuración y del proveedor.
+La generación y el guardado del itinerario siguen pendientes.
+
+### Comprobar el autocompletado
+
+Con el backend arrancado, abre <http://localhost:8080/api/destinos?texto=Mad>.
+Debe devolver una lista JSON; después prueba el campo Destino de la web.
+Las pruebas del cliente, servicio y endpoint usan respuestas simuladas y no necesitan
+una clave real ni PostgreSQL. Desde `backend`, en PowerShell:
+
+```powershell
+.\mvnw.cmd '-Dtest=GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
+```
 
 ## Datos de ejemplo
 
