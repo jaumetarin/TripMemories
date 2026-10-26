@@ -5,7 +5,7 @@ Aplicación web para planificar itinerarios de viaje y guardar recuerdos asociad
 ## Tecnologías
 
 - **Frontend:** React, TypeScript, Vite y Leaflet.
-- **Backend:** Java 25, Spring Boot 4.1.1 y Maven Wrapper.
+- **Backend:** Java 25, Spring Boot 4.1.2 y Maven Wrapper.
 - **Base de datos:** PostgreSQL 18 con PostGIS 3.6, ejecutada con Docker Compose.
 - **Migraciones:** Flyway.
 
@@ -21,6 +21,25 @@ TripMemories/
 ├── compose.yaml                      # PostgreSQL/PostGIS local
 └── README.md
 ```
+
+## Organización del frontend
+
+El código de `frontend/src` se organiza en tres carpetas:
+
+```text
+src/
+├── pages/                # Pantallas: Home y CrearItinerario, con su CSS al lado
+├── components/           # Piezas de la interfaz, como BuscadorDestinos
+├── assets/               # Iconos, ilustraciones y tripmemories.svg
+├── api.ts                # Llamadas al backend y tipos de sus respuestas
+├── App.tsx               # Estructura general y navegación entre pantallas
+├── App.css               # Estilos compartidos de la aplicación
+├── main.tsx              # Punto de entrada de React
+└── index.css             # Estilos base
+```
+
+`api.ts` reúne la comunicación HTTP con nuestro backend. Las reglas de negocio y
+la conexión con Geoapify permanecen en el backend.
 
 ## Organización del backend
 

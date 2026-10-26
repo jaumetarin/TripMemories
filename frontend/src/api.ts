@@ -1,4 +1,11 @@
-import type { Destino } from '../types/destino'
+export interface Destino {
+  id: string
+  nombre: string
+  region: string
+  pais: string
+  latitud: number
+  longitud: number
+}
 
 function esDestino(valor: unknown): valor is Destino {
   if (typeof valor !== 'object' || valor === null) return false

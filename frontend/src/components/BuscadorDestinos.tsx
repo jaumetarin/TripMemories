@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import type { Destino } from '../types/destino'
-import { buscarDestinos } from '../services/destinos'
-import { Icon } from '../graphics/Icon'
+import type { Destino } from '../api'
+import { buscarDestinos } from '../api'
+import { Icon } from '../assets/Icon'
 import './BuscadorDestinos.css'
 
 interface Props {
@@ -86,7 +86,7 @@ export function BuscadorDestinos({ seleccionado, onSeleccionar }: Props) {
       setIndiceActivo(-1)
     } else if ((evento.key === 'ArrowDown' || evento.key === 'ArrowUp') && destinos.length > 0) {
       evento.preventDefault()
-      setAbierto(true)
+      setAbierto(true) 
       setIndiceActivo(indice => evento.key === 'ArrowDown'
         ? (indice + 1) % destinos.length
         : (indice <= 0 ? destinos.length - 1 : indice - 1))

@@ -1,5 +1,6 @@
-import { Icon } from '../graphics/Icon'
-import { TravelIllustration } from '../graphics/TravelIllustration'
+import { Icon } from '../assets/Icon'
+import { TravelIllustration } from '../assets/TravelIllustration'
+import './Home.css'
 
 type HomeProps = {
   onCrearItinerario: () => void

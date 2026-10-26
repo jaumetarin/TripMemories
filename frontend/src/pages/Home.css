@@ -1,0 +1,93 @@
+.bienvenida { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
+.sello-bienvenida { display: flex; align-items: center; gap: 7px; padding-bottom: 5px; font-size: .7rem; color: var(--secundario); white-space: nowrap; }
+.sello-bienvenida > span { width: 5px; height: 5px; border-radius: 50%; background: #499b80; }
+
+.hero-viaje {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  align-items: center;
+  min-height: 386px;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(110deg, #fff 18%, #f0f5ee 100%);
+  box-shadow: 0 3px 5px #00000002, 0 12px 40px #00000003;
+  border: 1px solid rgb(255 255 255 / 80%);
+}
+.hero-texto { padding: 42px 0 42px 48px; position: relative; z-index: 1; }
+.insignia { display: inline-flex; align-items: center; gap: 6px; color: var(--primario); font-size: .72rem; font-weight: 600; margin-bottom: 20px; }
+.insignia .icono { width: 16px; height: 16px; }
+.hero-texto h2 { font-size: clamp(2.1rem, 4vw, 3.35rem); line-height: 1.04; letter-spacing: -.06em; font-weight: 650; }
+.hero-texto > p { max-width: 330px; margin: 18px 0 25px; font-size: .88rem; color: #6b706f; line-height: 1.6; }
+.hero-nota { display: block; font-size: .68rem; color: #727b77; margin-top: 13px; padding-left: 4px; }
+.hero-ilustracion { min-width: 0; display: flex; align-items: center; justify-content: center; }
+.ilustracion-viaje { width: 112%; max-width: 600px; flex-shrink: 0; }
+.colecciones { margin-top: 34px; }
+.titulo-seccion { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
+.titulo-seccion h2 { font-size: 1.15rem; }
+.titulo-seccion > p { color: var(--secundario); font-size: .74rem; }
+.tarjetas-coleccion { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.tarjeta-coleccion {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  position: relative;
+  overflow: hidden;
+  min-height: 157px;
+  padding: 28px;
+  text-align: left;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 22px;
+  background: white;
+  box-shadow: 0 3px 12px #00000002;
+  transition: transform .2s, box-shadow .2s;
+}
+.tarjeta-coleccion:hover { transform: translateY(-3px); box-shadow: 0 8px 24px #00000008; }
+.texto-coleccion { display: flex; flex-direction: column; align-items: flex-start; z-index: 1; }
+.texto-coleccion strong { font-size: 1.06rem; font-weight: 600; letter-spacing: -.4px; margin-bottom: 6px; }
+.texto-coleccion > span { color: var(--secundario); font-size: .8rem; line-height: 1.5; }
+.texto-coleccion .enlace-tarjeta { display: flex; align-items: center; gap: 2px; font-size: .75rem; color: var(--primario); margin-top: 20px; }
+.enlace-tarjeta .icono { width: 13px; height: 13px; }
+.mini-ruta { position: absolute; right: 25px; bottom: 26px; display: flex; align-items: center; opacity: .6; transform: rotate(-25deg); }
+.mini-ruta span { width: 9px; height: 9px; border: 2px solid #91b7aa; border-radius: 50%; }
+.mini-ruta i { width: 39px; border-top: 2px dashed #c4d4cd; }
+.mini-album { position: absolute; right: 27px; bottom: 25px; width: 44px; height: 42px; opacity: .6; }
+.mini-album span { position: absolute; inset: 0; border-radius: 7px; border: 3px solid white; box-shadow: 0 1px 5px #00000013; background: #e3e5d9; transform: rotate(-18deg); }
+.mini-album span:nth-child(2) { transform: rotate(8deg); background: #e4d8c1; }
+.mini-album span:last-child { transform: rotate(23deg); background: linear-gradient(160deg, #d8e5e5 50%, #adc8b8 51%); }
+
+@media (max-width: 1000px) {
+  .sello-bienvenida { display: none; }
+  .hero-texto { padding-left: 32px; }
+  .hero-viaje { min-height: 360px; }
+  .mini-ruta, .mini-album { display: none; }
+}
+@media (max-width: 760px) {
+  .bienvenida { margin-bottom: 24px; }
+  .hero-viaje { grid-template-columns: 1fr .8fr; min-height: 330px; border-radius: 24px; }
+  .hero-texto { padding: 30px 0 30px 28px; }
+  .hero-texto h2 { font-size: 2.2rem; }
+  .hero-texto > p { font-size: .82rem; }
+  .hero-ilustracion { overflow: hidden; }
+  .ilustracion-viaje { width: 160%; }
+  .tarjeta-coleccion { padding: 22px; gap: 12px; }
+  .tarjetas-coleccion { gap: 12px; }
+  .texto-coleccion > span { font-size: .75rem; }
+  .titulo-seccion > p { display: none; }
+}
+@media (max-width: 520px) {
+  .bienvenida .subtitulo { font-size: .88rem; max-width: 290px; }
+  .hero-viaje { grid-template-columns: 1fr; }
+  .hero-texto { padding: 30px 28px 0; }
+  .hero-texto h2 { font-size: 2.6rem; }
+  .hero-texto > p { max-width: 290px; margin-top: 16px; }
+  .hero-ilustracion { height: 210px; margin-top: -14px; pointer-events: none; }
+  .ilustracion-viaje { width: 330px; margin-top: -10px; }
+  .hero-nota { position: relative; z-index: 1; }
+  .colecciones { margin-top: 28px; }
+  .tarjetas-coleccion { grid-template-columns: 1fr; }
+  .tarjeta-coleccion { min-height: 140px; padding: 24px; gap: 16px; }
+  .mini-ruta, .mini-album { display: flex; }
+  .mini-album { display: block; }
+  .texto-coleccion .enlace-tarjeta { margin-top: 16px; }
+}

@@ -2,6 +2,8 @@ package es.upv.pin.backend.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.text.Normalizer;
 
 import es.upv.pin.backend.client.GeoapifyClient;
 import es.upv.pin.backend.dto.DestinoDto;
@@ -11,6 +13,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class DestinoService {
+
+    private static final double RADIO_DUPLICADOS_KM = 2;
 
     private final GeoapifyClient geoapifyClient;
 
@@ -39,9 +43,6 @@ public class DestinoService {
         List<DestinoGeoapifyDto> lugares =
                 geoapifyClient.autocompletar(consulta);
 
-        
-        List<String> identificadoresIncluidos = new ArrayList<>();
-
         for (DestinoGeoapifyDto lugar : lugares) {
             if (!esValido(lugar)) {
                 continue;
@@ -50,10 +51,6 @@ public class DestinoService {
             String nombre = obtenerNombre(lugar);
 
             if (nombre.isBlank()) {
-                continue;
-            }
-
-            if (identificadoresIncluidos.contains(lugar.place_id())) {
                 continue;
             }
 
@@ -78,8 +75,11 @@ public class DestinoService {
                     lugar.lon()
             );
 
+            if (esDuplicado(destino, destinos)) {
+                continue;
+            }
+
             destinos.add(destino);
-            identificadoresIncluidos.add(lugar.place_id());
 
             if (destinos.size() == 5) {
                 break;
@@ -87,6 +87,46 @@ public class DestinoService {
         }
 
         return destinos;
+    }
+
+    private boolean esDuplicado(DestinoDto candidato, List<DestinoDto> incluidos) {
+        for (DestinoDto incluido : incluidos) {
+            if (candidato.id().equals(incluido.id())) {
+                return true;
+            }
+
+            // Un mismo lugar puede tener varios identificadores en el proveedor.
+            // La cercanía evita eliminar ciudades homónimas que estén lejos.
+            boolean mismoNombre = normalizar(candidato.nombre()).equals(normalizar(incluido.nombre()));
+            boolean mismaRegion = normalizar(candidato.region()).equals(normalizar(incluido.region()));
+            boolean mismoPais = normalizar(candidato.pais()).equals(normalizar(incluido.pais()));
+
+            if (mismoNombre && mismaRegion && mismoPais
+                    && distanciaKm(candidato, incluido) <= RADIO_DUPLICADOS_KM) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizar(String texto) {
+        return Normalizer.normalize(texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replaceAll("(?U)\\s+", " ")
+                .strip()
+                .toLowerCase(Locale.ROOT);
+    }
+
+    // Fórmula de Haversine: distancia en línea recta entre dos coordenadas.
+    private double distanciaKm(DestinoDto primero, DestinoDto segundo) {
+        double diferenciaLatitud = Math.toRadians(segundo.latitud() - primero.latitud());
+        double diferenciaLongitud = Math.toRadians(segundo.longitud() - primero.longitud());
+        double a = Math.pow(Math.sin(diferenciaLatitud / 2), 2)
+                + Math.cos(Math.toRadians(primero.latitud()))
+                * Math.cos(Math.toRadians(segundo.latitud()))
+                * Math.pow(Math.sin(diferenciaLongitud / 2), 2);
+
+        return 6371 * 2 * Math.asin(Math.sqrt(Math.clamp(a, 0, 1)));
     }
 
     private boolean esValido(DestinoGeoapifyDto lugar) {

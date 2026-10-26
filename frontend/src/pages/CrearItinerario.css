@@ -1,0 +1,50 @@
+.crear-viaje { max-width: 760px; margin: 0 auto; }
+.crear-intro { text-align: center; }
+.crear-distribucion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  max-width: 640px;
+  margin: 32px auto 0;
+}
+.formulario-viaje { padding: 32px; border-radius: 24px; background: white; box-shadow: 0 5px 30px #00000003; }
+.titulo-formulario { display: flex; align-items: center; gap: 13px; margin-bottom: 30px; }
+.titulo-formulario h2 { font-size: 1.05rem; margin-bottom: 4px; }
+.titulo-formulario p { font-size: .8rem; color: var(--secundario); }
+.formulario-viaje label { display: block; margin-bottom: 9px; font-size: .8rem; font-weight: 550; }
+.formulario-viaje input { width: 100%; min-width: 0; min-height: 49px; padding: 13px; border: 1px solid #d5d5da; border-radius: 12px; background: #fdfdfe; color: inherit; font-size: .85rem; }
+.formulario-viaje input::placeholder { color: #73737a; }
+.fechas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.aviso-formulario { padding: 14px 0; margin: 14px 0 10px; color: var(--secundario); font-size: .75rem; }
+.continuar { width: 100%; }
+.pasos {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.pasos::before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: calc(100% / 6);
+  right: calc(100% / 6);
+  height: 1px;
+  background: #dcdce1;
+}
+.pasos li { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.pasos li > span { position: relative; display: grid; place-items: center; width: 33px; height: 33px; flex-shrink: 0; background: #e7e7eb; color: #6e6e73; font-size: .75rem; border-radius: 50%; box-shadow: 0 0 0 7px #f5f5f7; }
+.pasos li[aria-current] > span { background: var(--primario); color: white; }
+.pasos strong { font-size: .82rem; font-weight: 550; }
+.pasos p { font-size: .75rem; color: var(--secundario); margin-top: 4px; }
+@media (max-width: 520px) {
+  .formulario-viaje { padding: 24px; }
+  .crear-distribucion { margin-top: 28px; gap: 24px; }
+  .pasos { gap: 8px; }
+  .pasos strong { font-size: .7rem; }
+  .pasos p { display: none; }
+  .fechas { grid-template-columns: 1fr; }
+}

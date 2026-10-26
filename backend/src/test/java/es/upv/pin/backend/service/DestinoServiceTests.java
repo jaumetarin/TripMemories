@@ -118,6 +118,70 @@ class DestinoServiceTests {
     }
 
     @Test
+    void eliminaElDuplicadoDeLorcaAunqueTengaOtroIdentificadorYCoordenadas() {
+        servidor.expect(requestTo("https://api.geoapify.com/v1/geocode/autocomplete"
+                        + "?text=Lorca&type=city&lang=es&limit=5&format=json&apiKey=clave-de-prueba"))
+                .andRespond(withSuccess("""
+                        {"results": [
+                          {"place_id": "lorca-ciudad", "city": "Lorca", "state": "Región de Murcia",
+                           "country": "España", "lat": 37.6711989, "lon": -1.6988592},
+                          {"place_id": "lorcha", "city": "Lorcha", "state": "Comunidad Valenciana",
+                           "country": "España", "lat": 38.8438222, "lon": -0.31146},
+                          {"place_id": "lorca-otro-id", "city": "Lorca", "state": "Región de Murcia",
+                           "country": "España", "lat": 37.672488, "lon": -1.6974536}
+                        ]}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<DestinoDto> destinos = servicio.buscar("Lorca");
+
+        assertEquals(List.of("lorca-ciudad", "lorcha"), destinos.stream().map(DestinoDto::id).toList());
+        assertEquals(37.6711989, destinos.getFirst().latitud());
+        assertEquals(-1.6988592, destinos.getFirst().longitud());
+        servidor.verify();
+    }
+
+    @Test
+    void comparaLosDuplicadosSinDistinguirMayusculasTildesNiEspacios() {
+        responderCon("""
+                {"results": [
+                  {"place_id": "primero", "city": "San José", "state": "Región Central",
+                   "country": "España", "lat": 40, "lon": -3},
+                  {"place_id": "segundo", "city": " SAN  JOSE ", "state": " region  CENTRAL ",
+                   "country": " ESPANA ", "lat": 40.001, "lon": -3.001}
+                ]}
+                """);
+
+        List<DestinoDto> destinos = servicio.buscar("Madrid");
+
+        assertEquals(1, destinos.size());
+        assertEquals("primero", destinos.getFirst().id());
+        assertEquals("San José", destinos.getFirst().nombre());
+        servidor.verify();
+    }
+
+    @Test
+    void conservaHomonomosLejanosYDestinosConNombreRegionOPaisDistintos() {
+        responderCon("""
+                {"results": [
+                  {"place_id": "original", "city": "Villa", "state": "Región A",
+                   "country": "País A", "lat": 40, "lon": -3},
+                  {"place_id": "lejano", "city": "Villa", "state": "Región A",
+                   "country": "País A", "lat": 41, "lon": -3},
+                  {"place_id": "otra-region", "city": "Villa", "state": "Región B",
+                   "country": "País A", "lat": 40.001, "lon": -3},
+                  {"place_id": "otro-pais", "city": "Villa", "state": "Región A",
+                   "country": "País B", "lat": 40.001, "lon": -3},
+                  {"place_id": "otro-nombre", "city": "Villa Nueva", "state": "Región A",
+                   "country": "País A", "lat": 40.001, "lon": -3}
+                ]}
+                """);
+
+        assertEquals(List.of("original", "lejano", "otra-region", "otro-pais", "otro-nombre"),
+                servicio.buscar("Madrid").stream().map(DestinoDto::id).toList());
+        servidor.verify();
+    }
+
+    @Test
     void devuelveComoMaximoCincoDestinosEnElOrdenRecibido() {
         responderCon("""
                 {"results": [
