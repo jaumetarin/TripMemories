@@ -146,54 +146,85 @@ En un futuro despliegue habrá que redirigir `/api` al backend desde el alojamie
 El buscador comunica los errores de conexión, de configuración y del proveedor.
 La generación y el guardado del itinerario siguen pendientes.
 
-### Calendario y duración del viaje
+### Destino, fechas y horas
 
-Tras seleccionar un destino, elige las fechas en los dos calendarios y pulsa
-**Continuar**. El backend valida `POST /api/itinerarios/validar-fechas` y devuelve
-las fechas y su duración inclusiva: cuenta el primer día y el último. La misma
-fecha en ambos campos equivale a un día; del 1 al 10 equivale a diez días.
+La primera pantalla reúne destino, fecha y hora de llegada, fecha y hora de salida
+y alojamiento opcional. Cada pareja fecha/hora se envía como una fecha y hora
+local del destino, sin conversiones a UTC. El navegador solo recoge los campos y
+presenta las respuestas; las reglas de disponibilidad se comprueban en el backend.
 
-Los campos incompletos, el fin anterior al inicio y los intervalos de más de diez
-días muestran un mensaje y bloquean el avance. El calendario permite introducir
-estos intervalos para poder corregirlos con las explicaciones del backend.
-Los datos se conservan al corregir un error y al pulsar **Atrás** desde el paso
-de horarios. Cambiar de sección abandona este borrador, que aún no se guarda.
+Los campos y el resumen muestran las fechas en `dd/mm/yy`, por ejemplo `01/11/26`.
+Puedes escribirlas o usar el botón del calendario. Al escribir dos cifras de año
+se interpretan como 2000–2099; también se acepta el año completo. En móvil puedes
+introducir los números sin barras y se formatean al salir del campo. La API sigue
+recibiendo la fecha completa en formato ISO (`2026-11-01T10:00`).
 
-La duración enviada por el navegador se ignora: `FechasService` la calcula con
-`LocalDate`, sin depender de horas, zonas horarias ni cambios de horario.
+```text
+CrearItinerario → POST /api/itinerarios/validar-fecha-hora
+               → FechaHoraController → FechaHoraService → FechaHoraDto
+```
 
-Comprobación manual, con un destino seleccionado:
+Ejemplo de petición (la duración se omite porque la calcula el servicio):
 
-| Inicio | Fin | Resultado esperado al continuar |
+```json
+{
+  "llegada": "2026-11-01T10:00",
+  "salida": "2026-11-01T18:00"
+}
+```
+
+`FechaHoraDto` sirve para la entrada y la respuesta. Devuelve `llegada`, `salida`
+y `duracionDias`. La salida debe ser estrictamente posterior a la llegada,
+comparando fecha y hora conjuntamente. Las fechas cuentan de forma inclusiva:
+del 1 al 1 es un día; del 1 al 10 son diez días. La duración que pudiera enviar
+el navegador se ignora y se recalcula con las fechas del calendario.
+
+Los campos incompletos, las ventanas vacías o invertidas y los intervalos de más
+de diez días bloquean el avance con un mensaje que permite corregirlos. Al
+continuar se abre **Preferencias y gasto**, con un resumen lateral de los datos
+validados. **Atrás** regresa al formulario conservando sus valores y el destino.
+El alojamiento es texto libre opcional de hasta 250 caracteres, mantenido solo
+en el frontend. Cambiar de sección o recargar abandona el borrador sin guardar.
+
+| Llegada | Salida | Resultado esperado al continuar |
 | --- | --- | --- |
-| Vacío | 2026-11-01 | Solicita una fecha de inicio |
-| 2026-11-01 | Vacío | Solicita una fecha de fin |
-| 2026-11-10 | 2026-11-01 | Explica que el fin debe ser igual o posterior al inicio |
-| 2026-11-01 | 2026-11-11 | Explica el límite de diez días |
-| 2026-11-01 | 2026-11-01 | Avanza a horarios con un día |
-| 2026-11-01 | 2026-11-10 | Avanza a horarios con diez días |
+| Fecha u hora pendiente | 2026-11-01 18:00 | Solicita completar la llegada |
+| 2026-11-01 10:00 | Fecha u hora pendiente | Solicita completar la salida |
+| 2026-11-01 18:00 | 2026-11-01 10:00 | Rechaza la salida anterior |
+| 2026-11-01 10:00 | 2026-11-01 10:00 | Rechaza la ventana vacía |
+| 2026-11-01 23:00 | 2026-11-02 07:00 | Acepta; dos días inclusivos |
+| 2026-11-01 10:00 | 2026-11-01 18:00 | Acepta; un día |
+| 2026-11-01 10:00 | 2026-11-10 18:00 | Acepta; diez días |
+| 2026-11-01 23:59 | 2026-11-11 00:00 | Rechaza; once días inclusivos |
 
-### Horarios y alojamiento
+`FechaHoraService.validarActividad` permite comprobar que una actividad tenga
+un intervalo positivo y quede completamente entre llegada y salida. Puede
+empezar exactamente a la llegada o acabar exactamente a la salida. Esta regla
+está probada y preparada para usarse en el futuro generador. La selección de
+lugares, la generación y el guardado siguen pendientes.
+No se ha creado todavía un plan de actividades ni una persistencia del borrador.
 
-El segundo paso permite indicar llegada el primer día y salida el último, con
-horas iniciales de 10:00 y 18:00. El alojamiento es texto libre opcional de hasta
-250 caracteres; no se geocodifica ni se busca automáticamente. **Continuar sin
-alojamiento** vacía ese dato y avanza al resumen.
-
-El resumen lateral muestra destino, duración inclusiva, fechas y horario. El
-botón **Atrás** permite volver al calendario sin perder los datos de este paso.
-Este paso es únicamente una interfaz de frontend: sus valores se mantienen en el
-estado de React, sin enviarse al backend ni validarse con reglas de negocio.
-Al continuar se muestra una confirmación editable. La validación de fechas del
-primer paso permanece en el backend. Los pasos posteriores
-(preferencias, lugares y generación) y el guardado del viaje están pendientes.
-
-Para ejecutar las pruebas del calendario y del autocompletado sin base de datos
+Para ejecutar las pruebas de disponibilidad y autocompletado sin base de datos
 ni clave real, desde `backend`:
 
 ```powershell
-.\mvnw.cmd '-Dtest=FechasServiceTests,FechasControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
+.\mvnw.cmd '-Dtest=FechaHoraServiceTests,FechaHoraControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
 ```
+
+### Preferencias y gasto (interfaz)
+
+`pages/PreferenciasGasto.tsx` muestra el segundo paso del formulario. Permite
+seleccionar varios intereses y aspectos a evitar, escoger un nivel de gasto y
+ajustar la distancia entre actividades de 1 a 10 km, inicialmente 3 km. El nivel
+inicial es **Sin preferencia**. El resumen lateral usa el destino, las fechas,
+los horarios validados y el alojamiento indicados en el primer paso.
+
+**Continuar** muestra un resumen editable de la configuración actual.
+Las selecciones se conservan al regresar desde ese resumen y al volver al primer
+paso. Se mantienen únicamente en el estado de React: no se envían al backend ni
+se guardan en PostgreSQL, y todavía no filtran actividades ni generan un plan.
+Recargar o salir de la sección abandona el borrador. Esta funcionalidad es solo
+la interfaz; la lógica de recomendaciones se incorporará al backend más adelante.
 
 ### Comprobar el autocompletado
 

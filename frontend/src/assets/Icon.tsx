@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type IconName = 'ubicacion' | 'brujula' | 'album' | 'sumar' | 'usuario' | 'flecha' | 'derecha' | 'mapa' | 'maleta' | 'candado' | 'casa' | 'informacion'
+export type IconName = 'ubicacion' | 'brujula' | 'album' | 'sumar' | 'usuario' | 'flecha' | 'derecha' | 'mapa' | 'maleta' | 'candado' | 'casa' | 'informacion' | 'calendario'
 
 const trazos: Record<IconName, ReactNode> = {
   ubicacion: <><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
@@ -15,6 +15,7 @@ const trazos: Record<IconName, ReactNode> = {
   candado: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></>,
   casa: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z" /><path d="M9 21v-8h6v8" /></>,
   informacion: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v1" /></>,
+  calendario: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></>,
 }
 
 export function Icon({ name }: { name: IconName }) {

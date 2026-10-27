@@ -7,9 +7,9 @@ export interface Destino {
   longitud: number
 }
 
-export interface FechasItinerario {
-  fechaInicio: string
-  fechaFin: string
+export interface FechaHora {
+  llegada: string
+  salida: string
   duracionDias: number
 }
 
@@ -40,13 +40,13 @@ export async function buscarDestinos(texto: string, signal: AbortSignal): Promis
   return datos
 }
 
-export async function validarFechas(
-  fechaInicio: string,
-  fechaFin: string,
+export async function validarFechaHora(
+  llegada: string | null,
+  salida: string | null,
   signal?: AbortSignal
-): Promise<FechasItinerario> {
+): Promise<FechaHora> {
 
-  const respuesta = await fetch('/api/itinerarios/validar-fechas', {
+  const respuesta = await fetch('/api/itinerarios/validar-fecha-hora', {
     method: 'POST',
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
@@ -56,8 +56,8 @@ export async function validarFechas(
       Accept: 'application/json',
     },
     body: JSON.stringify({
-      fechaInicio: fechaInicio || null,
-      fechaFin: fechaFin || null,
+      llegada,
+      salida,
     }),
   })
 
@@ -65,20 +65,20 @@ export async function validarFechas(
 
   if (!respuesta.ok) {
     const mensaje = typeof datos === 'object' && datos !== null && 'mensaje' in datos
-      && typeof datos.mensaje === 'string' ? datos.mensaje : 'No se han podido validar las fechas. Comprueba que el backend esté arrancado.'
+      && typeof datos.mensaje === 'string' ? datos.mensaje : 'No se han podido validar las fechas y horas. Comprueba que el backend esté arrancado.'
     throw new Error(mensaje)
   }
 
   if (typeof datos !== 'object' || datos === null
-    || !('fechaInicio' in datos) || typeof datos.fechaInicio !== 'string'
-    || !('fechaFin' in datos) || typeof datos.fechaFin !== 'string'
+    || !('llegada' in datos) || typeof datos.llegada !== 'string'
+    || !('salida' in datos) || typeof datos.salida !== 'string'
     || !('duracionDias' in datos) || typeof datos.duracionDias !== 'number') {
     throw new Error('El servidor ha devuelto una respuesta no válida.')
   }
 
   return {
-    fechaInicio: datos.fechaInicio,
-    fechaFin: datos.fechaFin,
+    llegada: datos.llegada,
+    salida: datos.salida,
     duracionDias: datos.duracionDias,
   }
 }
