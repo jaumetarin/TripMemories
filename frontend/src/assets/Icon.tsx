@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type IconName = 'ubicacion' | 'brujula' | 'album' | 'sumar' | 'usuario' | 'flecha' | 'derecha' | 'mapa' | 'maleta' | 'candado'
+export type IconName = 'ubicacion' | 'brujula' | 'album' | 'sumar' | 'usuario' | 'flecha' | 'derecha' | 'mapa' | 'maleta' | 'candado' | 'casa' | 'informacion'
 
 const trazos: Record<IconName, ReactNode> = {
   ubicacion: <><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
@@ -13,6 +13,8 @@ const trazos: Record<IconName, ReactNode> = {
   mapa: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15" /><path d="m5.5 10 1 1m4-2 1 1m5 4 2-2" /></>,
   maleta: <><rect x="3" y="7" width="18" height="14" rx="3" /><path d="M8 7V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3M8 11v6m8-6v6" /></>,
   candado: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></>,
+  casa: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z" /><path d="M9 21v-8h6v8" /></>,
+  informacion: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v1" /></>,
 }
 
 export function Icon({ name }: { name: IconName }) {
