@@ -146,6 +146,55 @@ En un futuro despliegue habrá que redirigir `/api` al backend desde el alojamie
 El buscador comunica los errores de conexión, de configuración y del proveedor.
 La generación y el guardado del itinerario siguen pendientes.
 
+### Calendario y duración del viaje
+
+Tras seleccionar un destino, elige las fechas en los dos calendarios y pulsa
+**Continuar**. El backend valida `POST /api/itinerarios/validar-fechas` y devuelve
+las fechas y su duración inclusiva: cuenta el primer día y el último. La misma
+fecha en ambos campos equivale a un día; del 1 al 10 equivale a diez días.
+
+Los campos incompletos, el fin anterior al inicio y los intervalos de más de diez
+días muestran un mensaje y bloquean el avance. El calendario permite introducir
+estos intervalos para poder corregirlos con las explicaciones del backend.
+Los datos se conservan al corregir un error y al pulsar **Atrás** desde el paso
+de horarios. Cambiar de sección abandona este borrador, que aún no se guarda.
+
+La duración enviada por el navegador se ignora: `FechasService` la calcula con
+`LocalDate`, sin depender de horas, zonas horarias ni cambios de horario.
+
+Comprobación manual, con un destino seleccionado:
+
+| Inicio | Fin | Resultado esperado al continuar |
+| --- | --- | --- |
+| Vacío | 2026-11-01 | Solicita una fecha de inicio |
+| 2026-11-01 | Vacío | Solicita una fecha de fin |
+| 2026-11-10 | 2026-11-01 | Explica que el fin debe ser igual o posterior al inicio |
+| 2026-11-01 | 2026-11-11 | Explica el límite de diez días |
+| 2026-11-01 | 2026-11-01 | Avanza a horarios con un día |
+| 2026-11-01 | 2026-11-10 | Avanza a horarios con diez días |
+
+### Horarios y alojamiento
+
+El segundo paso permite indicar llegada el primer día y salida el último, con
+horas iniciales de 10:00 y 18:00. El alojamiento es texto libre opcional de hasta
+250 caracteres; no se geocodifica ni se busca automáticamente. **Continuar sin
+alojamiento** vacía ese dato y avanza al resumen.
+
+El resumen lateral muestra destino, duración inclusiva, fechas y horario. El
+botón **Atrás** permite volver al calendario sin perder los datos de este paso.
+Este paso es únicamente una interfaz de frontend: sus valores se mantienen en el
+estado de React, sin enviarse al backend ni validarse con reglas de negocio.
+Al continuar se muestra una confirmación editable. La validación de fechas del
+primer paso permanece en el backend. Los pasos posteriores
+(preferencias, lugares y generación) y el guardado del viaje están pendientes.
+
+Para ejecutar las pruebas del calendario y del autocompletado sin base de datos
+ni clave real, desde `backend`:
+
+```powershell
+.\mvnw.cmd '-Dtest=FechasServiceTests,FechasControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
+```
+
 ### Comprobar el autocompletado
 
 Con el backend arrancado, abre <http://localhost:8080/api/destinos?texto=Mad>.
