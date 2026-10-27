@@ -1,0 +1,54 @@
+.preferencias-distribucion { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 28px; margin-top: 32px; }
+.preferencias-formulario { min-width: 0; padding: 32px; border-radius: 24px; background: white; }
+.grupo-preferencias { min-width: 0; border: 0; padding: 0; margin: 0 0 32px; }
+.grupo-preferencias legend, .distancia-preferencias > label { display: block; padding: 0; margin-bottom: 9px; font-size: .85rem; font-weight: 600; }
+.ayuda-preferencias { color: var(--secundario); font-size: .75rem; line-height: 1.6; }
+.intereses-opciones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.opcion-interes, .opcion-evitar, .opcion-gasto { border: 1px solid #dedee3; color: #37373d; background: #fff; cursor: pointer; transition: border-color .15s, background .15s; }
+.opcion-interes:hover, .opcion-evitar:hover, .opcion-gasto:hover { border-color: #92bdb4; background: #fafcfb; }
+.opcion-interes[data-seleccionada], .opcion-evitar[data-seleccionada], .opcion-gasto[data-seleccionada] { border-color: var(--primario); background: #eff7f4; }
+.opcion-interes:focus-within, .opcion-evitar:focus-within, .opcion-gasto:focus-within { outline: 3px solid var(--primario); outline-offset: 3px; }
+.preferencias-formulario input[type="checkbox"], .preferencias-formulario input[type="radio"] { accent-color: var(--primario); width: 16px; height: 16px; margin: 0; flex-shrink: 0; cursor: pointer; }
+.opcion-interes { display: grid; grid-template-columns: 25px minmax(0, 1fr) 16px; align-items: center; gap: 8px; min-height: 84px; padding: 13px 12px; border-radius: 14px; font-size: .75rem; line-height: 1.45; }
+.interes-icono { font-size: 1.2rem; }
+.evitar-opciones { display: flex; flex-wrap: wrap; gap: 9px; margin: 16px 0 10px; }
+.opcion-evitar { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 9px 13px; border-radius: 22px; font-size: .75rem; }
+.gasto-opciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.opcion-gasto { display: flex; align-items: flex-start; gap: 11px; min-height: 96px; padding: 17px; border-radius: 14px; }
+.opcion-gasto strong { display: block; font-size: .8rem; font-weight: 550; margin-bottom: 4px; }
+.gasto-descripcion { display: block; color: var(--secundario); font-size: .7rem; line-height: 1.5; }
+.distancia-preferencias .ayuda-preferencias { display: flex; align-items: flex-start; gap: 7px; }
+.distancia-preferencias .icono { width: 14px; height: 14px; margin-top: 2px; }
+.distancia-control { display: flex; align-items: center; gap: 22px; margin-top: 18px; }
+.distancia-control input { min-width: 0; flex: 1; height: 24px; margin: 0; accent-color: var(--primario); cursor: pointer; }
+.distancia-control output { min-width: 50px; color: var(--primario); font-size: 1rem; font-weight: 600; text-align: right; }
+.distancia-limites { display: flex; justify-content: space-between; padding-right: 72px; margin-top: 5px; color: var(--secundario); font-size: .65rem; }
+.nota-preferencias { color: var(--secundario); font-size: .72rem; line-height: 1.6; }
+.acciones-preferencias { display: flex; justify-content: space-between; gap: 14px; border-top: 1px solid var(--borde); margin-top: 24px; padding-top: 24px; }
+.acciones-preferencias .boton-secundario { border-color: #dcdce2; color: #4c5552; background: white; }
+.acciones-preferencias .boton-secundario:hover { background: #f2f4f3; }
+.resumen-preferencias { min-width: 0; padding: 26px; border-radius: 24px; border: 1px solid var(--borde); background: white; position: sticky; top: 100px; }
+.resumen-preferencias-icono { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: #eff6f2; color: var(--primario); margin-bottom: 16px; }
+.resumen-preferencias h2 { font-size: 1rem; }
+.resumen-preferencias dl { display: grid; gap: 23px; margin: 25px 0 0; }
+.resumen-preferencias dt { color: var(--secundario); font-size: .65rem; text-transform: uppercase; letter-spacing: 1px; }
+.resumen-preferencias dd { margin: 7px 0 0; font-size: .88rem; line-height: 1.5; overflow-wrap: anywhere; }
+.resumen-preferencias dd span { display: block; color: var(--secundario); font-size: .7rem; margin-top: 5px; }
+.resumen-preferencias-nota { border-top: 1px solid var(--borde); color: var(--secundario); font-size: .7rem; margin-top: 24px; padding-top: 18px; }
+@media (max-width: 1020px) {
+  .preferencias-distribucion { grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; }
+  .intereses-opciones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 800px) {
+  .preferencias-distribucion { grid-template-columns: minmax(0, 1fr); }
+  .resumen-preferencias { position: static; }
+}
+@media (max-width: 520px) {
+  .preferencias-formulario { padding: 24px; }
+  .opcion-interes { grid-template-columns: minmax(0, 1fr) 16px; gap: 8px; padding: 12px; align-content: start; }
+  .interes-icono { grid-column: 1; grid-row: 1; }
+  .opcion-interes > span:not(.interes-icono) { grid-column: 1 / -1; grid-row: 2; overflow-wrap: anywhere; }
+  .opcion-interes input { grid-column: 2; grid-row: 1; justify-self: end; }
+  .gasto-opciones { grid-template-columns: minmax(0, 1fr); }
+  .acciones-preferencias .boton { padding-left: 17px; padding-right: 17px; }
+}

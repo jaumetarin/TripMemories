@@ -1,0 +1,7 @@
+.fecha-entrada { position: relative; }
+.fecha-entrada input[type="text"] { padding-right: 48px; }
+.fecha-calendario { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 44px; height: 49px; border: 0; border-radius: 0 12px 12px 0; background: transparent; color: var(--secundario); }
+.fecha-calendario:hover { color: var(--primario); background: #087f7009; }
+.fecha-calendario .icono { width: 18px; height: 18px; }
+.formulario-viaje .fecha-selector { position: absolute; bottom: 0; left: 0; width: 1px; height: 1px; min-height: 0; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.fecha-formato { margin-top: 7px; color: var(--secundario); font-size: .68rem; }
