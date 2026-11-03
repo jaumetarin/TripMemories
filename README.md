@@ -208,23 +208,75 @@ Para ejecutar las pruebas de disponibilidad y autocompletado sin base de datos
 ni clave real, desde `backend`:
 
 ```powershell
-.\mvnw.cmd '-Dtest=FechaHoraServiceTests,FechaHoraControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
+.\mvnw.cmd '-Dtest=PreferenciasServiceTests,PreferenciasControllerTests,FechaHoraServiceTests,FechaHoraControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
 ```
 
-### Preferencias y gasto (interfaz)
+### Intereses y exclusiones
 
-`pages/PreferenciasGasto.tsx` muestra el segundo paso del formulario. Permite
-seleccionar varios intereses y aspectos a evitar, escoger un nivel de gasto y
-ajustar la distancia entre actividades de 1 a 10 km, inicialmente 3 km. El nivel
-inicial es **Sin preferencia**. El resumen lateral usa el destino, las fechas,
-los horarios validados y el alojamiento indicados en el primer paso.
+`PreferenciasGasto` obtiene su catálogo del backend: seis categorías turísticas y
+dieciocho subcategorías, tres por categoría. `CategoriaTuristica` define los
+intereses y `SubcategoriaTuristica` relaciona cada exclusión parcial con su
+categoría principal. Sus códigos estables se usan en las peticiones; sus nombres
+legibles se muestran en la web.
 
-**Continuar** muestra un resumen editable de la configuración actual.
-Las selecciones se conservan al regresar desde ese resumen y al volver al primer
-paso. Se mantienen únicamente en el estado de React: no se envían al backend ni
-se guardan en PostgreSQL, y todavía no filtran actividades ni generan un plan.
-Recargar o salir de la sección abandona el borrador. Esta funcionalidad es solo
-la interfaz; la lógica de recomendaciones se incorporará al backend más adelante.
+| Endpoint | Función |
+| --- | --- |
+| `GET /api/itinerarios/catalogo-preferencias` | Devuelve códigos, nombres y subcategorías agrupadas. |
+| `POST /api/itinerarios/validar-preferencias` | Comprueba y devuelve las tres listas sin duplicados. |
+
+`PreferenciasDto` sirve para entrada y salida. Ejemplo compatible:
+
+```json
+{
+  "intereses": ["GASTRONOMIA", "NATURALEZA_PARQUES"],
+  "categoriasExcluidas": ["ARTE_MUSEOS"],
+  "subcategoriasExcluidas": ["COMIDA_RAPIDA", "SENDERISMO"]
+}
+```
+
+`PreferenciasService.validar` elimina duplicados manteniendo el orden y rechaza
+las listas ausentes, los elementos nulos y las contradicciones. Las listas vacías
+son válidas. Los códigos desconocidos o que pertenecen al tipo equivocado producen
+un error HTTP 400, al igual que un JSON incorrecto.
+
+Excluir una subcategoría de un interés es compatible. Seleccionar una categoría
+como interés y excluirla por completo produce un error con su nombre y pide
+desmarcar una de las dos opciones. No se elimina ninguna selección automáticamente.
+Excluir las tres subcategorías disponibles no implica por sí solo excluir toda
+la categoría: la exclusión completa es siempre una selección explícita.
+
+El frontend comprueba las selecciones al cambiarlas y solo permite abrir el resumen
+con la respuesta válida correspondiente a la selección actual. Mientras espera o
+hay errores, **Continuar** permanece bloqueado. Las respuestas antiguas se descartan.
+Si falla la conexión, el borrador se conserva y se puede reintentar la comprobación.
+Si falla el catálogo, se ofrece reintentar su carga y no se avanza sin validación.
+
+Las exclusiones están agrupadas en apartados desplegables y las seleccionadas
+también aparecen como etiquetas que se pueden retirar. Siguen visibles aunque
+se desmarque el interés principal. El estado se mantiene en `CrearItinerario`,
+por lo que ir al resumen o volver al primer paso conserva las preferencias, el
+destino, las fechas, las horas, el alojamiento, el gasto y la distancia.
+
+El nivel de gasto, la distancia y las otras preferencias (afluencia y coste elevado)
+mantienen su interfaz actual y todavía no tienen lógica de recomendación en el
+backend. **Vida nocturna** forma parte de las exclusiones de ocio.
+
+Las validaciones de esta UT son independientes de Geoapify y de PostgreSQL.
+El borrador no se persiste: recargar o abandonar la sección lo descarta.
+La selección de actividades y la generación del itinerario siguen pendientes;
+el futuro generador deberá reutilizar `PreferenciasService.validar` antes de
+consumir la configuración, incluso si procede de otro cliente.
+
+Comprobaciones de aceptación con un destino y fechas válidos:
+
+1. Seleccionar Gastronomía y Naturaleza; excluir Comida rápida y Senderismo.
+   Se permite continuar y el resumen muestra las cuatro selecciones.
+2. Marcar también «Evitar toda la categoría: Gastronomía». Se muestra el error,
+   se conservan las selecciones y se bloquea continuar. Desmarcar una de las dos
+   opciones corrige el error y permite avanzar.
+3. Volver del resumen, retirar un interés y cambiar una exclusión. Se conserva
+   el resto de la configuración, incluidas las exclusiones cuyo interés se retiró.
+4. Marcar, desmarcar y volver a marcar una opción. Solo aparece una vez en el resumen.
 
 ### Comprobar el autocompletado
 

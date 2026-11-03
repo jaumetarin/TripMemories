@@ -13,6 +13,78 @@ export interface FechaHora {
   duracionDias: number
 }
 
+export interface Preferencias {
+  intereses: string[]
+  categoriasExcluidas: string[]
+  subcategoriasExcluidas: string[]
+}
+
+export interface SubcategoriaPreferencia {
+  codigo: string
+  nombre: string
+}
+
+export interface CategoriaPreferencia {
+  codigo: string
+  nombre: string
+  subcategorias: SubcategoriaPreferencia[]
+}
+
+function esObjeto(valor: unknown): valor is Record<string, unknown> {
+  return typeof valor === 'object' && valor !== null
+}
+
+function esListaDeTextos(valor: unknown): valor is string[] {
+  return Array.isArray(valor) && valor.every(elemento => typeof elemento === 'string')
+}
+
+function esSubcategoria(valor: unknown): valor is SubcategoriaPreferencia {
+  return esObjeto(valor) && typeof valor.codigo === 'string' && typeof valor.nombre === 'string'
+}
+
+function esCategoria(valor: unknown): valor is CategoriaPreferencia {
+  return esObjeto(valor) && typeof valor.codigo === 'string' && typeof valor.nombre === 'string'
+    && Array.isArray(valor.subcategorias) && valor.subcategorias.every(esSubcategoria)
+}
+
+function esPreferencias(valor: unknown): valor is Preferencias {
+  return esObjeto(valor) && esListaDeTextos(valor.intereses)
+    && esListaDeTextos(valor.categoriasExcluidas) && esListaDeTextos(valor.subcategoriasExcluidas)
+}
+
+async function leerRespuestaPreferencias(respuesta: Response): Promise<unknown> {
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) {
+    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+      ? datos.mensaje : 'No se han podido comprobar las preferencias. Comprueba que el backend esté actualizado y arrancado.')
+  }
+  return datos
+}
+
+export async function obtenerCatalogoPreferencias(signal: AbortSignal): Promise<CategoriaPreferencia[]> {
+  const respuesta = await fetch('/api/itinerarios/catalogo-preferencias', {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { Accept: 'application/json' },
+  })
+  const datos = await leerRespuestaPreferencias(respuesta)
+  if (!Array.isArray(datos) || datos.length === 0 || !datos.every(esCategoria)) {
+    throw new Error('El servidor ha devuelto un catálogo de preferencias no válido.')
+  }
+  return datos
+}
+
+export async function validarPreferencias(preferencias: Preferencias, signal: AbortSignal): Promise<Preferencias> {
+  const respuesta = await fetch('/api/itinerarios/validar-preferencias', {
+    method: 'POST',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(preferencias),
+  })
+  const datos = await leerRespuestaPreferencias(respuesta)
+  if (!esPreferencias(datos)) throw new Error('El servidor ha devuelto unas preferencias no válidas.')
+  return datos
+}
+
 function esDestino(valor: unknown): valor is Destino {
   if (typeof valor !== 'object' || valor === null) return false
   const destino = valor as Record<string, unknown>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { validarFechaHora } from '../api'
-import type { Destino, FechaHora } from '../api'
+import { obtenerCatalogoPreferencias, validarFechaHora } from '../api'
+import type { CategoriaPreferencia, Destino, FechaHora } from '../api'
 import { Icon } from '../assets/Icon'
 import { BuscadorDestinos } from '../components/BuscadorDestinos'
 import { CampoFecha } from '../components/CampoFecha'
@@ -36,8 +36,13 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [disponibilidad, setDisponibilidad] = useState<FechaHora | null>(null)
   const [paso, setPaso] = useState<'destino' | 'preferencias' | 'resumen'>('destino')
   const [preferencias, setPreferencias] = useState<DatosPreferencias>({
-    intereses: [], evitar: [], nivelGasto: 'Sin preferencia', distanciaKm: 3,
+    intereses: [], categoriasExcluidas: [], subcategoriasExcluidas: [],
+    restricciones: [], nivelGasto: 'Sin preferencia', distanciaKm: 3,
   })
+  const [catalogo, setCatalogo] = useState<CategoriaPreferencia[]>([])
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(true)
+  const [errorCatalogo, setErrorCatalogo] = useState('')
+  const [reintentoCatalogo, setReintentoCatalogo] = useState(0)
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('')
   const [errorDestino, setErrorDestino] = useState('')
   const [validando, setValidando] = useState(false)
@@ -48,6 +53,20 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const titulo = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => () => peticion.current?.abort(), [])
+
+  useEffect(() => {
+    const controlador = new AbortController()
+    let vigente = true
+    obtenerCatalogoPreferencias(controlador.signal)
+      .then(categorias => { if (vigente) setCatalogo(categorias) })
+      .catch(error => {
+        if (!vigente) return
+        setErrorCatalogo(error instanceof Error && error.name === 'Error'
+          ? error.message : 'No se puede cargar el catálogo. Comprueba la conexión con el backend y vuelve a intentarlo.')
+      })
+      .finally(() => { if (vigente) setCargandoCatalogo(false) })
+    return () => { vigente = false; controlador.abort() }
+  }, [reintentoCatalogo])
 
   useEffect(() => {
     if (paso === 'resumen') resumen.current?.focus()
@@ -97,6 +116,21 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   function editarDisponibilidad() {
     setPaso('destino')
     window.requestAnimationFrame(() => inicio.current?.focus())
+  }
+
+  function reintentarCatalogo() {
+    setCargandoCatalogo(true)
+    setErrorCatalogo('')
+    setReintentoCatalogo(valor => valor + 1)
+  }
+
+  function nombreCategoria(codigo: string) {
+    return catalogo.find(categoria => categoria.codigo === codigo)?.nombre ?? codigo
+  }
+
+  function nombreSubcategoria(codigo: string) {
+    return catalogo.flatMap(categoria => categoria.subcategorias)
+      .find(subcategoria => subcategoria.codigo === codigo)?.nombre ?? codigo
   }
 
   return (
@@ -182,8 +216,10 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
               <div><dt>Salida · último día</dt><dd><time dateTime={disponibilidad.salida}>{mostrarFechaHora(disponibilidad.salida)}</time></dd></div>
               <div className="duracion-viaje"><dt>Duración inclusiva</dt><dd>{disponibilidad.duracionDias} {disponibilidad.duracionDias === 1 ? 'día' : 'días'}</dd></div>
               <div className="alojamiento-confirmado"><dt>Alojamiento</dt><dd>{alojamiento.trim() || 'Sin alojamiento indicado'}</dd></div>
-              <div className="alojamiento-confirmado"><dt>Intereses</dt><dd>{preferencias.intereses.join(', ') || 'Sin intereses seleccionados'}</dd></div>
-              <div className="alojamiento-confirmado"><dt>Prefieres evitar</dt><dd>{preferencias.evitar.join(', ') || 'Sin opciones seleccionadas'}</dd></div>
+              <div className="alojamiento-confirmado"><dt>Intereses</dt><dd>{preferencias.intereses.map(nombreCategoria).join(', ') || 'Sin intereses seleccionados'}</dd></div>
+              <div className="alojamiento-confirmado"><dt>Categorías completas a evitar</dt><dd>{preferencias.categoriasExcluidas.map(nombreCategoria).join(', ') || 'Sin categorías completas excluidas'}</dd></div>
+              <div className="alojamiento-confirmado"><dt>Actividades a evitar</dt><dd>{preferencias.subcategoriasExcluidas.map(nombreSubcategoria).join(', ') || 'Sin subcategorías excluidas'}</dd></div>
+              <div className="alojamiento-confirmado"><dt>Otras preferencias</dt><dd>{preferencias.restricciones.join(', ') || 'Sin otras preferencias'}</dd></div>
               <div><dt>Nivel de gasto</dt><dd>{preferencias.nivelGasto}</dd></div>
               <div><dt>Distancia entre actividades</dt><dd>{preferencias.distanciaKm} km</dd></div>
             </dl>
@@ -196,8 +232,13 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       </div>
       {paso === 'preferencias' && disponibilidad && destinoSeleccionado && (
         <PreferenciasGasto destino={destinoSeleccionado} disponibilidad={disponibilidad} alojamiento={alojamiento}
+          catalogo={catalogo} cargandoCatalogo={cargandoCatalogo} errorCatalogo={errorCatalogo}
+          onReintentarCatalogo={reintentarCatalogo}
           datos={preferencias} onCambiar={setPreferencias} onAtras={editarDisponibilidad}
-          onContinuar={() => setPaso('resumen')} />
+          onContinuar={confirmadas => {
+            setPreferencias(actuales => ({ ...actuales, ...confirmadas }))
+            setPaso('resumen')
+          }} />
       )}
     </section>
   )
