@@ -14,6 +14,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class PreferenciasControllerTests {
+    private String conGastoDistancia(String cuerpo) {
+        return cuerpo.replaceFirst("\\{", "{ \"nivelGasto\":\"SIN_PREFERENCIA\", \"distanciaKm\":3,");
+    }
+
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new PreferenciasController(new PreferenciasService()))
             .setControllerAdvice(new PreferenciasExceptionHandler()).build();
 
@@ -29,11 +33,11 @@ class PreferenciasControllerTests {
 
     @Test
     void aceptaInteresesConExclusionesParcialesYEliminaDuplicados() throws Exception {
-        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content("""
+        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(conGastoDistancia("""
                 {"intereses":["GASTRONOMIA","GASTRONOMIA","NATURALEZA_PARQUES"],
                  "categoriasExcluidas":["ARTE_MUSEOS","ARTE_MUSEOS"],
                  "subcategoriasExcluidas":["COMIDA_RAPIDA","SENDERISMO","COMIDA_RAPIDA"]}
-                """))
+                """)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.intereses.length()").value(2))
                 .andExpect(jsonPath("$.intereses[0]").value("GASTRONOMIA"))
                 .andExpect(jsonPath("$.categoriasExcluidas.length()").value(1))
@@ -46,21 +50,21 @@ class PreferenciasControllerTests {
         "{\"categoriasExcluidas\":[\"GASTRONOMIA\"],\"subcategoriasExcluidas\":[],\"intereses\":[\"GASTRONOMIA\"]}"
     })
     void bloqueaLaContradiccionIndependientementeDelOrdenYPermiteCorregirla(String cuerpo) throws Exception {
-        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(conGastoDistancia(cuerpo)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.mensaje").value("La categoría «Gastronomía» está seleccionada como interés y como categoría a evitar. Desmarca una de las dos opciones para continuar."));
-        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content("""
+        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(conGastoDistancia("""
                 {"intereses":["GASTRONOMIA"],"categoriasExcluidas":[],"subcategoriasExcluidas":["COMIDA_RAPIDA"]}
-                """))
+                """)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.intereses[0]").value("GASTRONOMIA"))
                 .andExpect(jsonPath("$.subcategoriasExcluidas[0]").value("COMIDA_RAPIDA"));
     }
 
     @Test
     void aceptaListasVacias() throws Exception {
-        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content("""
+        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(conGastoDistancia("""
                 {"intereses":[],"categoriasExcluidas":[],"subcategoriasExcluidas":[]}
-                """))
+                """)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.intereses").isEmpty());
     }
 
@@ -72,7 +76,7 @@ class PreferenciasControllerTests {
         "{\"intereses\":[],\"categoriasExcluidas\":[],\"subcategoriasExcluidas\":[null]}"
     })
     void rechazaPreferenciasIncompletasYElementosNulos(String cuerpo) throws Exception {
-        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(conGastoDistancia(cuerpo)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.mensaje").isNotEmpty());
     }
 
@@ -85,8 +89,8 @@ class PreferenciasControllerTests {
         "{\"intereses\":\"GASTRONOMIA\",\"categoriasExcluidas\":[],\"subcategoriasExcluidas\":[]}"
     })
     void rechazaJsonYTiposIncorrectosOCodigosDesconocidos(String cuerpo) throws Exception {
-        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+        mvc.perform(post("/api/itinerarios/validar-preferencias").contentType(MediaType.APPLICATION_JSON).content(conGastoDistancia(cuerpo)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.mensaje").value("Envía las tres listas de preferencias con los códigos válidos del catálogo."));
+                .andExpect(jsonPath("$.mensaje").value("Envía las listas con códigos del catálogo, un nivel de gasto válido y una distancia numérica en kilómetros."));
     }
 }

@@ -1,0 +1,33 @@
+.crear-viaje-revision { max-width: 840px; }
+.crear-viaje-revision .crear-intro, .revision-plan { max-width: 680px; margin-left: auto; margin-right: auto; }
+.crear-viaje-revision .crear-intro { text-align: left; }
+.crear-viaje-revision .antetitulo { color: var(--primario); margin-bottom: 9px; }
+.crear-viaje-revision .crear-intro h1 { font-size: clamp(1.65rem, 3vw, 2rem); letter-spacing: -.035em; }
+.crear-viaje-revision .subtitulo { margin-top: 9px; font-size: .88rem; line-height: 1.6; }
+.revision-plan { margin-top: 26px; }
+.revision-tarjetas { display: grid; gap: 12px; }
+.revision-tarjeta { display: flex; align-items: flex-start; gap: 20px; padding: 20px 22px; border: 1px solid var(--borde); border-radius: 15px; background: white; }
+.revision-tarjeta-contenido { flex: 1; min-width: 0; }
+.revision-tarjeta h2 { margin: 0 0 7px; color: var(--secundario); font-size: .65rem; font-weight: 550; letter-spacing: .55px; line-height: 1.5; text-transform: uppercase; }
+.revision-valor { font-size: .85rem; line-height: 1.6; overflow-wrap: anywhere; }
+.revision-valor + .revision-valor { margin-top: 5px; }
+.revision-ayuda { margin-top: 8px; color: var(--secundario); font-size: .72rem; line-height: 1.6; }
+.revision-editar { flex-shrink: 0; min-height: 32px; padding: 6px 0 6px 8px; margin-top: -6px; border: 0; border-radius: 5px; background: transparent; color: var(--primario); font-size: .75rem; }
+.revision-editar:hover { color: var(--primario-hover); text-decoration: underline; text-underline-offset: 4px; }
+.revision-nota { display: flex; align-items: flex-start; gap: 10px; margin: 24px 0; color: var(--secundario); font-size: .75rem; line-height: 1.65; }
+.revision-nota .icono { width: 17px; height: 17px; margin-top: 2px; color: var(--primario); }
+.revision-acciones { display: flex; justify-content: space-between; gap: 14px; padding-top: 24px; border-top: 1px solid var(--borde); }
+.revision-atras { background: transparent; color: var(--secundario); border-color: #dcdce2; }
+.revision-atras:hover { background: white; color: var(--primario); }
+.revision-generacion { margin-top: 12px; color: var(--secundario); text-align: right; font-size: .7rem; }
+.grupo-preferencias[tabindex="-1"]:focus { outline: 2px solid var(--primario); outline-offset: 9px; border-radius: 8px; }
+#editar-intereses, #editar-exclusiones, #editar-gasto, #distancia-actividades,
+#editar-destino input, #fecha-llegada, #hora-llegada, #alojamiento { scroll-margin-top: 140px; }
+@media (max-width: 520px) {
+  .revision-plan { margin-top: 23px; }
+  .revision-tarjeta { padding: 17px 16px; gap: 12px; border-radius: 13px; }
+  .revision-editar { min-height: 36px; }
+  .revision-acciones { flex-direction: column-reverse; }
+  .revision-acciones .boton { width: 100%; }
+  .revision-generacion { text-align: center; }
+}

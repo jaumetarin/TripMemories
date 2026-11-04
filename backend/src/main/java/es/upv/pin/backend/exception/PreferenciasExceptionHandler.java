@@ -20,6 +20,6 @@ public class PreferenciasExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, String>> formatoInvalido() {
         return ResponseEntity.badRequest().body(Map.of("mensaje",
-                "Envía las tres listas de preferencias con los códigos válidos del catálogo."));
+                "Envía las listas con códigos del catálogo, un nivel de gasto válido y una distancia numérica en kilómetros."));
     }
 }

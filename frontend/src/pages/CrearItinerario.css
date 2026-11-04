@@ -37,31 +37,21 @@
 .ayuda-fechas { margin-top: 12px; color: var(--secundario); font-size: .75rem; }
 .error-viaje { margin-top: 12px; padding: 12px 14px; color: #9c272d; background: #fff3f2; border: 1px solid #f1d3d0; border-radius: 12px; font-size: .8rem; }
 .error-viaje:empty { display: none; }
-.resumen-viaje { outline: none; }
-.destino-confirmado { font-size: 1.65rem; font-weight: 600; letter-spacing: -.04em; }
-.region-confirmada { color: var(--secundario); font-size: .85rem; margin-top: 4px; }
-.datos-viaje { margin: 24px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.datos-viaje dt { color: var(--secundario); font-size: .75rem; }
-.datos-viaje dd { margin: 6px 0 0; font-size: .9rem; font-weight: 550; }
-.alojamiento-confirmado { grid-column: 1 / -1; overflow-wrap: anywhere; }
-.editar-destino { display: block; margin: 18px auto 0; }
-.duracion-viaje { grid-column: 1 / -1; padding: 18px; background: #eff6f2; border-radius: 14px; }
-.duracion-viaje dd { color: var(--primario); font-size: 1.4rem; }
 .pasos {
   position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 .pasos::before {
   content: '';
   position: absolute;
   top: 16px;
-  left: 12.5%;
-  right: 12.5%;
+  left: calc(100% / 6);
+  right: calc(100% / 6);
   height: 1px;
   background: #dcdce1;
 }
@@ -71,14 +61,10 @@
 .pasos li[data-completado] > span { background: var(--primario); color: white; }
 .pasos li[aria-current] strong { color: var(--primario); }
 .pasos strong { font-size: .82rem; font-weight: 550; }
-@media (max-width: 760px) {
-  .pasos { min-width: 540px; }
-}
 @media (max-width: 520px) {
   .formulario-viaje { padding: 24px; }
   .crear-distribucion { margin-top: 28px; gap: 24px; }
   .pasos { gap: 8px; }
   .pasos strong { font-size: .7rem; }
   .disponibilidad-campos { grid-template-columns: 1fr; }
-  .datos-viaje { grid-template-columns: 1fr; }
 }

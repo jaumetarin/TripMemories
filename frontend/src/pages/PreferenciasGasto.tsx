@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { validarPreferencias } from '../api'
-import type { CategoriaPreferencia, Destino, FechaHora, Preferencias } from '../api'
+import type { CategoriaPreferencia, Destino, FechaHora, OpcionesGastoDistancia, Preferencias } from '../api'
 import { Icon } from '../assets/Icon'
 import './PreferenciasGasto.css'
 
 export interface DatosPreferencias extends Preferencias {
   restricciones: string[]
-  nivelGasto: string
-  distanciaKm: number
 }
 
 type Props = {
@@ -16,6 +14,7 @@ type Props = {
   disponibilidad: FechaHora
   alojamiento: string
   catalogo: CategoriaPreferencia[]
+  opcionesGastoDistancia: OpcionesGastoDistancia | null
   cargandoCatalogo: boolean
   errorCatalogo: string
   onReintentarCatalogo: () => void
@@ -38,12 +37,6 @@ const iconos: Record<string, string> = {
   NATURALEZA_PARQUES: '🌿', CULTURA_LOCAL: '🎭', OCIO_ENTRETENIMIENTO: '🎡',
 }
 const restricciones = ['Lugares muy concurridos', 'Actividades de coste elevado']
-const nivelesGasto = [
-  { nombre: 'Económico', descripcion: 'Priorizar opciones gratuitas o de bajo coste.' },
-  { nombre: 'Moderado', descripcion: 'Combinar opciones gratuitas y de pago.' },
-  { nombre: 'Flexible', descripcion: 'Dar más prioridad al interés de la experiencia.' },
-  { nombre: 'Sin preferencia', descripcion: 'No priorizar por gasto.' },
-]
 
 function mostrarFecha(fechaHora: string) {
   const [anio, mes, dia] = fechaHora.split('T')[0].split('-')
@@ -51,7 +44,7 @@ function mostrarFecha(fechaHora: string) {
 }
 
 export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalogo, cargandoCatalogo,
-  errorCatalogo, onReintentarCatalogo, datos, onCambiar, onAtras, onContinuar }: Props) {
+  opcionesGastoDistancia, errorCatalogo, onReintentarCatalogo, datos, onCambiar, onAtras, onContinuar }: Props) {
   const [validacion, setValidacion] = useState<Validacion | null>(null)
   const [reintento, setReintento] = useState(0)
   const [gruposAbiertos, setGruposAbiertos] = useState<string[]>(() => catalogo
@@ -59,14 +52,16 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
       || datos.categoriasExcluidas.includes(categoria.codigo)
       || categoria.subcategorias.some(subcategoria => datos.subcategoriasExcluidas.includes(subcategoria.codigo)))
     .map(categoria => categoria.codigo))
-  const tieneCatalogo = catalogo.length > 0 && !cargandoCatalogo && !errorCatalogo
+  const tieneCatalogo = catalogo.length > 0 && opcionesGastoDistancia !== null && !cargandoCatalogo && !errorCatalogo
 
-  // Cambiar gasto o distancia no vuelve a validar las categorías.
+  // Se valida la configuración completa que recibirá el Planner.
   const seleccion = useMemo<Preferencias>(() => ({
     intereses: datos.intereses,
     categoriasExcluidas: datos.categoriasExcluidas,
     subcategoriasExcluidas: datos.subcategoriasExcluidas,
-  }), [datos.intereses, datos.categoriasExcluidas, datos.subcategoriasExcluidas])
+    nivelGasto: datos.nivelGasto,
+    distanciaKm: datos.distanciaKm,
+  }), [datos.intereses, datos.categoriasExcluidas, datos.subcategoriasExcluidas, datos.nivelGasto, datos.distanciaKm])
   const actual = validacion?.seleccion === seleccion && validacion.intento === reintento ? validacion : null
   const comprobando = tieneCatalogo && (!actual || (!actual.resultado && !actual.error))
   const puedeContinuar = tieneCatalogo && Boolean(actual?.resultado)
@@ -75,23 +70,27 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
     if (!tieneCatalogo) return
     const controlador = new AbortController()
     let vigente = true
-    validarPreferencias(seleccion, controlador.signal)
-      .then(resultado => { if (vigente) setValidacion({ seleccion, intento: reintento, resultado, error: '' }) })
-      .catch(error => {
-        if (!vigente) return
-        let mensaje = 'No se puede comprobar tu selección. Revisa la conexión con el backend y vuelve a intentarlo.'
-        if (error instanceof Error && error.name === 'TimeoutError') {
-          mensaje = 'La comprobación está tardando demasiado. Vuelve a intentarlo.'
-        } else if (error instanceof Error && error.name === 'Error') {
-          mensaje = error.message
-        }
-        setValidacion({ seleccion, intento: reintento, resultado: null, error: mensaje })
-      })
+    // Evita una petición por cada posición al arrastrar el selector de distancia.
+    const espera = window.setTimeout(() => {
+      validarPreferencias(seleccion, controlador.signal)
+        .then(resultado => { if (vigente) setValidacion({ seleccion, intento: reintento, resultado, error: '' }) })
+        .catch(error => {
+          if (!vigente) return
+          let mensaje = 'No se puede comprobar tu selección. Revisa la conexión con el backend y vuelve a intentarlo.'
+          if (error instanceof Error && error.name === 'TimeoutError') {
+            mensaje = 'La comprobación está tardando demasiado. Vuelve a intentarlo.'
+          } else if (error instanceof Error && error.name === 'Error') {
+            mensaje = error.message
+          }
+          setValidacion({ seleccion, intento: reintento, resultado: null, error: mensaje })
+        })
+    }, 200)
     // Las respuestas de selecciones anteriores nunca pueden sustituir a la actual.
-    return () => { vigente = false; controlador.abort() }
+    return () => { vigente = false; window.clearTimeout(espera); controlador.abort() }
   }, [seleccion, tieneCatalogo, reintento])
 
-  function cambiarSeleccion(campo: keyof Preferencias | 'restricciones', codigo: string, marcada: boolean) {
+  function cambiarSeleccion(campo: 'intereses' | 'categoriasExcluidas' | 'subcategoriasExcluidas' | 'restricciones',
+    codigo: string, marcada: boolean) {
     const valores = marcada
       ? [...new Set([...datos[campo], codigo])]
       : datos[campo].filter(valor => valor !== codigo)
@@ -121,12 +120,12 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
   return (
     <div className="preferencias-distribucion">
       <form className="preferencias-formulario" onSubmit={continuar} aria-label="Preferencias y gasto">
-        {cargandoCatalogo && <p className="estado-catalogo" role="status">Cargando categorías y subcategorías…</p>}
+        {cargandoCatalogo && <p className="estado-catalogo" role="status">Cargando opciones del viaje…</p>}
         {errorCatalogo && <div className="error-viaje" role="alert"><p>{errorCatalogo}</p>
           <button type="button" className="enlace-preferencias" onClick={onReintentarCatalogo}>Reintentar carga del catálogo</button>
         </div>}
 
-        <fieldset className="grupo-preferencias" disabled={!tieneCatalogo}>
+        <fieldset className="grupo-preferencias" id="editar-intereses" tabIndex={-1} disabled={!tieneCatalogo}>
           <legend>Tus intereses</legend>
           <p className="ayuda-preferencias" id="ayuda-intereses">Selecciona todo lo que te apetezca descubrir.</p>
           <div className="intereses-opciones">
@@ -142,7 +141,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           </div>
         </fieldset>
 
-        <fieldset className="grupo-preferencias" disabled={!tieneCatalogo}>
+        <fieldset className="grupo-preferencias" id="editar-exclusiones" tabIndex={-1} disabled={!tieneCatalogo}>
           <legend>Qué prefieres evitar</legend>
           <p className="ayuda-preferencias" id="ayuda-exclusiones">Puedes excluir actividades concretas de un interés. Una categoría completa no puede estar seleccionada a la vez como interés y como exclusión.</p>
           <div className="exclusiones-grupos">
@@ -189,14 +188,6 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           )}
         </fieldset>
 
-        <div className="estado-validacion" aria-live="polite" role="status">
-          {comprobando ? 'Comprobando tu selección…' : puedeContinuar ? 'Selección comprobada. Puedes continuar.' : ''}
-        </div>
-        <div className="error-viaje" role="alert" id="error-preferencias" hidden={!actual?.error}>
-          <p>{actual?.error}</p>
-          <button type="button" className="enlace-preferencias" onClick={() => setReintento(valor => valor + 1)}>Volver a comprobar</button>
-        </div>
-
         <fieldset className="grupo-preferencias">
           <legend>Otras preferencias</legend>
           <div className="evitar-opciones">
@@ -208,30 +199,42 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           <p className="ayuda-preferencias">Estas opciones orientarán las recomendaciones; no son garantías absolutas.</p>
         </fieldset>
 
-        <fieldset className="grupo-preferencias">
+        <fieldset className="grupo-preferencias" id="editar-gasto" tabIndex={-1} disabled={!tieneCatalogo}>
           <legend>Nivel de gasto</legend>
-          <p className="ayuda-preferencias" id="ayuda-gasto">Este nivel orientará las recomendaciones. No es un presupuesto exacto.</p>
+          <p className="ayuda-preferencias" id="ayuda-gasto">{opcionesGastoDistancia?.significadoGasto}</p>
           <div className="gasto-opciones">
-            {nivelesGasto.map(nivel => <label className="opcion-gasto" key={nivel.nombre} data-seleccionada={datos.nivelGasto === nivel.nombre || undefined}>
-              <input type="radio" name="nivelGasto" value={nivel.nombre} checked={datos.nivelGasto === nivel.nombre}
-                aria-describedby="ayuda-gasto" onChange={() => onCambiar({ ...datos, nivelGasto: nivel.nombre })} />
+            {opcionesGastoDistancia?.nivelesGasto.map(nivel => <label className="opcion-gasto" key={nivel.codigo} data-seleccionada={datos.nivelGasto === nivel.codigo || undefined}>
+              <input type="radio" name="nivelGasto" value={nivel.codigo} checked={datos.nivelGasto === nivel.codigo}
+                aria-describedby="ayuda-gasto error-preferencias" onChange={() => onCambiar({ ...datos, nivelGasto: nivel.codigo })} />
               <span><strong>{nivel.nombre}</strong><span className="gasto-descripcion">{nivel.descripcion}</span></span>
             </label>)}
           </div>
         </fieldset>
 
         <div className="grupo-preferencias distancia-preferencias">
-          <label htmlFor="distancia-actividades">Distancia entre actividades</label>
-          <p className="ayuda-preferencias" id="ayuda-distancia"><Icon name="informacion" />Se aplica entre una actividad y la siguiente, no a la distancia total del día.</p>
+          <label htmlFor="distancia-actividades">Distancia deseada entre actividades consecutivas</label>
+          <p className="ayuda-preferencias" id="ayuda-distancia"><Icon name="informacion" />{opcionesGastoDistancia?.significadoDistancia}</p>
           <div className="distancia-control">
-            <input id="distancia-actividades" name="distanciaKm" type="range" min={1} max={10} step={1}
-              value={datos.distanciaKm} aria-describedby="ayuda-distancia" aria-valuetext={`${datos.distanciaKm} kilómetros entre actividades`}
+            <input id="distancia-actividades" name="distanciaKm" type="range"
+              min={opcionesGastoDistancia?.distanciaMinimaKm} max={opcionesGastoDistancia?.distanciaMaximaKm}
+              step={opcionesGastoDistancia?.pasoDistanciaKm} disabled={!tieneCatalogo}
+              value={datos.distanciaKm ?? ''} aria-describedby="ayuda-distancia error-preferencias"
+              aria-valuetext={`${datos.distanciaKm ?? 'Sin seleccionar'} kilómetros deseados entre actividades consecutivas`}
               onChange={evento => onCambiar({ ...datos, distanciaKm: Number(evento.target.value) })} />
-            <output htmlFor="distancia-actividades">{datos.distanciaKm} km</output>
+            <output htmlFor="distancia-actividades">{datos.distanciaKm === null ? '—' : datos.distanciaKm + ' km'}</output>
           </div>
-          <div className="distancia-limites" aria-hidden="true"><span>1 km</span><span>10 km</span></div>
+          <div className="distancia-limites" aria-hidden="true">
+            <span>{opcionesGastoDistancia?.distanciaMinimaKm} km</span><span>{opcionesGastoDistancia?.distanciaMaximaKm} km</span>
+          </div>
         </div>
 
+        <div className="estado-validacion" aria-live="polite" role="status">
+          {comprobando ? 'Comprobando tus preferencias…' : puedeContinuar ? 'Preferencias comprobadas. Puedes continuar.' : ''}
+        </div>
+        <div className="error-viaje" role="alert" id="error-preferencias" hidden={!actual?.error}>
+          <p>{actual?.error}</p>
+          <button type="button" className="enlace-preferencias" onClick={() => setReintento(valor => valor + 1)}>Volver a comprobar</button>
+        </div>
         <p className="nota-preferencias">Puedes cambiar estas opciones al volver a este paso. De momento forman parte de tu borrador.</p>
         <div className="acciones-preferencias">
           <button className="boton boton-secundario" type="button" onClick={onAtras}>← Atrás</button>
@@ -249,6 +252,16 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           <div><dt>Fechas</dt><dd>{disponibilidad.duracionDias} {disponibilidad.duracionDias === 1 ? 'día' : 'días'}<span>{mostrarFecha(disponibilidad.llegada)} – {mostrarFecha(disponibilidad.salida)}</span></dd></div>
           <div><dt>Horario</dt><dd>{disponibilidad.llegada.split('T')[1].slice(0, 5)} → {disponibilidad.salida.split('T')[1].slice(0, 5)}<span>Llegada el primer día · salida el último día</span></dd></div>
           {alojamiento.trim() && <div><dt>Alojamiento</dt><dd>{alojamiento}</dd></div>}
+          <div><dt>Gasto orientativo</dt>
+            <dd>{opcionesGastoDistancia?.nivelesGasto.find(nivel => nivel.codigo === datos.nivelGasto)?.nombre ?? 'Sin seleccionar'}
+              <span>No es un presupuesto.</span>
+            </dd>
+          </div>
+          <div><dt>Distancia deseada</dt>
+            <dd>{datos.distanciaKm === null ? 'Sin seleccionar' : datos.distanciaKm + ' km'}
+              <span>Entre actividades consecutivas, no por día.</span>
+            </dd>
+          </div>
         </dl>
         <p className="resumen-preferencias-nota">Un viaje a tu ritmo, desde el primer momento.</p>
       </aside>

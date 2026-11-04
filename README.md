@@ -222,7 +222,8 @@ legibles se muestran en la web.
 | Endpoint | Función |
 | --- | --- |
 | `GET /api/itinerarios/catalogo-preferencias` | Devuelve códigos, nombres y subcategorías agrupadas. |
-| `POST /api/itinerarios/validar-preferencias` | Comprueba y devuelve las tres listas sin duplicados. |
+| `POST /api/itinerarios/validar-preferencias` | Comprueba las listas, gasto y distancia; devuelve la configuración validada. |
+| `GET /api/itinerarios/opciones-gasto-distancia` | Devuelve niveles, límites, valores iniciales y significado de gasto y distancia. |
 
 `PreferenciasDto` sirve para entrada y salida. Ejemplo compatible:
 
@@ -230,7 +231,9 @@ legibles se muestran en la web.
 {
   "intereses": ["GASTRONOMIA", "NATURALEZA_PARQUES"],
   "categoriasExcluidas": ["ARTE_MUSEOS"],
-  "subcategoriasExcluidas": ["COMIDA_RAPIDA", "SENDERISMO"]
+  "subcategoriasExcluidas": ["COMIDA_RAPIDA", "SENDERISMO"],
+  "nivelGasto": "MODERADO",
+  "distanciaKm": 3
 }
 ```
 
@@ -257,9 +260,10 @@ se desmarque el interés principal. El estado se mantiene en `CrearItinerario`,
 por lo que ir al resumen o volver al primer paso conserva las preferencias, el
 destino, las fechas, las horas, el alojamiento, el gasto y la distancia.
 
-El nivel de gasto, la distancia y las otras preferencias (afluencia y coste elevado)
-mantienen su interfaz actual y todavía no tienen lógica de recomendación en el
-backend. **Vida nocturna** forma parte de las exclusiones de ocio.
+Las otras preferencias (afluencia y coste elevado) mantienen su interfaz actual;
+todavía no se envían al backend. **Vida nocturna** forma parte de las exclusiones
+de ocio. El nivel de gasto y la distancia sí se incluyen en la configuración
+validada, como se describe en la UT5.
 
 Las validaciones de esta UT son independientes de Geoapify y de PostgreSQL.
 El borrador no se persiste: recargar o abandonar la sección lo descarta.
@@ -277,6 +281,58 @@ Comprobaciones de aceptación con un destino y fechas válidos:
 3. Volver del resumen, retirar un interés y cambiar una exclusión. Se conserva
    el resto de la configuración, incluidas las exclusiones cuyo interés se retiró.
 4. Marcar, desmarcar y volver a marcar una opción. Solo aparece una vez en el resumen.
+
+### UT5: gasto y distancia
+
+`NivelGasto` define cuatro códigos estables con su nombre y descripción:
+
+| Código | Presentación | Orientación para el futuro Planner |
+| --- | --- | --- |
+| `ECONOMICO` | Económico | Priorizar opciones gratuitas o de bajo coste. |
+| `MODERADO` | Moderado | Combinar opciones gratuitas y de pago. |
+| `FLEXIBLE` | Flexible | Dar más prioridad al interés de la experiencia. |
+| `SIN_PREFERENCIA` | Sin preferencia | No priorizar por gasto. |
+
+No se asignan importes ni se calcula un presupuesto. `distanciaKm` es una
+**distancia deseada entre actividades consecutivas**, no un máximo obligatorio
+ni una distancia diaria total. El selector admite de 1 a 10 km, en pasos de 1 km.
+El backend publica esas opciones y su significado en
+`GET /api/itinerarios/opciones-gasto-distancia`; los valores iniciales son
+`SIN_PREFERENCIA` y 3 km y no se vuelven a aplicar sobre datos ya editados.
+
+`PreferenciasDto` sigue siendo el objeto de entrada y salida de
+`POST /api/itinerarios/validar-preferencias`, ahora con cinco campos. El backend
+requiere un nivel admitido y una distancia presente, finita, entera y en el rango.
+Los campos ausentes no se rellenan silenciosamente; tampoco se aceptan ordinales
+numéricos como nivel de gasto. Las respuestas inválidas usan HTTP 400 y `mensaje`.
+Esta ampliación requiere actualizar juntos el frontend y el backend.
+
+El formulario obtiene los niveles, etiquetas, descripciones y límites del backend.
+Al cambiar gasto o distancia se comprueba la configuración completa después de
+200 ms sin cambios. La respuesta válida solo permite avanzar si corresponde
+a los valores actuales; las respuestas anteriores se cancelan o descartan.
+El resumen usa el resultado validado y explica el significado de ambos valores.
+Volver y editarlos conserva intereses, exclusiones, fechas, horas y alojamiento.
+
+Todavía no existe un Planner ni un endpoint de generación. Esta UT prepara su
+configuración de entrada: al implementar el generador habrá que reutilizar
+`PreferenciasService.validar` y aplicar estas dos preferencias al valorar las
+actividades y trayectos. La validación por sí sola no ordena actividades. No hay
+persistencia del borrador ni cambios en Flyway o en las tablas en esta UT.
+
+Aceptación manual con un destino y disponibilidad válidos:
+
+1. Elegir Económico y 2 km, continuar y comprobar ambos valores y sus explicaciones.
+2. Volver a editar, elegir Flexible y 8 km y comprobar que el resumen se actualiza.
+3. Revisar que el resto del viaje y las selecciones de UT4 se conservan.
+4. Probar también 1 y 10 km y los cuatro niveles, incluido Sin preferencia.
+5. Si falla la conexión, comprobar el bloqueo, la conservación y el reintento.
+
+Pruebas automáticas de UT4 y UT5, sin Geoapify ni PostgreSQL:
+
+```powershell
+.\mvnw.cmd '-Dtest=PreferenciasServiceTests,PreferenciasControllerTests,GastoDistanciaServiceTests,GastoDistanciaControllerTests' test
+```
 
 ### Comprobar el autocompletado
 

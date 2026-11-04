@@ -7,13 +7,29 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 import es.upv.pin.backend.dto.CategoriaDto;
+import es.upv.pin.backend.dto.NivelGastoDto;
+import es.upv.pin.backend.dto.OpcionesGastoDistanciaDto;
 import es.upv.pin.backend.dto.PreferenciasDto;
 import es.upv.pin.backend.dto.SubcategoriaDto;
 import es.upv.pin.backend.model.CategoriaTuristica;
+import es.upv.pin.backend.model.NivelGasto;
 import es.upv.pin.backend.model.SubcategoriaTuristica;
 
 @Service
 public class PreferenciasService {
+    private static final int DISTANCIA_MINIMA_KM = 1;
+    private static final int DISTANCIA_MAXIMA_KM = 10;
+
+    public OpcionesGastoDistanciaDto obtenerOpcionesGastoDistancia() {
+        List<NivelGastoDto> niveles = new ArrayList<>();
+        for (NivelGasto nivel : NivelGasto.values()) {
+            niveles.add(new NivelGastoDto(nivel, nivel.getNombre(), nivel.getDescripcion()));
+        }
+        return new OpcionesGastoDistanciaDto(List.copyOf(niveles),
+                DISTANCIA_MINIMA_KM, DISTANCIA_MAXIMA_KM, 1, NivelGasto.SIN_PREFERENCIA, 3,
+                "Orienta el coste de las recomendaciones; no es un presupuesto ni un importe en euros.",
+                "Distancia deseada entre una actividad y la siguiente. No es la distancia total del día ni un límite obligatorio.");
+    }
 
     public List<CategoriaDto> obtenerCatalogo() {
         List<CategoriaDto> catalogo = new ArrayList<>();
@@ -51,8 +67,22 @@ public class PreferenciasService {
             }
         }
 
-        // Una exclusión parcial es compatible con el interés de su categoría principal.
-        return new PreferenciasDto(intereses, categoriasExcluidas, subcategoriasExcluidas);
+        if (preferencias.nivelGasto() == null) {
+            throw new IllegalArgumentException("Elige un nivel de gasto, también puedes seleccionar «Sin preferencia».");
+        }
+        Double distanciaKm = preferencias.distanciaKm();
+        if (distanciaKm == null) {
+            throw new IllegalArgumentException("Elige la distancia deseada entre actividades consecutivas.");
+        }
+        if (!Double.isFinite(distanciaKm) || distanciaKm < DISTANCIA_MINIMA_KM
+                || distanciaKm > DISTANCIA_MAXIMA_KM || distanciaKm != Math.floor(distanciaKm)) {
+            throw new IllegalArgumentException("Elige una distancia entre actividades de 1 a 10 km, en kilómetros enteros.");
+        }
+
+        // El Planner debe recibir estos valores: gasto cualitativo y distancia deseada
+        // por trayecto, sin convertirlos en presupuesto ni en límites obligatorios.
+        return new PreferenciasDto(intereses, categoriasExcluidas, subcategoriasExcluidas,
+                preferencias.nivelGasto(), distanciaKm);
     }
 
     private <T> List<T> sinDuplicados(List<T> valores, String campo) {

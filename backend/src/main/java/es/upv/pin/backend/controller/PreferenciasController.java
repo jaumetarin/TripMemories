@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import es.upv.pin.backend.dto.CategoriaDto;
+import es.upv.pin.backend.dto.OpcionesGastoDistanciaDto;
 import es.upv.pin.backend.dto.PreferenciasDto;
 import es.upv.pin.backend.service.PreferenciasService;
 
@@ -30,5 +31,10 @@ public class PreferenciasController {
     @PostMapping("/validar-preferencias")
     public PreferenciasDto validar(@RequestBody PreferenciasDto preferencias) {
         return preferenciasService.validar(preferencias);
+    }
+
+    @GetMapping("/opciones-gasto-distancia")
+    public OpcionesGastoDistanciaDto obtenerOpcionesGastoDistancia() {
+        return preferenciasService.obtenerOpcionesGastoDistancia();
     }
 }
