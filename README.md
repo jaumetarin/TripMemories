@@ -208,23 +208,131 @@ Para ejecutar las pruebas de disponibilidad y autocompletado sin base de datos
 ni clave real, desde `backend`:
 
 ```powershell
-.\mvnw.cmd '-Dtest=FechaHoraServiceTests,FechaHoraControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
+.\mvnw.cmd '-Dtest=PreferenciasServiceTests,PreferenciasControllerTests,FechaHoraServiceTests,FechaHoraControllerTests,GeoapifyClientTests,DestinoServiceTests,DestinoControllerTests' test
 ```
 
-### Preferencias y gasto (interfaz)
+### Intereses y exclusiones
 
-`pages/PreferenciasGasto.tsx` muestra el segundo paso del formulario. Permite
-seleccionar varios intereses y aspectos a evitar, escoger un nivel de gasto y
-ajustar la distancia entre actividades de 1 a 10 km, inicialmente 3 km. El nivel
-inicial es **Sin preferencia**. El resumen lateral usa el destino, las fechas,
-los horarios validados y el alojamiento indicados en el primer paso.
+`PreferenciasGasto` obtiene su catálogo del backend: seis categorías turísticas y
+dieciocho subcategorías, tres por categoría. `CategoriaTuristica` define los
+intereses y `SubcategoriaTuristica` relaciona cada exclusión parcial con su
+categoría principal. Sus códigos estables se usan en las peticiones; sus nombres
+legibles se muestran en la web.
 
-**Continuar** muestra un resumen editable de la configuración actual.
-Las selecciones se conservan al regresar desde ese resumen y al volver al primer
-paso. Se mantienen únicamente en el estado de React: no se envían al backend ni
-se guardan en PostgreSQL, y todavía no filtran actividades ni generan un plan.
-Recargar o salir de la sección abandona el borrador. Esta funcionalidad es solo
-la interfaz; la lógica de recomendaciones se incorporará al backend más adelante.
+| Endpoint | Función |
+| --- | --- |
+| `GET /api/itinerarios/catalogo-preferencias` | Devuelve códigos, nombres y subcategorías agrupadas. |
+| `POST /api/itinerarios/validar-preferencias` | Comprueba las listas, gasto y distancia; devuelve la configuración validada. |
+| `GET /api/itinerarios/opciones-gasto-distancia` | Devuelve niveles, límites, valores iniciales y significado de gasto y distancia. |
+
+`PreferenciasDto` sirve para entrada y salida. Ejemplo compatible:
+
+```json
+{
+  "intereses": ["GASTRONOMIA", "NATURALEZA_PARQUES"],
+  "categoriasExcluidas": ["ARTE_MUSEOS"],
+  "subcategoriasExcluidas": ["COMIDA_RAPIDA", "SENDERISMO"],
+  "nivelGasto": "MODERADO",
+  "distanciaKm": 3
+}
+```
+
+`PreferenciasService.validar` elimina duplicados manteniendo el orden y rechaza
+las listas ausentes, los elementos nulos y las contradicciones. Las listas vacías
+son válidas. Los códigos desconocidos o que pertenecen al tipo equivocado producen
+un error HTTP 400, al igual que un JSON incorrecto.
+
+Excluir una subcategoría de un interés es compatible. Seleccionar una categoría
+como interés y excluirla por completo produce un error con su nombre y pide
+desmarcar una de las dos opciones. No se elimina ninguna selección automáticamente.
+Excluir las tres subcategorías disponibles no implica por sí solo excluir toda
+la categoría: la exclusión completa es siempre una selección explícita.
+
+El frontend comprueba las selecciones al cambiarlas y solo permite abrir el resumen
+con la respuesta válida correspondiente a la selección actual. Mientras espera o
+hay errores, **Continuar** permanece bloqueado. Las respuestas antiguas se descartan.
+Si falla la conexión, el borrador se conserva y se puede reintentar la comprobación.
+Si falla el catálogo, se ofrece reintentar su carga y no se avanza sin validación.
+
+Las exclusiones están agrupadas en apartados desplegables y las seleccionadas
+también aparecen como etiquetas que se pueden retirar. Siguen visibles aunque
+se desmarque el interés principal. El estado se mantiene en `CrearItinerario`,
+por lo que ir al resumen o volver al primer paso conserva las preferencias, el
+destino, las fechas, las horas, el alojamiento, el gasto y la distancia.
+
+Las otras preferencias (afluencia y coste elevado) mantienen su interfaz actual;
+todavía no se envían al backend. **Vida nocturna** forma parte de las exclusiones
+de ocio. El nivel de gasto y la distancia sí se incluyen en la configuración
+validada, como se describe en la UT5.
+
+Las validaciones de esta UT son independientes de Geoapify y de PostgreSQL.
+El borrador no se persiste: recargar o abandonar la sección lo descarta.
+La selección de actividades y la generación del itinerario siguen pendientes;
+el futuro generador deberá reutilizar `PreferenciasService.validar` antes de
+consumir la configuración, incluso si procede de otro cliente.
+
+Comprobaciones de aceptación con un destino y fechas válidos:
+
+1. Seleccionar Gastronomía y Naturaleza; excluir Comida rápida y Senderismo.
+   Se permite continuar y el resumen muestra las cuatro selecciones.
+2. Marcar también «Evitar toda la categoría: Gastronomía». Se muestra el error,
+   se conservan las selecciones y se bloquea continuar. Desmarcar una de las dos
+   opciones corrige el error y permite avanzar.
+3. Volver del resumen, retirar un interés y cambiar una exclusión. Se conserva
+   el resto de la configuración, incluidas las exclusiones cuyo interés se retiró.
+4. Marcar, desmarcar y volver a marcar una opción. Solo aparece una vez en el resumen.
+
+### UT5: gasto y distancia
+
+`NivelGasto` define cuatro códigos estables con su nombre y descripción:
+
+| Código | Presentación | Orientación para el futuro Planner |
+| --- | --- | --- |
+| `ECONOMICO` | Económico | Priorizar opciones gratuitas o de bajo coste. |
+| `MODERADO` | Moderado | Combinar opciones gratuitas y de pago. |
+| `FLEXIBLE` | Flexible | Dar más prioridad al interés de la experiencia. |
+| `SIN_PREFERENCIA` | Sin preferencia | No priorizar por gasto. |
+
+No se asignan importes ni se calcula un presupuesto. `distanciaKm` es una
+**distancia deseada entre actividades consecutivas**, no un máximo obligatorio
+ni una distancia diaria total. El selector admite de 1 a 10 km, en pasos de 1 km.
+El backend publica esas opciones y su significado en
+`GET /api/itinerarios/opciones-gasto-distancia`; los valores iniciales son
+`SIN_PREFERENCIA` y 3 km y no se vuelven a aplicar sobre datos ya editados.
+
+`PreferenciasDto` sigue siendo el objeto de entrada y salida de
+`POST /api/itinerarios/validar-preferencias`, ahora con cinco campos. El backend
+requiere un nivel admitido y una distancia presente, finita, entera y en el rango.
+Los campos ausentes no se rellenan silenciosamente; tampoco se aceptan ordinales
+numéricos como nivel de gasto. Las respuestas inválidas usan HTTP 400 y `mensaje`.
+Esta ampliación requiere actualizar juntos el frontend y el backend.
+
+El formulario obtiene los niveles, etiquetas, descripciones y límites del backend.
+Al cambiar gasto o distancia se comprueba la configuración completa después de
+200 ms sin cambios. La respuesta válida solo permite avanzar si corresponde
+a los valores actuales; las respuestas anteriores se cancelan o descartan.
+El resumen usa el resultado validado y explica el significado de ambos valores.
+Volver y editarlos conserva intereses, exclusiones, fechas, horas y alojamiento.
+
+Todavía no existe un Planner ni un endpoint de generación. Esta UT prepara su
+configuración de entrada: al implementar el generador habrá que reutilizar
+`PreferenciasService.validar` y aplicar estas dos preferencias al valorar las
+actividades y trayectos. La validación por sí sola no ordena actividades. No hay
+persistencia del borrador ni cambios en Flyway o en las tablas en esta UT.
+
+Aceptación manual con un destino y disponibilidad válidos:
+
+1. Elegir Económico y 2 km, continuar y comprobar ambos valores y sus explicaciones.
+2. Volver a editar, elegir Flexible y 8 km y comprobar que el resumen se actualiza.
+3. Revisar que el resto del viaje y las selecciones de UT4 se conservan.
+4. Probar también 1 y 10 km y los cuatro niveles, incluido Sin preferencia.
+5. Si falla la conexión, comprobar el bloqueo, la conservación y el reintento.
+
+Pruebas automáticas de UT4 y UT5, sin Geoapify ni PostgreSQL:
+
+```powershell
+.\mvnw.cmd '-Dtest=PreferenciasServiceTests,PreferenciasControllerTests,GastoDistanciaServiceTests,GastoDistanciaControllerTests' test
+```
 
 ### Comprobar el autocompletado
 

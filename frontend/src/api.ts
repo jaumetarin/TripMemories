@@ -13,6 +13,138 @@ export interface FechaHora {
   duracionDias: number
 }
 
+export interface Preferencias {
+  intereses: string[]
+  categoriasExcluidas: string[]
+  subcategoriasExcluidas: string[]
+  nivelGasto: NivelGasto | null
+  distanciaKm: number | null
+}
+
+export type NivelGasto = 'ECONOMICO' | 'MODERADO' | 'FLEXIBLE' | 'SIN_PREFERENCIA'
+
+export interface OpcionNivelGasto {
+  codigo: NivelGasto
+  nombre: string
+  descripcion: string
+}
+
+export interface OpcionesGastoDistancia {
+  nivelesGasto: OpcionNivelGasto[]
+  distanciaMinimaKm: number
+  distanciaMaximaKm: number
+  pasoDistanciaKm: number
+  nivelGastoInicial: NivelGasto
+  distanciaInicialKm: number
+  significadoGasto: string
+  significadoDistancia: string
+}
+
+export interface SubcategoriaPreferencia {
+  codigo: string
+  nombre: string
+}
+
+export interface CategoriaPreferencia {
+  codigo: string
+  nombre: string
+  subcategorias: SubcategoriaPreferencia[]
+}
+
+function esObjeto(valor: unknown): valor is Record<string, unknown> {
+  return typeof valor === 'object' && valor !== null
+}
+
+function esListaDeTextos(valor: unknown): valor is string[] {
+  return Array.isArray(valor) && valor.every(elemento => typeof elemento === 'string')
+}
+
+function esSubcategoria(valor: unknown): valor is SubcategoriaPreferencia {
+  return esObjeto(valor) && typeof valor.codigo === 'string' && typeof valor.nombre === 'string'
+}
+
+function esCategoria(valor: unknown): valor is CategoriaPreferencia {
+  return esObjeto(valor) && typeof valor.codigo === 'string' && typeof valor.nombre === 'string'
+    && Array.isArray(valor.subcategorias) && valor.subcategorias.every(esSubcategoria)
+}
+
+function esPreferencias(valor: unknown): valor is Preferencias {
+  return esObjeto(valor) && esListaDeTextos(valor.intereses)
+    && esListaDeTextos(valor.categoriasExcluidas) && esListaDeTextos(valor.subcategoriasExcluidas)
+    && esNivelGasto(valor.nivelGasto)
+    && typeof valor.distanciaKm === 'number' && Number.isFinite(valor.distanciaKm)
+}
+
+function esNivelGasto(valor: unknown): valor is NivelGasto {
+  return typeof valor === 'string'
+    && ['ECONOMICO', 'MODERADO', 'FLEXIBLE', 'SIN_PREFERENCIA'].includes(valor)
+}
+
+function esOpcionNivelGasto(valor: unknown): valor is OpcionNivelGasto {
+  return esObjeto(valor) && esNivelGasto(valor.codigo)
+    && typeof valor.nombre === 'string' && typeof valor.descripcion === 'string'
+}
+
+function esOpcionesGastoDistancia(valor: unknown): valor is OpcionesGastoDistancia {
+  return esObjeto(valor) && Array.isArray(valor.nivelesGasto)
+    && valor.nivelesGasto.length > 0 && valor.nivelesGasto.every(esOpcionNivelGasto)
+    && esNivelGasto(valor.nivelGastoInicial)
+    && valor.nivelesGasto.some(nivel => nivel.codigo === valor.nivelGastoInicial)
+    && typeof valor.distanciaMinimaKm === 'number' && Number.isFinite(valor.distanciaMinimaKm)
+    && typeof valor.distanciaMaximaKm === 'number' && Number.isFinite(valor.distanciaMaximaKm)
+    && typeof valor.pasoDistanciaKm === 'number' && Number.isFinite(valor.pasoDistanciaKm)
+    && typeof valor.distanciaInicialKm === 'number' && Number.isFinite(valor.distanciaInicialKm)
+    && valor.pasoDistanciaKm > 0 && valor.distanciaMinimaKm > 0
+    && valor.distanciaMinimaKm <= valor.distanciaInicialKm
+    && valor.distanciaInicialKm <= valor.distanciaMaximaKm
+    && typeof valor.significadoGasto === 'string' && typeof valor.significadoDistancia === 'string'
+}
+
+async function leerRespuestaPreferencias(respuesta: Response): Promise<unknown> {
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) {
+    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+      ? datos.mensaje : 'No se han podido comprobar las preferencias. Comprueba que el backend esté actualizado y arrancado.')
+  }
+  return datos
+}
+
+export async function obtenerCatalogoPreferencias(signal: AbortSignal): Promise<CategoriaPreferencia[]> {
+  const respuesta = await fetch('/api/itinerarios/catalogo-preferencias', {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { Accept: 'application/json' },
+  })
+  const datos = await leerRespuestaPreferencias(respuesta)
+  if (!Array.isArray(datos) || datos.length === 0 || !datos.every(esCategoria)) {
+    throw new Error('El servidor ha devuelto un catálogo de preferencias no válido.')
+  }
+  return datos
+}
+
+export async function validarPreferencias(preferencias: Preferencias, signal: AbortSignal): Promise<Preferencias> {
+  const respuesta = await fetch('/api/itinerarios/validar-preferencias', {
+    method: 'POST',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(preferencias),
+  })
+  const datos = await leerRespuestaPreferencias(respuesta)
+  if (!esPreferencias(datos)) throw new Error('El servidor ha devuelto unas preferencias no válidas.')
+  return datos
+}
+
+export async function obtenerOpcionesGastoDistancia(signal: AbortSignal): Promise<OpcionesGastoDistancia> {
+  const respuesta = await fetch('/api/itinerarios/opciones-gasto-distancia', {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { Accept: 'application/json' },
+  })
+  const datos = await leerRespuestaPreferencias(respuesta)
+  if (!esOpcionesGastoDistancia(datos)) {
+    throw new Error('El servidor ha devuelto unas opciones de gasto y distancia no válidas.')
+  }
+  return datos
+}
+
 function esDestino(valor: unknown): valor is Destino {
   if (typeof valor !== 'object' || valor === null) return false
   const destino = valor as Record<string, unknown>
