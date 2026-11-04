@@ -262,3 +262,61 @@ docker compose down
 ```
 
 Este comando conserva el volumen con los datos de PostgreSQL.
+
+
+## Candidatos reales de lugares — UT 07
+
+El backend consulta Geoapify Places para recuperar candidatos del destino
+seleccionado. La clave se obtiene de `GEOAPIFY_API_KEY`, igual que en el
+autocompletado, y permanece fuera del código y del frontend.
+
+### Endpoints
+
+Ambos requieren el parámetro `destinoId`, cuyo valor es el `id` real devuelto
+por `GET /api/destinos?texto=Madrid`.
+
+- `GET /api/candidatos/turisticos?destinoId=ID_DEL_DESTINO`
+- `GET /api/candidatos/gastronomicos?destinoId=ID_DEL_DESTINO`
+
+La búsqueda turística incluye sitios de interés, museos y parques.
+La gastronómica busca restaurantes. Cada consulta solicita hasta 50
+resultados dentro del destino; no pretende recuperar todos sus lugares.
+
+Cada candidato contiene `id`, `nombre`, `latitud`, `longitud`, `categorias`
+y `direccion`. Los datos no disponibles pueden permanecer ausentes o nulos.
+
+### Organización
+
+`CandidatoController` recibe la petición y delega en `CandidatoService`.
+El servicio selecciona las categorías y utiliza `GeoapifyClient` para
+consultar el proveedor. Los DTO de Geoapify representan su respuesta y
+`CandidatoDto` define el formato que devuelve nuestra API.
+
+### Resultados y errores
+
+- `200` con candidatos cuando hay resultados.
+- `200` con `[]` cuando la consulta válida no encuentra lugares.
+- `400` ante parámetros inválidos.
+- `503` si falta la clave, falla el proveedor o la respuesta no es válida.
+
+No se inventan lugares para completar el resultado.
+
+Esta UT obtiene candidatos. Todavía no aplica la personalización de
+preferencias, elimina duplicados ni construye el itinerario.
+
+### Comprobación
+
+Con el backend arrancado:
+
+1. Consultar `/api/destinos?texto=Madrid`.
+2. Copiar el identificador del destino elegido.
+3. Consultar ambos endpoints de candidatos con ese identificador.
+
+El puerto predeterminado es 8080. Desde backend:
+
+```powershell
+.\mvnw.cmd spring-boot:run 
+
+Las pruebas de `GeoapifyClientTests` y `CandidatoControllerTests` utilizan
+respuestas simuladas y no requieren clave real ni PostgreSQL.
+Cubren la recepción de candidatos, respuestas vacías y fallos del proveedor.
