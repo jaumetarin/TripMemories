@@ -8,9 +8,16 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import es.upv.pin.backend.controller.CandidatoController;
+import es.upv.pin.backend.controller.PreparacionCandidatosController;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
-@RestControllerAdvice(assignableTypes = CandidatoController.class)
+@RestControllerAdvice(assignableTypes = {CandidatoController.class, PreparacionCandidatosController.class})
 public class CandidatoExceptionHandler {
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> formatoInvalido() {
+        return ResponseEntity.badRequest().body(Map.of("mensaje", "Envía una configuración de viaje válida para buscar candidatos."));
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> consultaInvalida(

@@ -1,5 +1,6 @@
 import type { CategoriaPreferencia, ConfiguracionItinerario, OpcionesGastoDistancia } from '../api'
 import { Icon } from '../assets/Icon'
+import { CandidatosLugares } from '../components/CandidatosLugares'
 import './RevisarPlan.css'
 
 export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia'
@@ -90,6 +91,7 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
         </button>
       </div>
       <p className="revision-generacion">La generación del itinerario estará disponible próximamente. Confirmar la configuración no genera actividades.</p>
+      {confirmada && <CandidatosLugares configuracion={configuracion} />}
     </div>
   )
 }
