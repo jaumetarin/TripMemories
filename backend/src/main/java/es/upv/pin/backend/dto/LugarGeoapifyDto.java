@@ -12,5 +12,7 @@ public record LugarGeoapifyDto (
     Double lat,
     Double lon,
     List<String> categories,
-    String formatted){   
+    String formatted,
+    String opening_hours,
+    OrigenLugarGeoapifyDto datasource){
 }

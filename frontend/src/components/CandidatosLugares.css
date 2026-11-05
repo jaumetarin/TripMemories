@@ -1,0 +1,11 @@
+.candidatos-lugares { margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--borde); }
+.candidatos-lugares > h2 { font-size: 1.3rem; letter-spacing: -.025em; }
+.candidatos-lugares > p { color: var(--secundario); font-size: .8rem; line-height: 1.7; margin: 12px 0 18px; }
+.candidatos-lugares > .boton { white-space: normal; }
+.candidatos-lugares > [role="status"]:empty { display: none; }
+.candidatos-lista { display: grid; gap: 10px; padding: 0; list-style: none; }
+.candidato-tarjeta { padding: 18px 20px; border: 1px solid var(--borde); border-radius: 15px; background: white; overflow-wrap: anywhere; }
+.candidato-tarjeta h3 { font-size: .9rem; margin-bottom: 7px; }
+.candidato-tarjeta p { color: var(--secundario); font-size: .78rem; line-height: 1.65; }
+.candidato-tarjeta .candidato-horario { margin-top: 8px; white-space: pre-line; }
+.candidatos-atribucion a { color: inherit; text-underline-offset: 3px; }

@@ -20,6 +20,17 @@ export interface ConfiguracionItinerario {
   preferencias: Preferencias
 }
 
+export interface Lugar {
+  id: string
+  nombre: string
+  direccion: string | null
+  latitud: number | null
+  longitud: number | null
+  categorias: string[]
+  subcategorias: string[]
+  horario?: string
+}
+
 export interface Preferencias {
   intereses: string[]
   categoriasExcluidas: string[]
@@ -190,6 +201,37 @@ export async function confirmarConfiguracion(
   }
   if (!esConfiguracionItinerario(datos)) {
     throw new Error('El servidor ha devuelto una configuración no válida. No se ha confirmado el viaje.')
+  }
+  return datos
+}
+
+function esLugar(valor: unknown): valor is Lugar {
+  return esObjeto(valor) && typeof valor.id === 'string' && valor.id.trim().length > 0
+    && typeof valor.nombre === 'string'
+    && (valor.direccion === null || typeof valor.direccion === 'string')
+    && (valor.latitud === null || typeof valor.latitud === 'number' && Number.isFinite(valor.latitud))
+    && (valor.longitud === null || typeof valor.longitud === 'number' && Number.isFinite(valor.longitud))
+    && esListaDeTextos(valor.categorias) && esListaDeTextos(valor.subcategorias)
+    && (valor.horario === undefined || typeof valor.horario === 'string')
+}
+
+export async function prepararCandidatos(
+  configuracion: ConfiguracionItinerario, signal: AbortSignal
+): Promise<Lugar[]> {
+  const respuesta = await fetch('/api/candidatos/preparar', {
+    method: 'POST',
+    // Hasta seis consultas independientes, cada una con timeout en el backend.
+    signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(configuracion),
+  })
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) {
+    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+      ? datos.mensaje : 'No se han podido buscar los lugares. Comprueba la conexión con el backend y vuelve a intentarlo.')
+  }
+  if (!Array.isArray(datos) || !datos.every(esLugar)) {
+    throw new Error('El servidor ha devuelto una lista de lugares no válida.')
   }
   return datos
 }

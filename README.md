@@ -489,8 +489,9 @@ consultar el proveedor. Los DTO de Geoapify representan su respuesta y
 
 No se inventan lugares para completar el resultado.
 
-Esta UT obtiene candidatos. Todavía no aplica la personalización de
-preferencias, elimina duplicados ni construye el itinerario.
+Los endpoints originales de esta UT obtienen candidatos sin personalización.
+La preparación por preferencias y la eliminación de duplicados se añaden en UT8.
+La construcción del itinerario corresponde al futuro Planner.
 
 ### Comprobación
 
@@ -504,7 +505,74 @@ El puerto predeterminado es 8080. Desde backend:
 
 ```powershell
 .\mvnw.cmd spring-boot:run 
+```
 
 Las pruebas de `GeoapifyClientTests` y `CandidatoControllerTests` utilizan
 respuestas simuladas y no requieren clave real ni PostgreSQL.
 Cubren la recepción de candidatos, respuestas vacías y fallos del proveedor.
+
+## UT8: filtrado de candidatos por preferencias
+
+`POST /api/candidatos/preparar` recibe la configuración completa de UT6 y devuelve
+una lista de `LugarDto`, la representación de los candidatos preparados para el Planner.
+Conserva el identificador Geoapify, nombre, dirección, coordenadas, categorías y subcategorías
+de TripMemories, y el horario solo cuando está disponible:
+
+```json
+[
+  {
+    "id": "lugar-a",
+    "nombre": "Restaurante A",
+    "direccion": "Calle A, Madrid",
+    "latitud": 40.4,
+    "longitud": -3.7,
+    "categorias": ["GASTRONOMIA"],
+    "subcategorias": [],
+    "horario": "Mo-Fr 10:00-18:00"
+  }
+]
+```
+
+- `PreparacionCandidatosService` valida la configuración, consulta Geoapify y filtra.
+- `ClasificacionLugaresService` relaciona las categorías del proveedor con nuestros
+  intereses y exclusiones. Las categorías y subcategorías internas se conservan en el resultado.
+- Una consulta independiente por interés, con hasta 100 resultados, una detrás de otra.
+  El número final puede ser menor tras eliminar duplicados y aplicar los filtros.
+- Sin intereses seleccionados se consultan las seis categorías generales, salvo
+  las categorías completas que el usuario haya excluido.
+- Se agrupan los repetidos por identificador Geoapify y se reúnen sus etiquetas
+  antes de aplicar las exclusiones. Una copia excluida descarta el lugar completo.
+- El resultado mantiene ese identificador y todas las categorías y subcategorías
+  reconocidas en las distintas copias, sin repetidos, para relacionar el lugar entre fases.
+- Las coordenadas se recuperan del primer par válido de una misma copia del lugar.
+  Si ninguna copia contiene un par completo, finito y dentro de rango, ambas se devuelven
+  como `null`; no se sustituyen por cero ni se mezclan coordenadas de distintas copias.
+- Las categorías y subcategorías excluidas prevalecen sobre los intereses.
+- Cultura local incluye `commercial.marketplace` en su consulta. Los mercados tradicionales
+  se reconocen por esa categoría aunque no haya etiquetas de origen; se aplica su exclusión.
+- La detección de algunas subcategorías depende de etiquetas de origen explícitas:
+  mercados gastronómicos, senderismo y espectáculos tradicionales. La cobertura depende del proveedor.
+- Se omiten los resultados sin identificador, sin nombre o sin clasificación reconocida.
+  También se descartan nombres genéricos como «sin nombre», «desconocido» y «unknown»
+  (coincidencia completa, sin distinguir mayúsculas y tras quitar espacios exteriores).
+  La dirección puede ser nula; la interfaz muestra «Dirección no disponible».
+- El horario se recoge de `opening_hours` o, si falta, de `datasource.raw.opening_hours`
+  en la misma respuesta de Places. Se conserva el texto publicado por el proveedor;
+  no se interpreta para programar actividades ni se hacen consultas adicionales de detalles.
+  Si está ausente o vacío, el campo `horario` se omite del JSON y no aparece en la tarjeta.
+- HTTP 200 con `[]` significa que no hay resultados; 400 indica configuración inválida
+  y 503 un fallo del proveedor. No se presenta un fallo como si fuera una lista vacía.
+
+Después de confirmar el resumen aparece **Buscar lugares disponibles**. La interfaz
+muestra solo nombre, dirección y, cuando existe, el horario publicado, aunque conserva
+el resto de los datos recibidos. Las tarjetas utilizan el identificador del lugar como clave.
+Al editar y confirmar otra vez se utiliza la selección
+vigente. Los estados de carga, error y reintento conservan el formulario.
+Cada nueva búsqueda consulta el proveedor; no hay caché ni cambios en PostgreSQL.
+Los endpoints originales de UT7 siguen funcionando.
+
+Pruebas desde backend, sin necesitar ni modificar la base de datos:
+
+```powershell
+.\mvnw.cmd clean '-Dspring.flyway.enabled=false' test
+```
