@@ -1,19 +1,19 @@
-import type { CategoriaPreferencia, Destino, FechaHora, OpcionesGastoDistancia } from '../api'
-import type { DatosPreferencias } from './PreferenciasGasto'
+import type { CategoriaPreferencia, ConfiguracionItinerario, OpcionesGastoDistancia } from '../api'
 import { Icon } from '../assets/Icon'
 import './RevisarPlan.css'
 
 export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia'
 
 type Props = {
-  destino: Destino
-  disponibilidad: FechaHora
-  alojamiento: string
-  preferencias: DatosPreferencias
+  configuracion: ConfiguracionItinerario
+  confirmada: boolean
+  confirmando: boolean
+  errorConfirmacion: string
   catalogo: CategoriaPreferencia[]
   opcionesGastoDistancia: OpcionesGastoDistancia | null
   onEditar: (campo: CampoPlan) => void
   onAtras: () => void
+  onConfirmar: () => void
 }
 
 function mostrarFecha(valor: string) {
@@ -22,8 +22,9 @@ function mostrarFecha(valor: string) {
     .format(new Date(valor.split('T')[0] + 'T12:00:00'))
 }
 
-export function RevisarPlan({ destino, disponibilidad, alojamiento, preferencias, catalogo,
-  opcionesGastoDistancia, onEditar, onAtras }: Props) {
+export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfirmacion, catalogo,
+  opcionesGastoDistancia, onEditar, onAtras, onConfirmar }: Props) {
+  const { destino, disponibilidad, alojamiento, preferencias } = configuracion
   const nombreCategoria = (codigo: string) => catalogo.find(categoria => categoria.codigo === codigo)?.nombre ?? codigo
   const nombreSubcategoria = (codigo: string) => catalogo.flatMap(categoria => categoria.subcategorias)
     .find(subcategoria => subcategoria.codigo === codigo)?.nombre ?? codigo
@@ -33,7 +34,6 @@ export function RevisarPlan({ destino, disponibilidad, alojamiento, preferencias
       ? 'Categorías completas: ' + preferencias.categoriasExcluidas.map(nombreCategoria).join(', ') : '',
     preferencias.subcategoriasExcluidas.length > 0
       ? 'Actividades: ' + preferencias.subcategoriasExcluidas.map(nombreSubcategoria).join(', ') : '',
-    preferencias.restricciones.join(', '),
   ].filter(Boolean)
 
   const apartados: { campo: CampoPlan; titulo: string; valores: string[]; ayuda?: string }[] = [
@@ -58,7 +58,7 @@ export function RevisarPlan({ destino, disponibilidad, alojamiento, preferencias
   ]
 
   return (
-    <div className="revision-plan">
+    <div className="revision-plan" aria-busy={confirmando}>
       <div className="revision-tarjetas" aria-label="Detalles del plan">
         {apartados.map(apartado => (
           <section className="revision-tarjeta" key={apartado.campo} aria-labelledby={'revision-' + apartado.campo}>
@@ -68,21 +68,28 @@ export function RevisarPlan({ destino, disponibilidad, alojamiento, preferencias
               {apartado.ayuda && <p className="revision-ayuda">{apartado.ayuda}</p>}
             </div>
             <button className="revision-editar" type="button" aria-label={'Editar ' + apartado.titulo.toLowerCase()}
-              onClick={() => onEditar(apartado.campo)}>Editar</button>
+              disabled={confirmando} onClick={() => onEditar(apartado.campo)}>Editar</button>
           </section>
         ))}
       </div>
 
       <p className="revision-nota"><Icon name="informacion" />
-        <span>Tu plan sigue siendo un borrador. Podrás generar el itinerario próximamente.</span>
+        <span>Confirma los datos de este resumen. Si editas algún apartado, tendrás que confirmar de nuevo. El viaje todavía no se guarda.</span>
       </p>
+      <div className="revision-estado" role="status" aria-live="polite">
+        {confirmando ? 'Comprobando toda la configuración…' : confirmada
+          ? 'Configuración confirmada. Estos son los últimos valores validados para tu itinerario.'
+          : 'Configuración pendiente de confirmar.'}
+      </div>
+      {errorConfirmacion && <p className="error-viaje" role="alert">{errorConfirmacion}</p>}
       <div className="revision-acciones">
-        <button className="boton revision-atras" type="button" onClick={onAtras}>← Atrás</button>
-        <button className="boton boton-primario" type="button" disabled aria-describedby="revision-generacion">
-          Generar itinerario <Icon name="flecha" />
+        <button className="boton revision-atras" type="button" disabled={confirmando} onClick={onAtras}>← Atrás</button>
+        <button className="boton boton-primario" type="button" disabled={confirmando || confirmada}
+          onClick={onConfirmar}>
+          {confirmando ? 'Confirmando…' : confirmada ? 'Configuración confirmada' : errorConfirmacion ? 'Reintentar confirmación' : 'Confirmar configuración'} <Icon name="flecha" />
         </button>
       </div>
-      <p className="revision-generacion" id="revision-generacion">La generación del itinerario todavía no está disponible.</p>
+      <p className="revision-generacion">La generación del itinerario estará disponible próximamente. Confirmar la configuración no genera actividades.</p>
     </div>
   )
 }

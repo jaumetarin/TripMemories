@@ -92,7 +92,7 @@ class DestinoServiceTests {
                 """);
 
         assertEquals(List.of(new DestinoDto(
-                "cero", "Punto cero", "", "", 0, 0)),
+                "cero", "Punto cero", "", "", 0.0, 0.0)),
                 servicio.buscar("Madrid"));
         servidor.verify();
     }
@@ -110,9 +110,9 @@ class DestinoServiceTests {
                 """);
 
         assertEquals(List.of(
-                new DestinoDto("uno", "Nombre", "", "", 1, 2),
-                new DestinoDto("dos", "Dirección", "", "", 3, 4),
-                new DestinoDto("tres", "Nombre", "", "", 5, 6)),
+                new DestinoDto("uno", "Nombre", "", "", 1.0, 2.0),
+                new DestinoDto("dos", "Dirección", "", "", 3.0, 4.0),
+                new DestinoDto("tres", "Nombre", "", "", 5.0, 6.0)),
                 servicio.buscar("Madrid"));
         servidor.verify();
     }

@@ -13,6 +13,13 @@ export interface FechaHora {
   duracionDias: number
 }
 
+export interface ConfiguracionItinerario {
+  destino: Destino
+  disponibilidad: FechaHora
+  alojamiento: string
+  preferencias: Preferencias
+}
+
 export interface Preferencias {
   intereses: string[]
   categoriasExcluidas: string[]
@@ -150,7 +157,41 @@ function esDestino(valor: unknown): valor is Destino {
   const destino = valor as Record<string, unknown>
   return typeof destino.id === 'string' && typeof destino.nombre === 'string'
     && typeof destino.region === 'string' && typeof destino.pais === 'string'
-    && typeof destino.latitud === 'number' && typeof destino.longitud === 'number'
+    && typeof destino.latitud === 'number' && Number.isFinite(destino.latitud)
+    && typeof destino.longitud === 'number' && Number.isFinite(destino.longitud)
+}
+
+function esConfiguracionItinerario(valor: unknown): valor is ConfiguracionItinerario {
+  const formatoFechaHora = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?$/
+  return esObjeto(valor) && esDestino(valor.destino)
+    && esObjeto(valor.disponibilidad)
+    && typeof valor.disponibilidad.llegada === 'string'
+    && typeof valor.disponibilidad.salida === 'string'
+    && formatoFechaHora.test(valor.disponibilidad.llegada)
+    && formatoFechaHora.test(valor.disponibilidad.salida)
+    && typeof valor.disponibilidad.duracionDias === 'number'
+    && Number.isInteger(valor.disponibilidad.duracionDias)
+    && typeof valor.alojamiento === 'string' && esPreferencias(valor.preferencias)
+}
+
+export async function confirmarConfiguracion(
+  configuracion: ConfiguracionItinerario, signal: AbortSignal
+): Promise<ConfiguracionItinerario> {
+  const respuesta = await fetch('/api/itinerarios/confirmar-configuracion', {
+    method: 'POST',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(configuracion),
+  })
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) {
+    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+      ? datos.mensaje : 'No se ha podido confirmar la configuración. Comprueba la conexión con el backend e inténtalo de nuevo.')
+  }
+  if (!esConfiguracionItinerario(datos)) {
+    throw new Error('El servidor ha devuelto una configuración no válida. No se ha confirmado el viaje.')
+  }
+  return datos
 }
 
 export async function buscarDestinos(texto: string, signal: AbortSignal): Promise<Destino[]> {
