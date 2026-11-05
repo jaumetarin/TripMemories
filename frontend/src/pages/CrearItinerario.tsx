@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
-import type { CategoriaPreferencia, Destino, FechaHora, OpcionesGastoDistancia } from '../api'
+import { confirmarConfiguracion, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
+import type { CategoriaPreferencia, ConfiguracionItinerario, Destino, FechaHora, OpcionesGastoDistancia, Preferencias } from '../api'
 import { Icon } from '../assets/Icon'
 import { BuscadorDestinos } from '../components/BuscadorDestinos'
 import { CampoFecha } from '../components/CampoFecha'
 import { PreferenciasGasto } from './PreferenciasGasto'
-import type { DatosPreferencias } from './PreferenciasGasto'
 import { RevisarPlan } from './RevisarPlan'
 import type { CampoPlan } from './RevisarPlan'
 import './CrearItinerario.css'
@@ -42,9 +41,9 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [alojamiento, setAlojamiento] = useState('')
   const [disponibilidad, setDisponibilidad] = useState<FechaHora | null>(null)
   const [paso, setPaso] = useState<'destino' | 'preferencias' | 'resumen'>('destino')
-  const [preferencias, setPreferencias] = useState<DatosPreferencias>({
+  const [preferencias, setPreferencias] = useState<Preferencias>({
     intereses: [], categoriasExcluidas: [], subcategoriasExcluidas: [],
-    restricciones: [], nivelGasto: null, distanciaKm: null,
+    nivelGasto: null, distanciaKm: null,
   })
   const [catalogo, setCatalogo] = useState<CategoriaPreferencia[]>([])
   const [opcionesGastoDistancia, setOpcionesGastoDistancia] = useState<OpcionesGastoDistancia | null>(null)
@@ -54,13 +53,21 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('')
   const [errorDestino, setErrorDestino] = useState('')
   const [validando, setValidando] = useState(false)
+  const [editandoResumen, setEditandoResumen] = useState(false)
+  const [configuracionConfirmada, setConfiguracionConfirmada] = useState<ConfiguracionItinerario | null>(null)
+  const [confirmando, setConfirmando] = useState(false)
+  const [errorConfirmacion, setErrorConfirmacion] = useState('')
   const peticion = useRef<AbortController | null>(null)
+  const peticionConfirmacion = useRef<AbortController | null>(null)
   const campoEdicion = useRef<CampoPlan | null>(null)
   const errores = useRef<HTMLDivElement>(null)
   const inicio = useRef<HTMLInputElement>(null)
   const titulo = useRef<HTMLHeadingElement>(null)
 
-  useEffect(() => () => peticion.current?.abort(), [])
+  useEffect(() => () => {
+    peticion.current?.abort()
+    peticionConfirmacion.current?.abort()
+  }, [])
 
   useEffect(() => {
     const controlador = new AbortController()
@@ -118,7 +125,8 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       )
       if (!controlador.signal.aborted && destinoSeleccionado) {
         setDisponibilidad(resultado)
-        setPaso('preferencias')
+        setPaso(editandoResumen ? 'resumen' : 'preferencias')
+        setEditandoResumen(false)
       }
     } catch (error) {
       if (controlador.signal.aborted) return
@@ -147,16 +155,67 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   }
 
   function editarApartado(campo: CampoPlan) {
+    if (peticionConfirmacion.current) return
+    setConfiguracionConfirmada(null)
+    setErrorConfirmacion('')
+    setEditandoResumen(true)
     campoEdicion.current = campo
     const esDisponibilidad = ['destino', 'fechas', 'horarios', 'alojamiento'].includes(campo)
     setPaso(esDisponibilidad ? 'destino' : 'preferencias')
+  }
+
+  const configuracionActual: ConfiguracionItinerario | null = destinoSeleccionado && disponibilidad ? {
+    destino: destinoSeleccionado,
+    disponibilidad,
+    alojamiento,
+    preferencias: {
+      intereses: preferencias.intereses,
+      categoriasExcluidas: preferencias.categoriasExcluidas,
+      subcategoriasExcluidas: preferencias.subcategoriasExcluidas,
+      nivelGasto: preferencias.nivelGasto,
+      distanciaKm: preferencias.distanciaKm,
+    },
+  } : null
+
+  async function confirmarPlan() {
+    if (!configuracionActual || peticionConfirmacion.current || configuracionConfirmada) return
+    // La petición usa una copia de todos los datos visibles, nunca un borrador anterior.
+    const enviada = structuredClone(configuracionActual)
+    const controlador = new AbortController()
+    peticionConfirmacion.current = controlador
+    setConfirmando(true)
+    setErrorConfirmacion('')
+    try {
+      const confirmada = await confirmarConfiguracion(enviada, controlador.signal)
+      if (controlador.signal.aborted || peticionConfirmacion.current !== controlador) return
+      setConfiguracionConfirmada(confirmada)
+      setDestinoSeleccionado(confirmada.destino)
+      setDisponibilidad(confirmada.disponibilidad)
+      setFechaLlegada(confirmada.disponibilidad.llegada.split('T')[0])
+      setHoraLlegada(confirmada.disponibilidad.llegada.split('T')[1].slice(0, 5))
+      setFechaSalida(confirmada.disponibilidad.salida.split('T')[0])
+      setHoraSalida(confirmada.disponibilidad.salida.split('T')[1].slice(0, 5))
+      setAlojamiento(confirmada.alojamiento)
+      setPreferencias(confirmada.preferencias)
+    } catch (error) {
+      if (controlador.signal.aborted) return
+      setErrorConfirmacion(error instanceof Error && error.name === 'TimeoutError'
+        ? 'La confirmación está tardando demasiado. Revisa la conexión y vuelve a intentarlo.'
+        : error instanceof Error && error.name === 'Error' ? error.message
+        : 'No se puede conectar con el backend. Tus datos se conservan; vuelve a intentar la confirmación.')
+    } finally {
+      if (peticionConfirmacion.current === controlador) {
+        peticionConfirmacion.current = null
+        if (!controlador.signal.aborted) setConfirmando(false)
+      }
+    }
   }
 
   const indiceActual = paso === 'destino' ? 0 : paso === 'preferencias' ? 1 : 2
 
   return (
     <section className={`crear-viaje${paso === 'preferencias' ? ' crear-viaje-preferencias' : paso === 'resumen' ? ' crear-viaje-revision' : ''}`} aria-labelledby="crear-titulo">
-      <button className="boton-volver" type="button" onClick={onVolver}>← Volver al inicio</button>
+      <button className="boton-volver" type="button" onClick={onVolver} disabled={confirmando}>← Volver al inicio</button>
       <nav className="acompanamiento" aria-label="Etapas del itinerario">
         <ol className="pasos">
           {etapas.map((etapa, indice) => {
@@ -224,14 +283,15 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           </div>
           <p className="aviso-formulario">Comprobaremos tu disponibilidad antes de continuar. El viaje todavía no se guarda.</p>
           <button className="boton boton-primario continuar" type="submit" disabled={validando}>
-            {validando ? 'Comprobando disponibilidad…' : 'Continuar'} <Icon name="flecha" />
+            {validando ? 'Comprobando disponibilidad…' : editandoResumen ? 'Guardar cambios y volver al resumen' : 'Continuar'} <Icon name="flecha" />
           </button>
         </form>
       </div>
-      {paso === 'resumen' && disponibilidad && destinoSeleccionado && (
-        <RevisarPlan destino={destinoSeleccionado} disponibilidad={disponibilidad} alojamiento={alojamiento}
-          preferencias={preferencias} catalogo={catalogo} opcionesGastoDistancia={opcionesGastoDistancia}
-          onEditar={editarApartado} onAtras={() => setPaso('preferencias')} />
+      {paso === 'resumen' && configuracionActual && (
+        <RevisarPlan configuracion={configuracionConfirmada ?? configuracionActual}
+          confirmada={configuracionConfirmada !== null} confirmando={confirmando} errorConfirmacion={errorConfirmacion}
+          catalogo={catalogo} opcionesGastoDistancia={opcionesGastoDistancia}
+          onEditar={editarApartado} onAtras={() => editarApartado('intereses')} onConfirmar={confirmarPlan} />
       )}
       {paso === 'preferencias' && disponibilidad && destinoSeleccionado && (
         <PreferenciasGasto destino={destinoSeleccionado} disponibilidad={disponibilidad} alojamiento={alojamiento}
@@ -239,8 +299,10 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           opcionesGastoDistancia={opcionesGastoDistancia}
           onReintentarCatalogo={reintentarCatalogo}
           datos={preferencias} onCambiar={setPreferencias} onAtras={editarDisponibilidad}
+          editandoResumen={editandoResumen}
           onContinuar={confirmadas => {
             setPreferencias(actuales => ({ ...actuales, ...confirmadas }))
+            setEditandoResumen(false)
             setPaso('resumen')
           }} />
       )}

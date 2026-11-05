@@ -260,9 +260,8 @@ se desmarque el interés principal. El estado se mantiene en `CrearItinerario`,
 por lo que ir al resumen o volver al primer paso conserva las preferencias, el
 destino, las fechas, las horas, el alojamiento, el gasto y la distancia.
 
-Las otras preferencias (afluencia y coste elevado) mantienen su interfaz actual;
-todavía no se envían al backend. **Vida nocturna** forma parte de las exclusiones
-de ocio. El nivel de gasto y la distancia sí se incluyen en la configuración
+**Vida nocturna** forma parte de las exclusiones de ocio.
+El nivel de gasto y la distancia se incluyen en la configuración
 validada, como se describe en la UT5.
 
 Las validaciones de esta UT son independientes de Geoapify y de PostgreSQL.
@@ -332,6 +331,87 @@ Pruebas automáticas de UT4 y UT5, sin Geoapify ni PostgreSQL:
 
 ```powershell
 .\mvnw.cmd '-Dtest=PreferenciasServiceTests,PreferenciasControllerTests,GastoDistanciaServiceTests,GastoDistanciaControllerTests' test
+```
+
+### UT6: revisión y confirmación de la configuración
+
+Alcance acordado: preparar y validar el viaje para el futuro Planner.
+**No se generan actividades ni se guarda el viaje en base de datos.**
+El paso de la PA que pide generar el itinerario queda pendiente del generador.
+
+`POST /api/itinerarios/confirmar-configuracion` recibe y devuelve un único
+`ConfiguracionItinerarioDto`:
+
+```json
+{
+  "destino": {
+    "id": "identificador-del-destino-seleccionado",
+    "nombre": "Madrid",
+    "region": "Comunidad de Madrid",
+    "pais": "España",
+    "latitud": 40.4168,
+    "longitud": -3.7038
+  },
+  "disponibilidad": {
+    "llegada": "2026-11-10T10:00",
+    "salida": "2026-11-12T18:00",
+    "duracionDias": 3
+  },
+  "alojamiento": "Hotel Madrid",
+  "preferencias": {
+    "intereses": ["GASTRONOMIA"],
+    "categoriasExcluidas": ["ARTE_MUSEOS"],
+    "subcategoriasExcluidas": ["COMIDA_RAPIDA"],
+    "nivelGasto": "MODERADO",
+    "distanciaKm": 3
+  }
+}
+```
+
+`ConfiguracionItinerarioService.validar` comprueba destino y coordenadas,
+reutiliza `FechaHoraService` y `PreferenciasService`, recalcula la duración
+ignorando la enviada por el cliente y devuelve listas sin duplicados y sin
+referencias mutables a las listas de entrada. El alojamiento es opcional,
+se recortan los espacios exteriores y su máximo es 250 caracteres.
+
+El destino se comprueba estructuralmente (identificador y nombre presentes,
+coordenadas finitas y dentro de rango); esta operación no consulta Geoapify
+ni acredita por sí sola la identidad de un lugar. Los `Double` de `DestinoDto`
+permiten detectar coordenadas ausentes, sin convertirlas silenciosamente a cero.
+
+Respuesta válida: HTTP 200 con la configuración normalizada y `Cache-Control: no-store`.
+Errores de formato o de negocio: HTTP 400 con `mensaje`. El endpoint
+es independiente de Geoapify, no almacena estado entre solicitudes y no crea un
+identificador de viaje, sesión de confirmación ni itinerario.
+
+En la interfaz:
+
+1. Completar el formulario y abrir `Revisa tu plan`. El estado es pendiente.
+2. Pulsar `Confirmar configuración`. El resumen pasa a mostrar la respuesta
+   validada por el backend. Mientras se procesa se bloquean confirmación,
+   edición y retroceso; se ignoran clics duplicados.
+3. Pulsar `Editar` en cualquier apartado. Se invalida la confirmación anterior.
+4. Guardar los cambios para regresar directamente al resumen y confirmar de nuevo.
+   No se reinician los otros datos.
+5. Si falla la conexión, conservar el borrador, mostrar el error y ofrecer reintento.
+
+La petición usa una copia completa de la configuración vigente. Al abandonar
+la página se cancela; una respuesta cancelada no puede restaurar una confirmación
+anterior. El estado confirmado es local al formulario y se pierde al recargar
+o abandonar la sección. No existe todavía persistencia del borrador.
+
+El futuro Planner deberá consumir la última `ConfiguracionItinerarioDto`
+confirmada y volver a pasarla por `ConfiguracionItinerarioService.validar`
+en el servidor. La prueba de integración con generación real se añadirá entonces;
+un HTTP 200 de confirmación no se presenta como un itinerario generado.
+
+Aceptación disponible: confirmar Económico y 3 km; editar solo el gasto a
+Moderado; regresar al resumen; confirmar y comprobar que destino, fechas,
+horarios, alojamiento, listas y distancia permanecen iguales. Repetir con
+otros apartados y con valores inválidos para comprobar el bloqueo.
+
+```powershell
+.\mvnw.cmd '-Dtest=ConfiguracionItinerarioServiceTests,ConfiguracionItinerarioControllerTests' test
 ```
 
 ### Comprobar el autocompletado

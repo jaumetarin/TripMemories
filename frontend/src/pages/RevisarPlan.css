@@ -20,6 +20,10 @@
 .revision-atras { background: transparent; color: var(--secundario); border-color: #dcdce2; }
 .revision-atras:hover { background: white; color: var(--primario); }
 .revision-generacion { margin-top: 12px; color: var(--secundario); text-align: right; font-size: .7rem; }
+.revision-estado { padding: 14px 16px; margin-bottom: 20px; border: 1px solid #cfe4dc; border-radius: 12px; background: #f0f7f3; color: #246555; font-size: .8rem; line-height: 1.6; }
+.revision-editar:disabled { opacity: .55; text-decoration: none; }
+.revision-acciones .boton { white-space: normal; }
+.acciones-preferencias .boton-primario { max-width: 70%; }
 .grupo-preferencias[tabindex="-1"]:focus { outline: 2px solid var(--primario); outline-offset: 9px; border-radius: 8px; }
 #editar-intereses, #editar-exclusiones, #editar-gasto, #distancia-actividades,
 #editar-destino input, #fecha-llegada, #hora-llegada, #alojamiento { scroll-margin-top: 140px; }

@@ -5,10 +5,6 @@ import type { CategoriaPreferencia, Destino, FechaHora, OpcionesGastoDistancia, 
 import { Icon } from '../assets/Icon'
 import './PreferenciasGasto.css'
 
-export interface DatosPreferencias extends Preferencias {
-  restricciones: string[]
-}
-
 type Props = {
   destino: Destino
   disponibilidad: FechaHora
@@ -18,10 +14,11 @@ type Props = {
   cargandoCatalogo: boolean
   errorCatalogo: string
   onReintentarCatalogo: () => void
-  datos: DatosPreferencias
-  onCambiar: (datos: DatosPreferencias) => void
+  datos: Preferencias
+  onCambiar: (datos: Preferencias) => void
   onAtras: () => void
   onContinuar: (preferencias: Preferencias) => void
+  editandoResumen?: boolean
 }
 
 type Validacion = {
@@ -36,7 +33,6 @@ const iconos: Record<string, string> = {
   GASTRONOMIA: '🍽️', ARTE_MUSEOS: '🎨', HISTORIA_ARQUITECTURA: '🏛️',
   NATURALEZA_PARQUES: '🌿', CULTURA_LOCAL: '🎭', OCIO_ENTRETENIMIENTO: '🎡',
 }
-const restricciones = ['Lugares muy concurridos', 'Actividades de coste elevado']
 
 function mostrarFecha(fechaHora: string) {
   const [anio, mes, dia] = fechaHora.split('T')[0].split('-')
@@ -44,7 +40,8 @@ function mostrarFecha(fechaHora: string) {
 }
 
 export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalogo, cargandoCatalogo,
-  opcionesGastoDistancia, errorCatalogo, onReintentarCatalogo, datos, onCambiar, onAtras, onContinuar }: Props) {
+  opcionesGastoDistancia, errorCatalogo, onReintentarCatalogo, datos, onCambiar, onAtras, onContinuar,
+  editandoResumen = false }: Props) {
   const [validacion, setValidacion] = useState<Validacion | null>(null)
   const [reintento, setReintento] = useState(0)
   const [gruposAbiertos, setGruposAbiertos] = useState<string[]>(() => catalogo
@@ -89,7 +86,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
     return () => { vigente = false; window.clearTimeout(espera); controlador.abort() }
   }, [seleccion, tieneCatalogo, reintento])
 
-  function cambiarSeleccion(campo: 'intereses' | 'categoriasExcluidas' | 'subcategoriasExcluidas' | 'restricciones',
+  function cambiarSeleccion(campo: 'intereses' | 'categoriasExcluidas' | 'subcategoriasExcluidas',
     codigo: string, marcada: boolean) {
     const valores = marcada
       ? [...new Set([...datos[campo], codigo])]
@@ -188,17 +185,6 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           )}
         </fieldset>
 
-        <fieldset className="grupo-preferencias">
-          <legend>Otras preferencias</legend>
-          <div className="evitar-opciones">
-            {restricciones.map(opcion => <label className="opcion-evitar" key={opcion} data-seleccionada={datos.restricciones.includes(opcion) || undefined}>
-              <input type="checkbox" name="restricciones" value={opcion} checked={datos.restricciones.includes(opcion)}
-                onChange={evento => cambiarSeleccion('restricciones', opcion, evento.target.checked)} /><span>{opcion}</span>
-            </label>)}
-          </div>
-          <p className="ayuda-preferencias">Estas opciones orientarán las recomendaciones; no son garantías absolutas.</p>
-        </fieldset>
-
         <fieldset className="grupo-preferencias" id="editar-gasto" tabIndex={-1} disabled={!tieneCatalogo}>
           <legend>Nivel de gasto</legend>
           <p className="ayuda-preferencias" id="ayuda-gasto">{opcionesGastoDistancia?.significadoGasto}</p>
@@ -239,7 +225,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
         <div className="acciones-preferencias">
           <button className="boton boton-secundario" type="button" onClick={onAtras}>← Atrás</button>
           <button className="boton boton-primario" type="submit" disabled={!puedeContinuar}>
-            {comprobando ? 'Comprobando…' : 'Continuar'} <Icon name="derecha" />
+            {comprobando ? 'Comprobando…' : editandoResumen ? 'Guardar cambios y volver al resumen' : 'Continuar'} <Icon name="derecha" />
           </button>
         </div>
       </form>

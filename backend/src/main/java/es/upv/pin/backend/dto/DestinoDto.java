@@ -5,6 +5,6 @@ public record DestinoDto(
         String nombre,
         String region,
         String pais,
-        double latitud,
-        double longitud) {
+        Double latitud,
+        Double longitud) {
 }

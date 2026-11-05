@@ -23,15 +23,14 @@
 .preferencias-formulario .error-viaje { margin-bottom: 24px; }
 .enlace-preferencias { border: 0; background: transparent; color: inherit; padding: 8px 0 0; text-decoration: underline; text-underline-offset: 3px; font-size: .75rem; }
 .intereses-opciones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
-.opcion-interes, .opcion-evitar, .opcion-gasto { border: 1px solid #dedee3; color: #37373d; background: #fff; cursor: pointer; transition: border-color .15s, background .15s; }
-.opcion-interes:hover, .opcion-evitar:hover, .opcion-gasto:hover { border-color: #92bdb4; background: #fafcfb; }
-.opcion-interes[data-seleccionada], .opcion-evitar[data-seleccionada], .opcion-gasto[data-seleccionada] { border-color: var(--primario); background: #eff7f4; }
-.opcion-interes:focus-within, .opcion-evitar:focus-within, .opcion-gasto:focus-within { outline: 3px solid var(--primario); outline-offset: 3px; }
+.opcion-interes, .opcion-gasto { border: 1px solid #dedee3; color: #37373d; background: #fff; cursor: pointer; transition: border-color .15s, background .15s; }
+.opcion-interes:hover, .opcion-gasto:hover { border-color: #92bdb4; background: #fafcfb; }
+.opcion-interes[data-seleccionada], .opcion-gasto[data-seleccionada] { border-color: var(--primario); background: #eff7f4; }
+.opcion-interes:focus-within, .opcion-gasto:focus-within { outline: 3px solid var(--primario); outline-offset: 3px; }
 .preferencias-formulario input[type="checkbox"], .preferencias-formulario input[type="radio"] { accent-color: var(--primario); width: 16px; height: 16px; margin: 0; flex-shrink: 0; cursor: pointer; }
 .opcion-interes { display: grid; grid-template-columns: 25px minmax(0, 1fr) 16px; align-items: center; gap: 8px; min-height: 84px; padding: 13px 12px; border-radius: 14px; font-size: .75rem; line-height: 1.45; }
 .interes-icono { font-size: 1.2rem; }
 .evitar-opciones { display: flex; flex-wrap: wrap; gap: 9px; margin: 16px 0 10px; }
-.opcion-evitar { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 9px 13px; border-radius: 22px; font-size: .75rem; }
 .gasto-opciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .opcion-gasto { display: flex; align-items: flex-start; gap: 11px; min-height: 96px; padding: 17px; border-radius: 14px; }
 .opcion-gasto strong { display: block; font-size: .8rem; font-weight: 550; margin-bottom: 4px; }
