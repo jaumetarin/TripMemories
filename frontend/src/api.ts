@@ -297,3 +297,77 @@ export async function validarFechaHora(
     duracionDias: datos.duracionDias,
   }
 }
+
+export type CosteCandidato = 'FREE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
+
+export interface CandidatoEvaluado {
+  lugar: Lugar
+  afinidad: number
+  duracionMinutos: number
+  etiqueta: string
+  motivo: string
+  coste: CosteCandidato
+  origenEvaluacion: 'GEMINI' | 'LOCAL'
+  confianzaCoste: 'CONFIRMED' | 'ESTIMATED' | 'UNKNOWN'
+  estadoHorario: 'VERIFIED' | 'PARTIAL' | 'UNVERIFIED'
+  precioMinimo: number | null
+  precioMaximo: number | null
+  moneda: string | null
+  informacion: string | null
+  fuentes: string[]
+  horario: string | null
+  horarioFuente: string | null
+}
+
+export interface EvaluacionCandidatos {
+  candidatos: CandidatoEvaluado[]
+  fallback: boolean
+  advertencias: string[]
+  minutosDisponibles: number
+  minutosInvestigados: number
+}
+
+function esTextoONulo(valor: unknown): valor is string | null {
+  return valor === null || typeof valor === 'string'
+}
+
+function esNumeroONulo(valor: unknown): valor is number | null {
+  return valor === null || typeof valor === 'number' && Number.isFinite(valor) && valor >= 0
+}
+
+function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado {
+  return esObjeto(valor) && esLugar(valor.lugar)
+    && typeof valor.afinidad === 'number' && Number.isFinite(valor.afinidad)
+    && typeof valor.duracionMinutos === 'number' && Number.isFinite(valor.duracionMinutos) && valor.duracionMinutos > 0
+    && typeof valor.etiqueta === 'string' && typeof valor.motivo === 'string'
+    && typeof valor.coste === 'string' && ['FREE', 'LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'].includes(valor.coste)
+    && (valor.origenEvaluacion === 'GEMINI' || valor.origenEvaluacion === 'LOCAL')
+    && (valor.confianzaCoste === 'CONFIRMED' || valor.confianzaCoste === 'ESTIMATED' || valor.confianzaCoste === 'UNKNOWN')
+    && (valor.estadoHorario === 'VERIFIED' || valor.estadoHorario === 'PARTIAL' || valor.estadoHorario === 'UNVERIFIED')
+    && esNumeroONulo(valor.precioMinimo) && esNumeroONulo(valor.precioMaximo) && esTextoONulo(valor.moneda)
+    && esTextoONulo(valor.informacion) && esListaDeTextos(valor.fuentes)
+    && esTextoONulo(valor.horario) && esTextoONulo(valor.horarioFuente)
+}
+
+export async function evaluarCandidatos(
+  configuracion: ConfiguracionItinerario, signal: AbortSignal
+): Promise<EvaluacionCandidatos> {
+  const respuesta = await fetch('/api/candidatos/evaluar', {
+    method: 'POST',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(configuracion),
+  })
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) {
+    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+      ? datos.mensaje : 'No se han podido evaluar los lugares. Comprueba la conexión y vuelve a intentarlo.')
+  }
+  if (!esObjeto(datos) || !Array.isArray(datos.candidatos) || !datos.candidatos.every(esCandidatoEvaluado)
+    || typeof datos.fallback !== 'boolean' || !esListaDeTextos(datos.advertencias)
+    || typeof datos.minutosDisponibles !== 'number' || !Number.isFinite(datos.minutosDisponibles)
+    || typeof datos.minutosInvestigados !== 'number' || !Number.isFinite(datos.minutosInvestigados)) {
+    throw new Error('El servidor ha devuelto una evaluación de lugares no válida.')
+  }
+  return datos as unknown as EvaluacionCandidatos
+}

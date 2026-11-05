@@ -9,3 +9,7 @@
 .candidato-tarjeta p { color: var(--secundario); font-size: .78rem; line-height: 1.65; }
 .candidato-tarjeta .candidato-horario { margin-top: 8px; white-space: pre-line; }
 .candidatos-atribucion a { color: inherit; text-underline-offset: 3px; }
+.candidatos-lugares > .candidatos-aviso { padding: 12px 15px; border: 1px solid #d9b965; border-radius: 10px; background: #fff8e6; color: #674c11; }
+.candidato-tarjeta .candidato-etiqueta { display: inline-block; margin: 9px 0; padding: 3px 9px; border-radius: 999px; background: var(--fondo, #f3f4f5); font-weight: 600; }
+.candidato-tarjeta .candidato-fuentes { margin-top: 8px; }
+.candidato-fuentes a { color: inherit; text-underline-offset: 3px; }
