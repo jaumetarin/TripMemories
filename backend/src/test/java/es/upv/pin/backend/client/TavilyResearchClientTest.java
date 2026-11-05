@@ -135,4 +135,66 @@ class TavilyResearchClientTest {
 
         assertTrue(cliente(respuesta).investigar(List.of(lugar), "Valencia").isEmpty());
     }
+    @Test
+    void noAsignaGratuidadGeneralSiHayNegacionesOCondiciones() throws Exception {
+        List<String> frases = List.of(
+                "No hay entrada gratuita.",
+                "Entrada gratuita a partir de las 18:00.");
+
+        for (String frase : frases) {
+            String respuesta = """
+                    {
+                    "results": [
+                    {
+                    "title": "Museo Azul Valencia",
+                    "url": "https://museo.example/visitas",
+                    "content": "%s"
+                    }
+                    ]
+                    }
+                    """.formatted(frase);
+
+            var hallazgo = cliente(respuesta)
+                    .investigar(List.of(lugar), "Valencia")
+                    .get(lugar.id());
+
+            // El texto ambiguo no debe convertirse en un precio general.
+            assertTrue(
+                    hallazgo == null
+                            || (hallazgo.precioMinimo() == null
+                                    && hallazgo.precioMaximo() == null),
+                    "No debería asignarse un precio a esta frase: " + frase);
+        }
+    }
+    @Test
+    void noAceptaHorariosAmPmRecortados() throws Exception {
+        List<String> frases = List.of(
+                "Opening hours 09:00 - 05:00 PM.",
+                "Opening hours 09:00 AM - 05:00 PM.",
+                "Opening hours 09:00 - 05:00PM.",
+                "Opening hours 09:00am - 05:00pm.");
+
+        for (String frase : frases) {
+            String respuesta = """
+                    {
+                    "results": [
+                    {
+                    "title": "Museo Azul Valencia",
+                    "url": "https://museo.example/visitas",
+                    "content": "%s"
+                    }
+                    ]
+                    }
+                    """.formatted(frase);
+
+            var hallazgo = cliente(respuesta)
+                    .investigar(List.of(lugar), "Valencia")
+                    .get(lugar.id());
+
+            // No debemos guardar un intervalo que haya perdido AM/PM.
+            assertTrue(
+                    hallazgo == null || hallazgo.horario() == null,
+                    "No debería aceptarse este horario sin interpretar: " + frase);
+        }
+    }
 }
