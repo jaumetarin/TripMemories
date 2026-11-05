@@ -18,6 +18,7 @@ TripMemories/
 │   └── src/main/resources/db/
 │       ├── migration/                # Esquema aplicado por Flyway
 │       └── seed/                     # Datos de ejemplo para desarrollo
+├── docs/                             # Relevo técnico del planificador
 ├── compose.yaml                      # PostgreSQL/PostGIS local
 └── README.md
 ```
@@ -587,6 +588,13 @@ identificador de Geoapify solo relaciona respuestas: Gemini recibe referencias
 temporales, nunca el identificador externo. Gemini no decide el itinerario ni el
 orden de los días; esa tarea corresponde a UT12.
 
+El orden de las fases responde a una decisión del planificador: **Geoapify aporta
+lugares reales; UT8 elimina duplicados y aplica intereses y exclusiones; Gemini
+estima afinidad y duración para todos los supervivientes; Tavily investiga solo
+algunos de los mejor situados**. La IA no puede crear lugares ni fijar rutas.
+Después de Tavily no se hace otra llamada a Gemini: el plan diario de UT12 lo
+construirá una heurística propia del backend con tiempos peatonales de UT11.
+
 La afinidad y la duración de Gemini son estimaciones. La etiqueta y el motivo
 visibles se construyen a partir de las categorías del lugar y los intereses
 elegidos; no se publican afirmaciones libres de Gemini que no tengan respaldo
@@ -598,6 +606,9 @@ inválidos, todos los candidatos reciben una clasificación local determinista y
 la respuesta incluye `fallback: true` y una advertencia. Un fallo de Geoapify
 continúa siendo un error 503; una búsqueda válida sin lugares devuelve una lista
 vacía. Las duraciones se muestran siempre con `≈` porque son orientativas.
+La alternativa local se basa en categorías e intereses, nunca en el identificador
+del proveedor. Esto conserva el flujo cuando falla Gemini sin fingir una
+evaluación semántica equivalente.
 
 La búsqueda externa para los candidatos mejor situados es opcional y utiliza
 `TAVILY_API_KEY` únicamente en el backend. Investiga progresivamente según la
@@ -605,9 +616,28 @@ capacidad orientativa del viaje: 10:00–18:00 por día, recortada por la llegad
 la salida. Este cálculo no garantiza que las actividades quepan, porque los
 desplazamientos y el reparto diario se resolverán en UT11/UT12. Cada petición
 tiene un plazo total de 100 segundos y un límite técnico de 100 búsquedas; si
-se alcanza, se devuelven
-las evaluaciones ya disponibles con un aviso. Sin clave Tavily, la evaluación
-Gemini o local sigue funcionando y los datos externos permanecen desconocidos.
+se alcanza, se devuelven las evaluaciones ya disponibles con un aviso. Sin clave
+Tavily, la evaluación Gemini o local sigue funcionando y los datos externos
+permanecen desconocidos.
+Se eligió una búsqueda separada porque la consulta web de Gemini no estaba
+disponible en el nivel gratuito de la API usado por el proyecto; Tavily permite
+una cuota gratuita sin tarjeta (véanse las [tarifas de Gemini](https://ai.google.dev/gemini-api/docs/pricing)
+y el [plan gratuito de Tavily](https://help.tavily.com/articles/8816424538-pricing)).
+El cliente usa REST en el backend, conserva URL
+de origen y descarta resultados cuyo título no identifica el lugar o proceden de
+redes sociales y ciertas páginas de reseñas. La información de terceros sigue
+siendo parcial y puede variar.
+
+Configura las claves **en la terminal del backend**, como `GEOAPIFY_API_KEY`;
+no las pongas en el frontend ni en Git. En PowerShell, antes de arrancar:
+
+```powershell
+$env:GEMINI_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Clave de Gemini' -AsSecureString)).Password
+$env:TAVILY_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Clave de Tavily' -AsSecureString)).Password
+```
+
+`TAVILY_API_KEY` es opcional. Las claves de las pruebas reales se pasaron solo al
+proceso y no se guardaron en este repositorio.
 
 El precio básico por persona se clasifica en `FREE` (0 €), `LOW` (>0–25 €),
 `MEDIUM` (>25–50 €), `HIGH` (>50 €) o `UNKNOWN`. Solo se clasifica cuando existe
@@ -622,3 +652,34 @@ Geoapify. `CandidatoExceptionHandler` devuelve 400 para configuración inválida
 y 503 para fallos de obtención de lugares. El frontend muestra afinidad, motivo,
 duración estimada, coste, horario, procedencia y avisos. No muestra todavía un
 itinerario distribuido por días.
+
+La prueba real de Valencia (arte y museos, un día de 10:00 a 18:00) devolvió 81
+candidatos evaluados por Gemini. Tavily aportó fuentes para 6, precio para 4 y
+horario externo para 4; el contador orientativo alcanzó 420 de 480 minutos antes
+del límite de 100 segundos. Otra ejecución comparable terminó en unos 16
+segundos: la latencia y la cobertura no son constantes. `minutosInvestigados`
+suma duraciones de candidatos con algún hallazgo, **no** significa que esos
+lugares ya formen un día viable. La suite completa pasó 237 pruebas de backend
+y la compilación del frontend.
+
+## Continuación del primer itinerario: UT11 a UT16
+
+El [documento de continuidad](docs/continuidad-planificador-ut09-ut16.md) contiene
+el contrato actual, decisiones justificadas, pruebas realizadas, límites conocidos,
+orden de trabajo y criterios de aceptación para el equipo. La secuencia pendiente
+del primer plan es:
+
+1. **UT11:** obtener tiempos y distancias a pie con OpenRouteService; avisar si
+   una ruta no está disponible, sin inventar minutos.
+2. **UT12:** construir con una heurística propia los días, visitas y traslados
+   que caben en la disponibilidad. Si faltan candidatos viables, devolver un
+   plan parcial con tiempo libre explícito.
+3. **UT13:** incluir comidas, descansos y márgenes sin solapamientos.
+4. **UT14:** validar el plan y explicar conflictos y datos inciertos.
+5. **UT15:** presentar el itinerario por días con detalles y traslados.
+6. **UT16:** sincronizar lugares de la lista y marcadores del mapa.
+
+Gasto y distancia todavía no participan en el ranking de Gemini. El Planner
+deberá considerarlos como preferencias al disponer de precios y recorridos, y
+mantener `UNKNOWN` cuando un dato no esté respaldado. UT17 añadirá después el
+control de solicitudes repetidas y cuotas de generación.
