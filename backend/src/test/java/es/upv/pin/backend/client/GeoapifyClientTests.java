@@ -17,6 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import es.upv.pin.backend.dto.RespuestaLugaresGeoapifyDto;
 
 class GeoapifyClientTests {
 
@@ -92,4 +96,119 @@ class GeoapifyClientTests {
         assertEquals(40.4168, json.path("latitud").asDouble());
         assertEquals(-3.7038, json.path("longitud").asDouble());
     }
+    @Test
+    void interpretaLosLugaresDeGeoapify() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo("https://api.geoapify.com/v2/places"
+                        + "?categories=entertainment.museum"
+                        + "&filter=place:destino-prueba"
+                        + "&limit=20"
+                        + "&lang=es"
+                        + "&apiKey=clave-de-prueba"))
+                .andRespond(withSuccess("""
+                        {
+                        "type": "FeatureCollection",
+                        "features": [
+                                {
+                                "type": "Feature",
+                                "properties": {
+                                "place_id": "museo-prueba",
+                                "name": "Museo de prueba",
+                                "lat": 40.4,
+                                "lon": -3.7,
+                                "categories": ["entertainment.museum"],
+                                "formatted": "Dirección de prueba"
+                                }
+                                }
+                        ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        RespuestaLugaresGeoapifyDto respuesta = cliente.buscarLugares(
+                "destino-prueba", "entertainment.museum", 20);
+
+        assertEquals(1, respuesta.features().size());
+
+        var lugar = respuesta.features().get(0).properties();
+
+        assertEquals("museo-prueba", lugar.place_id());
+        assertEquals("Museo de prueba", lugar.name());
+        assertEquals(40.4, lugar.lat().doubleValue());
+        assertEquals(-3.7, lugar.lon().doubleValue());
+        assertEquals(List.of("entertainment.museum"), lugar.categories());
+        assertEquals("Dirección de prueba", lugar.formatted());
+
+        servidor.verify();
+        }
+
+        private String urlLugaresDePrueba() {
+                return "https://api.geoapify.com/v2/places"
+                        + "?categories=entertainment.museum"
+                        + "&filter=place:destino-prueba"
+                        + "&limit=20"
+                        + "&lang=es"
+                        + "&apiKey=clave-de-prueba";
+        }
+     @Test
+     void aceptaUnaRespuestaSinLugares() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlLugaresDePrueba()))
+                .andRespond(withSuccess("""
+                        {
+                        "type": "FeatureCollection",
+                        "features": []
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        RespuestaLugaresGeoapifyDto respuesta = cliente.buscarLugares(
+                "destino-prueba", "entertainment.museum", 20);
+
+        assertTrue(respuesta.features().isEmpty());
+
+        servidor.verify();
+        }
+    @Test
+    void comunicaUnFalloDelProveedor() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlLugaresDePrueba()))
+                .andRespond(withServerError());
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> cliente.buscarLugares(
+                        "destino-prueba", "entertainment.museum", 20));
+
+        assertEquals(
+                "No se ha podido consultar el servicio de lugares.",
+                error.getMessage());
+
+        servidor.verify();
+        }
 }
