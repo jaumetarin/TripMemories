@@ -73,4 +73,66 @@ class TavilyResearchClientTest {
                         .investigar(List.of(lugar), "Valencia")
                         .isEmpty());
     }
+
+    @Test
+    void reconoceNombreAlternativoDeGeoapifyYUnePrecioYHorarioDeDosFuentes() throws Exception {
+        var museo = new LugarDto(
+                "id", "Museu de Belles Arts de València",
+                "Museo de Bellas Artes de Valencia, Calle de San Pío V, 9, Valencia",
+                null, null, List.of(), List.of(), null);
+        String respuesta = "{\"results\":["
+                + "{\"title\":\"Horarios y tarifas - Museo de Bellas Artes de Valencia\","
+                + "\"url\":\"https://museo.example/oficial\",\"content\":\"Entrada gratuita.\"},"
+                + "{\"title\":\"Museo de Bellas Artes de Valencia\","
+                + "\"url\":\"https://turismo.example/horario\","
+                + "\"content\":\"Horario de apertura\\nMartes a domingo\\n10:00 - 20:00.\"}]}";
+
+        var hallazgo = cliente(respuesta).investigar(List.of(museo), "Valencia").get("id");
+
+        assertEquals(0.0, hallazgo.precioMinimo());
+        assertTrue(hallazgo.horario().contains("10:00 - 20:00"));
+        assertEquals("https://museo.example/oficial", hallazgo.fuentePrecio());
+        assertEquals("https://turismo.example/horario", hallazgo.fuenteHorario());
+        assertEquals(2, hallazgo.fuentes().size());
+    }
+
+    @Test
+    void ignoraRedesSocialesYNoConfundeDiasDeCierreConEntradaCondicionada()
+            throws Exception {
+        String respuesta = "{\"results\":["
+                + "{\"title\":\"Museo Azul Valencia\",\"url\":\"https://www.instagram.com/p/1\","
+                + "\"content\":\"Museo Azul Valencia. Entrada gratuita. Horario 10:00 - 20:00.\"},"
+                + "{\"title\":\"Museo Azul Valencia\",\"url\":\"https://museo.example/visitas\","
+                + "\"content\":\"Días de cierre: lunes. Tickets. Entrada gratuita. Horario de apertura\\nMartes a domingo\\n10:00 - 20:00.\"}]}";
+
+        var hallazgo = cliente(respuesta).investigar(List.of(lugar), "Valencia").get(lugar.id());
+
+        assertEquals(0.0, hallazgo.precioMinimo());
+        assertEquals("https://museo.example/visitas", hallazgo.fuentePrecio());
+        assertEquals("https://museo.example/visitas", hallazgo.fuenteHorario());
+        assertEquals(1, hallazgo.fuentes().size());
+    }
+
+    @Test
+    void noAtribuyeHorarioDeUnaEntidadAlMuseoMencionadoEnSuPagina() throws Exception {
+        var museo = new LugarDto(
+                "id", "Museu de l'Arròs de València",
+                "Museo del Arroz, Calle del Rosario, 3, Valencia",
+                null, null, List.of(), List.of(), null);
+        String respuesta = "{\"results\":[{\"title\":\"Arroz de Valencia Denominación de Origen\","
+                + "\"url\":\"https://arroz.example\","
+                + "\"content\":\"Conoce el Museo del Arroz. Museu de l'Arròs de València."
+                + " Horario: De lunes a viernes de 08:00 a 14:30.\"}]}";
+
+        assertTrue(cliente(respuesta).investigar(List.of(museo), "Valencia").isEmpty());
+    }
+
+    @Test
+    void noUsaPrecioDeResenasDeTripadvisor() throws Exception {
+        String respuesta = "{\"results\":[{\"title\":\"Museo Azul Valencia\","
+                + "\"url\":\"https://www.tripadvisor.es/Museo-Azul\","
+                + "\"content\":\"Museo Azul Valencia. Entrada general 2 EUR.\"}]}";
+
+        assertTrue(cliente(respuesta).investigar(List.of(lugar), "Valencia").isEmpty());
+    }
 }

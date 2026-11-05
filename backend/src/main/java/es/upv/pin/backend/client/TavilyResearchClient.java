@@ -13,6 +13,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.text.Normalizer;
 import java.time.Duration;
 import java.util.*;
 import java.util.regex.*;
@@ -27,8 +28,9 @@ public class TavilyResearchClient implements ResearchProvider {
                         + "]{0,55}?(?:€\\s*(\\d+(?:[.,]\\d{1,2})?)|(\\d+(?:[.,]\\d{1,2})?)\\s*(€|EUR|USD|GBP))");
     private static final Pattern HORA =
             Pattern.compile(
-                    "(?iu)(?:horario|horarios|abre|abierto|opening hours|open)[^.!?\\n"
-                        + "]{0,130}\\b\\d{1,2}[:.]\\d{2}\\s*(?:-|–|a|to)\\s*\\d{1,2}[:.]\\d{2}\\b");
+                    "(?iu)(?:horario|horarios|abre|abierto|opening hours|open)[^.!?"
+                        + "]{0,100}?(?:[01]?\\d|2[0-3])[:.][0-5]\\d\\s*(?:-|–|a|to)\\s*"
+                        + "(?:[01]?\\d|2[0-3])[:.][0-5]\\d\\b");
     private static final Pattern GRATIS =
             Pattern.compile(
                     "(?iu)\\b(?:entrada gratuita|entrada gratis|admission is free|free"
@@ -71,22 +73,19 @@ public class TavilyResearchClient implements ResearchProvider {
                             + (lugar.direccion() == null ? "" : lugar.direccion())
                             + " entrada precio horario sitio oficial";
             JsonNode respuesta = consultar(query);
+            Double cantidad = null;
+            String moneda = null, horarioTexto = null, fuentePrecio = null, fuenteHorario = null;
+            List<String> hechos = new ArrayList<>(), fuentes = new ArrayList<>();
             for (JsonNode fuente : respuesta.path("results")) {
                 String url = fuente.path("url").asText();
                 String texto = fuente.path("content").asText();
-                String identidad =
-                        (fuente.path("title").asText() + " " + texto).toLowerCase(Locale.ROOT);
+                String titulo = normalizar(fuente.path("title").asText());
+                String identidad = normalizar(fuente.path("title").asText() + " " + texto);
                 if (!urlValida(url)
-                        || !identidad.contains(lugar.nombre().toLowerCase(Locale.ROOT))
-                        || !identidad.contains(destino.toLowerCase(Locale.ROOT))) continue;
+                        || !tituloDelLugar(titulo, lugar, destino)
+                        || !identidad.contains(normalizar(destino))) continue;
                 Matcher precio = PRECIO.matcher(texto), horario = HORA.matcher(texto);
-                Double cantidad = null;
-                String moneda = null,
-                        horarioTexto = null,
-                        fuentePrecio = null,
-                        fuenteHorario = null;
-                List<String> hechos = new ArrayList<>();
-                if (precio.find()) {
+                if (cantidad == null && precio.find()) {
                     String importe = precio.group(1) != null ? precio.group(1) : precio.group(2);
                     String extracto = precio.group();
                     // Evita rangos, precios con condiciones y tarifas específicas.
@@ -113,10 +112,7 @@ public class TavilyResearchClient implements ResearchProvider {
                 if (cantidad == null) {
                     Matcher gratis = GRATIS.matcher(texto);
                     if (gratis.find()) {
-                        String contexto =
-                                texto.substring(
-                                        Math.max(0, gratis.start() - 100),
-                                        Math.min(texto.length(), gratis.end() + 100));
+                        String contexto = contextoFrase(texto, gratis.start(), gratis.end());
                         if (!Pattern.compile(
                                         "(?iu)\\b(donaci[oó]n|donativo|donation|donations|solo|s[oó]lo|only|menores|niñ[oa]s?|children|domingos?|sundays?|excepto|except|condiciones|conditions|ciertos|certain|d[ií]as|days)\\b")
                                 .matcher(contexto)
@@ -128,36 +124,91 @@ public class TavilyResearchClient implements ResearchProvider {
                         }
                     }
                 }
-                if (horario.find()) {
-                    horarioTexto = horario.group().trim();
+                while (horarioTexto == null && horario.find()) {
+                    String candidatoHorario = horario.group().replaceAll("\\s+", " ").trim();
+                    if (candidatoHorario.matches("(?iu).*\\b(?:AM|PM)\\b.*")) continue;
+                    horarioTexto = candidatoHorario;
                     fuenteHorario = url;
                     hechos.add(horarioTexto);
                 }
-                if (!hechos.isEmpty()) {
-                    resultado.put(
-                            lugar.id(),
-                            new HallazgoGemini(
-                                    String.join(". ", hechos),
-                                    List.of(url),
-                                    cantidad,
-                                    cantidad,
-                                    moneda,
-                                    horarioTexto,
-                                    null,
-                                    fuentePrecio,
-                                    fuenteHorario,
-                                    null));
-                    break;
-                }
+                if ((url.equals(fuentePrecio) || url.equals(fuenteHorario)) && !fuentes.contains(url))
+                    fuentes.add(url);
+                if (cantidad != null && horarioTexto != null) break;
+            }
+            if (!hechos.isEmpty()) {
+                resultado.put(
+                        lugar.id(),
+                        new HallazgoGemini(
+                                String.join(". ", hechos),
+                                List.copyOf(fuentes),
+                                cantidad,
+                                cantidad,
+                                moneda,
+                                horarioTexto,
+                                null,
+                                fuentePrecio,
+                                fuenteHorario,
+                                null));
             }
         }
         return resultado;
     }
 
+    private static String normalizar(String valor) {
+        String sinTildes = Normalizer.normalize(valor, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
+        return sinTildes.replaceAll("[^\\p{L}\\p{N}]+", " ").trim().replaceAll(" +", " ");
+    }
+
+    private static boolean tituloDelLugar(String titulo, LugarDto lugar, String destino) {
+        String nombre = normalizar(lugar.nombre());
+        String alias = lugar.direccion() == null
+                ? ""
+                : normalizar(lugar.direccion().split(",", 2)[0]);
+        if (nombre.length() >= 8 && titulo.contains(nombre)) return true;
+        if (alias.length() >= 10
+                && !alias.matches("^(calle|carrer|avenida|avinguda|plaza|placa)\\b.*")
+                && titulo.contains(alias)) return true;
+        return compartenNombre(titulo, nombre, destino)
+                || alias.length() >= 10 && compartenNombre(titulo, alias, destino);
+    }
+
+    private static boolean compartenNombre(String titulo, String nombre, String destino) {
+        Set<String> palabras = new HashSet<>(List.of(nombre.split(" ")));
+        palabras.removeAll(Set.of("de", "del", "la", "las", "el", "los", "l", "en", "the"));
+        if (palabras.size() < 2) return false;
+        Set<String> tituloPalabras = new HashSet<>(List.of(titulo.split(" ")));
+        long comunes = palabras.stream().filter(tituloPalabras::contains).count();
+        String ciudad = normalizar(destino);
+        return comunes >= 2
+                && comunes * 3 >= palabras.size() * 2
+                && palabras.stream().anyMatch(p -> tituloPalabras.contains(p)
+                        && !p.equals(ciudad)
+                        && !Set.of("museo", "museu", "parque", "park", "iglesia", "church")
+                                .contains(p));
+    }
+
+    private static String contextoFrase(String texto, int inicio, int fin) {
+        int desde = Math.max(0, inicio - 50), hasta = Math.min(texto.length(), fin + 70);
+        for (char separador : new char[] {'.', '!', '?', ';', '\n'}) {
+            desde = Math.max(desde, texto.lastIndexOf(separador, inicio - 1) + 1);
+            int siguiente = texto.indexOf(separador, fin);
+            if (siguiente >= 0) hasta = Math.min(hasta, siguiente);
+        }
+        return texto.substring(desde, hasta);
+    }
+
     private boolean urlValida(String url) {
         try {
             URI uri = URI.create(url);
-            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null;
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null)
+                return false;
+            String host = uri.getHost().toLowerCase(Locale.ROOT);
+            if (host.startsWith("tripadvisor.") || host.contains(".tripadvisor.")) return false;
+            return !List.of("instagram.com", "facebook.com", "tiktok.com", "youtube.com",
+                            "getyourguide.com", "mapquest.com", "yelp.com")
+                    .stream().anyMatch(dominio -> host.equals(dominio) || host.endsWith("." + dominio));
         } catch (IllegalArgumentException e) {
             return false;
         }
