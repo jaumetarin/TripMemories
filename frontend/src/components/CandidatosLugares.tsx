@@ -44,7 +44,7 @@ export function CandidatosLugares({ configuracion }: { configuracion: Configurac
     {error && <p className="error-viaje" role="alert">{error}</p>}
     {lugares !== null && <>
       <ul className="candidatos-lista">
-        {lugares.map((lugar, indice) => <li className="candidato-tarjeta" key={indice}>
+        {lugares.map(lugar => <li className="candidato-tarjeta" key={lugar.id}>
           <h3>{lugar.nombre}</h3><p>{lugar.direccion || 'Dirección no disponible'}</p>
           {lugar.horario && <p className="candidato-horario"><strong>Horario publicado:</strong> {lugar.horario}</p>}
         </li>)}

@@ -60,16 +60,29 @@ public class PreparacionCandidatosService {
 
         List<LugarDto> resultados = new ArrayList<>();
         for (List<LugarGeoapifyDto> grupo : grupos.values()) {
-            if (!cumplePreferencias(grupo, preferencias)) continue;
+            String id = grupo.getFirst().place_id();
             String nombre = null;
             String direccion = null;
             String horario = null;
+            Double latitud = null;
+            Double longitud = null;
+            Set<CategoriaTuristica> categorias = EnumSet.noneOf(CategoriaTuristica.class);
+            Set<SubcategoriaTuristica> subcategorias = EnumSet.noneOf(SubcategoriaTuristica.class);
             for (LugarGeoapifyDto lugar : grupo) {
+                categorias.addAll(clasificacion.categorias(lugar));
+                subcategorias.addAll(clasificacion.subcategorias(lugar));
                 if (nombre == null) nombre = nombreValido(lugar.name());
                 if (direccion == null) direccion = textoOpcional(lugar.formatted());
                 if (horario == null) horario = horarioDisponible(lugar);
+                // Las dos coordenadas deben pertenecer a la misma copia del lugar.
+                if (latitud == null && coordenadasValidas(lugar)) {
+                    latitud = lugar.lat();
+                    longitud = lugar.lon();
+                }
             }
-            if (nombre != null) resultados.add(new LugarDto(nombre, direccion, horario));
+            if (nombre == null || !cumplePreferencias(categorias, subcategorias, preferencias)) continue;
+            resultados.add(new LugarDto(id, nombre, direccion, latitud, longitud,
+                    List.copyOf(categorias), List.copyOf(subcategorias), horario));
         }
         return List.copyOf(resultados);
     }
@@ -91,14 +104,15 @@ public class PreparacionCandidatosService {
         return valor == null || valor.isBlank() ? null : valor.strip();
     }
 
-    private boolean cumplePreferencias(List<LugarGeoapifyDto> grupo, PreferenciasDto preferencias) {
-        Set<CategoriaTuristica> categorias = EnumSet.noneOf(CategoriaTuristica.class);
-        Set<SubcategoriaTuristica> subcategorias = EnumSet.noneOf(SubcategoriaTuristica.class);
-        // Filtramos después de reunir las etiquetas de todas las copias del lugar.
-        for (LugarGeoapifyDto lugar : grupo) {
-            categorias.addAll(clasificacion.categorias(lugar));
-            subcategorias.addAll(clasificacion.subcategorias(lugar));
-        }
+    private boolean coordenadasValidas(LugarGeoapifyDto lugar) {
+        return lugar.lat() != null && lugar.lon() != null
+                && Double.isFinite(lugar.lat()) && Double.isFinite(lugar.lon())
+                && lugar.lat() >= -90 && lugar.lat() <= 90
+                && lugar.lon() >= -180 && lugar.lon() <= 180;
+    }
+
+    private boolean cumplePreferencias(Set<CategoriaTuristica> categorias,
+            Set<SubcategoriaTuristica> subcategorias, PreferenciasDto preferencias) {
         if (categorias.isEmpty()) return false;
         for (CategoriaTuristica categoria : preferencias.categoriasExcluidas()) {
             if (categorias.contains(categoria)) return false;

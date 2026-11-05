@@ -48,7 +48,7 @@ class PreparacionCandidatosServiceTests {
 
     private String lugares(String categoria) {
         return """
-                {"features":[{"properties":{"place_id":"a","name":"Lugar A","formatted":"Calle A, Madrid",
+                {"features":[{"properties":{"place_id":"a","name":"Lugar A","formatted":"Calle A, Madrid","lat":40.4,"lon":-3.7,
                   "categories":["%s"]}}]}
                 """.formatted(categoria);
     }
@@ -58,7 +58,8 @@ class PreparacionCandidatosServiceTests {
         proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess(lugares("catering.restaurant"), MediaType.APPLICATION_JSON));
         proveedor.expect(requestTo(url(NATURALEZA_PARQUES))).andRespond(withSuccess(lugares("leisure.park"), MediaType.APPLICATION_JSON));
         var resultado = servicio.preparar(configuracion("\"GASTRONOMIA\",\"NATURALEZA_PARQUES\",\"GASTRONOMIA\"", ""));
-        assertEquals(List.of(new LugarDto("Lugar A", "Calle A, Madrid", null)), resultado);
+        assertEquals(List.of(new LugarDto("a", "Lugar A", "Calle A, Madrid", 40.4, -3.7,
+                List.of(GASTRONOMIA, NATURALEZA_PARQUES), List.of(PARQUES_JARDINES), null)), resultado);
         proveedor.verify();
     }
 
@@ -70,7 +71,8 @@ class PreparacionCandidatosServiceTests {
                  {"properties":{"place_id":"b","name":"Comida rápida","categories":["catering.fast_food.burger"]}}
                 ]}
                 """, MediaType.APPLICATION_JSON));
-        assertEquals(List.of(new LugarDto("Restaurante", null, null)),
+        assertEquals(List.of(new LugarDto("a", "Restaurante", null, null, null,
+                        List.of(GASTRONOMIA), List.of(), null)),
                 servicio.preparar(configuracion("\"GASTRONOMIA\"", "\"COMIDA_RAPIDA\"")));
         proveedor.verify();
     }
@@ -98,6 +100,37 @@ class PreparacionCandidatosServiceTests {
     }
 
     @Test
+    void culturaLocalConsultaMercadosYLosConservaSinEtiquetasDeOrigen() {
+        // La URL es explícita para detectar que se deje de consultar esta categoría.
+        proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories="
+                + "entertainment.culture%2Cproduction.pottery%2Ccommercial.marketplace"
+                + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                .andRespond(withSuccess("""
+                        {"features":[{"properties":{"place_id":"mercado-a","name":"Mercado de prueba",
+                         "formatted":"Plaza del Mercado, Madrid","categories":["commercial.marketplace"]}}]}
+                        """, MediaType.APPLICATION_JSON));
+        // Un mercado sin información gastronómica no se considera automáticamente gastronómico.
+        assertEquals(List.of(new LugarDto("mercado-a", "Mercado de prueba", "Plaza del Mercado, Madrid", null, null,
+                        List.of(CULTURA_LOCAL), List.of(MERCADOS_TRADICIONALES), null)),
+                servicio.preparar(configuracion("\"CULTURA_LOCAL\"", "\"MERCADOS_GASTRONOMICOS\"")));
+        proveedor.verify();
+    }
+
+    @Test
+    void excluyeMercadosTradicionalesSinEtiquetasDeOrigenYConservaElRestoDeCulturaLocal() {
+        proveedor.expect(requestTo(url(CULTURA_LOCAL))).andRespond(withSuccess("""
+                {"features":[
+                 {"properties":{"place_id":"mercado-a","name":"Mercado de prueba","categories":["commercial.marketplace"]}},
+                 {"properties":{"place_id":"taller-a","name":"Taller de cerámica","categories":["production.pottery"]}}
+                ]}
+                """, MediaType.APPLICATION_JSON));
+        assertEquals(List.of(new LugarDto("taller-a", "Taller de cerámica", null, null, null,
+                        List.of(CULTURA_LOCAL), List.of(TALLERES_ARTESANALES), null)),
+                servicio.preparar(configuracion("\"CULTURA_LOCAL\"", "\"MERCADOS_TRADICIONALES\"")));
+        proveedor.verify();
+    }
+
+    @Test
     void conservaEstablecimientosDistintosQueTienenElMismoNombre() {
         proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
                 {"features":[
@@ -105,7 +138,9 @@ class PreparacionCandidatosServiceTests {
                  {"properties":{"place_id":"b","name":"Local","formatted":"Calle B","categories":["catering.restaurant"]}}
                 ]}
                 """, MediaType.APPLICATION_JSON));
-        assertEquals(2, servicio.preparar(configuracion("\"GASTRONOMIA\"", "")).size());
+        var resultado = servicio.preparar(configuracion("\"GASTRONOMIA\"", ""));
+        assertEquals(List.of("a", "b"), resultado.stream().map(LugarDto::id).toList());
+        assertEquals(List.of("Calle A", "Calle B"), resultado.stream().map(LugarDto::direccion).toList());
         proveedor.verify();
     }
 
@@ -127,8 +162,9 @@ class PreparacionCandidatosServiceTests {
                  {"properties":{"place_id":"k","name":"La Desconocida","categories":["catering.restaurant"]}}
                 ]}
                 """, MediaType.APPLICATION_JSON));
-        assertEquals(List.of(new LugarDto("Restaurante con nombre", null, null),
-                        new LugarDto("La Desconocida", null, null)),
+        assertEquals(List.of(new LugarDto("j", "Restaurante con nombre", null, null, null,
+                        List.of(GASTRONOMIA), List.of(), null),
+                        new LugarDto("k", "La Desconocida", null, null, null, List.of(GASTRONOMIA), List.of(), null)),
                 servicio.preparar(configuracion("\"GASTRONOMIA\"", "")));
         proveedor.verify();
     }
@@ -147,10 +183,52 @@ class PreparacionCandidatosServiceTests {
                  {"properties":{"place_id":"d","name":"Otra copia","opening_hours":"24/7","categories":["catering.restaurant"]}}
                 ]}
                 """, MediaType.APPLICATION_JSON));
-        assertEquals(List.of(new LugarDto("Directo", null, "Mo-Fr 10:00-18:00"),
-                        new LugarDto("Origen", null, "Sa-Su 09:00-14:00"),
-                        new LugarDto("Sin horario", null, null), new LugarDto("Otra copia", null, "24/7")),
+        assertEquals(List.of(new LugarDto("a", "Directo", null, null, null, List.of(GASTRONOMIA), List.of(), "Mo-Fr 10:00-18:00"),
+                        new LugarDto("b", "Origen", null, null, null, List.of(GASTRONOMIA), List.of(), "Sa-Su 09:00-14:00"),
+                        new LugarDto("c", "Sin horario", null, null, null, List.of(GASTRONOMIA), List.of(), null),
+                        new LugarDto("d", "Otra copia", null, null, null, List.of(GASTRONOMIA), List.of(), "24/7")),
                 servicio.preparar(configuracion("\"GASTRONOMIA\"", "")));
+        proveedor.verify();
+    }
+
+    @Test
+    void conservaIdentidadCoordenadasYClasificacionDeTodasLasCopias() {
+        proveedor.expect(requestTo(url(ARTE_MUSEOS))).andRespond(withSuccess("""
+                {"features":[
+                 {"properties":{"place_id":"museo-a","name":"Museo y galería","categories":["entertainment.museum"]}},
+                 {"properties":{"place_id":"museo-a","lat":40.41,"lon":-3.69,"formatted":"Calle del Museo, Madrid",
+                  "categories":["entertainment.culture.gallery"],"opening_hours":"Tu-Su 10:00-18:00"}}
+                ]}
+                """, MediaType.APPLICATION_JSON));
+        assertEquals(List.of(new LugarDto("museo-a", "Museo y galería", "Calle del Museo, Madrid", 40.41, -3.69,
+                        List.of(ARTE_MUSEOS, CULTURA_LOCAL), List.of(MUSEOS, GALERIAS_ARTE), "Tu-Su 10:00-18:00")),
+                servicio.preparar(configuracion("\"ARTE_MUSEOS\"", "")));
+        proveedor.verify();
+    }
+
+    @Test
+    void recuperaUnParValidoSinMezclarCoordenadasNiInventarLasAusentes() {
+        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+                {"features":[
+                 {"properties":{"place_id":"a","name":"Recuperado","lat":40.4,"categories":["catering.restaurant"]}},
+                 {"properties":{"place_id":"a","lat":40.5,"lon":-3.8,"categories":["catering.restaurant"]}},
+                 {"properties":{"place_id":"b","name":"Incompleto","lat":40.4,"categories":["catering.restaurant"]}},
+                 {"properties":{"place_id":"b","lon":-3.7,"categories":["catering.restaurant"]}},
+                 {"properties":{"place_id":"c","name":"Fuera de rango","lat":91,"lon":-181,"categories":["catering.restaurant"]}},
+                 {"properties":{"place_id":"d","name":"Coordenadas cero","lat":0,"lon":0,"categories":["catering.restaurant"]}},
+                 {"properties":{"place_id":"e","name":"Sin coordenadas","categories":["catering.restaurant"]}}
+                ]}
+                """, MediaType.APPLICATION_JSON));
+        var resultado = servicio.preparar(configuracion("\"GASTRONOMIA\"", ""));
+        assertEquals(5, resultado.size());
+        assertEquals(40.5, resultado.get(0).latitud());
+        assertEquals(-3.8, resultado.get(0).longitud());
+        for (int indice : List.of(1, 2, 4)) {
+            assertNull(resultado.get(indice).latitud());
+            assertNull(resultado.get(indice).longitud());
+        }
+        assertEquals(0.0, resultado.get(3).latitud());
+        assertEquals(0.0, resultado.get(3).longitud());
         proveedor.verify();
     }
 

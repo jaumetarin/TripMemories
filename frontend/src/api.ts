@@ -21,8 +21,13 @@ export interface ConfiguracionItinerario {
 }
 
 export interface Lugar {
+  id: string
   nombre: string
   direccion: string | null
+  latitud: number | null
+  longitud: number | null
+  categorias: string[]
+  subcategorias: string[]
   horario?: string
 }
 
@@ -201,8 +206,12 @@ export async function confirmarConfiguracion(
 }
 
 function esLugar(valor: unknown): valor is Lugar {
-  return esObjeto(valor) && typeof valor.nombre === 'string'
+  return esObjeto(valor) && typeof valor.id === 'string' && valor.id.trim().length > 0
+    && typeof valor.nombre === 'string'
     && (valor.direccion === null || typeof valor.direccion === 'string')
+    && (valor.latitud === null || typeof valor.latitud === 'number' && Number.isFinite(valor.latitud))
+    && (valor.longitud === null || typeof valor.longitud === 'number' && Number.isFinite(valor.longitud))
+    && esListaDeTextos(valor.categorias) && esListaDeTextos(valor.subcategorias)
     && (valor.horario === undefined || typeof valor.horario === 'string')
 }
 

@@ -26,7 +26,7 @@ public class ClasificacionLugaresService {
         categorias.put(ARTE_MUSEOS, List.of("entertainment.museum", "entertainment.culture.gallery", "tourism.attraction.artwork"));
         categorias.put(HISTORIA_ARQUITECTURA, List.of("tourism.sights"));
         categorias.put(NATURALEZA_PARQUES, List.of("leisure.park", "beach", "natural"));
-        categorias.put(CULTURA_LOCAL, List.of("entertainment.culture", "production.pottery"));
+        categorias.put(CULTURA_LOCAL, List.of("entertainment.culture", "production.pottery", "commercial.marketplace"));
         categorias.put(OCIO_ENTRETENIMIENTO, List.of("entertainment.cinema", "entertainment.theme_park",
                 "entertainment.water_park", "entertainment.zoo", "entertainment.aquarium", "entertainment.bowling_alley",
                 "entertainment.escape_game", "commercial.shopping_mall", "catering.bar", "catering.pub", "adult.nightclub"));
@@ -42,6 +42,7 @@ public class ClasificacionLugaresService {
         subcategorias.put(YACIMIENTOS_ARQUEOLOGICOS, List.of("tourism.sights.archaeological_site"));
         subcategorias.put(PARQUES_JARDINES, List.of("leisure.park"));
         subcategorias.put(PLAYAS, List.of("beach"));
+        subcategorias.put(MERCADOS_TRADICIONALES, List.of("commercial.marketplace"));
         subcategorias.put(TALLERES_ARTESANALES, List.of("production.pottery"));
         subcategorias.put(VIDA_NOCTURNA, List.of("catering.bar", "catering.pub", "adult.nightclub"));
         subcategorias.put(COMPRAS, List.of("commercial.shopping_mall"));

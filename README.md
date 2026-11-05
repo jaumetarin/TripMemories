@@ -514,27 +514,44 @@ Cubren la recepción de candidatos, respuestas vacías y fallos del proveedor.
 ## UT8: filtrado de candidatos por preferencias
 
 `POST /api/candidatos/preparar` recibe la configuración completa de UT6 y devuelve
-una lista de `LugarDto`, con nombre, dirección y el horario solo cuando está disponible:
+una lista de `LugarDto`, la representación de los candidatos preparados para el Planner.
+Conserva el identificador Geoapify, nombre, dirección, coordenadas, categorías y subcategorías
+de TripMemories, y el horario solo cuando está disponible:
 
 ```json
 [
-  { "nombre": "Restaurante A", "direccion": "Calle A, Madrid", "horario": "Mo-Fr 10:00-18:00" },
-  { "nombre": "Restaurante B", "direccion": "Calle B, Madrid" }
+  {
+    "id": "lugar-a",
+    "nombre": "Restaurante A",
+    "direccion": "Calle A, Madrid",
+    "latitud": 40.4,
+    "longitud": -3.7,
+    "categorias": ["GASTRONOMIA"],
+    "subcategorias": [],
+    "horario": "Mo-Fr 10:00-18:00"
+  }
 ]
 ```
 
 - `PreparacionCandidatosService` valida la configuración, consulta Geoapify y filtra.
 - `ClasificacionLugaresService` relaciona las categorías del proveedor con nuestros
-  intereses y exclusiones. Estas etiquetas se usan solo dentro del backend.
+  intereses y exclusiones. Las categorías y subcategorías internas se conservan en el resultado.
 - Una consulta independiente por interés, con hasta 100 resultados, una detrás de otra.
   El número final puede ser menor tras eliminar duplicados y aplicar los filtros.
 - Sin intereses seleccionados se consultan las seis categorías generales, salvo
   las categorías completas que el usuario haya excluido.
 - Se agrupan los repetidos por identificador Geoapify y se reúnen sus etiquetas
   antes de aplicar las exclusiones. Una copia excluida descarta el lugar completo.
+- El resultado mantiene ese identificador y todas las categorías y subcategorías
+  reconocidas en las distintas copias, sin repetidos, para relacionar el lugar entre fases.
+- Las coordenadas se recuperan del primer par válido de una misma copia del lugar.
+  Si ninguna copia contiene un par completo, finito y dentro de rango, ambas se devuelven
+  como `null`; no se sustituyen por cero ni se mezclan coordenadas de distintas copias.
 - Las categorías y subcategorías excluidas prevalecen sobre los intereses.
+- Cultura local incluye `commercial.marketplace` en su consulta. Los mercados tradicionales
+  se reconocen por esa categoría aunque no haya etiquetas de origen; se aplica su exclusión.
 - La detección de algunas subcategorías depende de etiquetas de origen explícitas:
-  mercados, senderismo y espectáculos tradicionales. La cobertura depende del proveedor.
+  mercados gastronómicos, senderismo y espectáculos tradicionales. La cobertura depende del proveedor.
 - Se omiten los resultados sin identificador, sin nombre o sin clasificación reconocida.
   También se descartan nombres genéricos como «sin nombre», «desconocido» y «unknown»
   (coincidencia completa, sin distinguir mayúsculas y tras quitar espacios exteriores).
@@ -547,7 +564,9 @@ una lista de `LugarDto`, con nombre, dirección y el horario solo cuando está d
   y 503 un fallo del proveedor. No se presenta un fallo como si fuera una lista vacía.
 
 Después de confirmar el resumen aparece **Buscar lugares disponibles**. La interfaz
-muestra nombre, dirección y, cuando existe, el horario publicado. Al editar y confirmar otra vez se utiliza la selección
+muestra solo nombre, dirección y, cuando existe, el horario publicado, aunque conserva
+el resto de los datos recibidos. Las tarjetas utilizan el identificador del lugar como clave.
+Al editar y confirmar otra vez se utiliza la selección
 vigente. Los estados de carga, error y reintento conservan el formulario.
 Cada nueva búsqueda consulta el proveedor; no hay caché ni cambios en PostgreSQL.
 Los endpoints originales de UT7 siguen funcionando.
