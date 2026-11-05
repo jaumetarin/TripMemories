@@ -576,3 +576,49 @@ Pruebas desde backend, sin necesitar ni modificar la base de datos:
 ```powershell
 .\mvnw.cmd clean '-Dspring.flyway.enabled=false' test
 ```
+
+## UT9 y UT10: evaluación de candidatos y alternativa local
+
+`POST /api/candidatos/evaluar` recibe la misma configuración completa que
+`/api/candidatos/preparar`. El backend prepara los lugares una vez, evalúa **todos**
+los candidatos conservados y devuelve cada `LugarDto` junto con afinidad (1–100),
+duración estimada en minutos, etiqueta, motivo y origen de la evaluación. El
+identificador de Geoapify solo relaciona respuestas: Gemini recibe referencias
+temporales, nunca el identificador externo. Gemini no decide el itinerario ni el
+orden de los días; esa tarea corresponde a UT12.
+
+La afinidad y la duración de Gemini son estimaciones. La etiqueta y el motivo
+visibles se construyen a partir de las categorías del lugar y los intereses
+elegidos; no se publican afirmaciones libres de Gemini que no tengan respaldo
+en esos datos.
+
+La evaluación usa `gemini-3.1-flash-lite` con la clave `GEMINI_API_KEY` configurada
+solo en el backend. Ante clave ausente, error, respuesta incompleta o datos
+inválidos, todos los candidatos reciben una clasificación local determinista y
+la respuesta incluye `fallback: true` y una advertencia. Un fallo de Geoapify
+continúa siendo un error 503; una búsqueda válida sin lugares devuelve una lista
+vacía. Las duraciones se muestran siempre con `≈` porque son orientativas.
+
+La búsqueda externa para los candidatos mejor situados es opcional y utiliza
+`TAVILY_API_KEY` únicamente en el backend. Investiga progresivamente según la
+capacidad orientativa del viaje: 10:00–18:00 por día, recortada por la llegada y
+la salida. Este cálculo no garantiza que las actividades quepan, porque los
+desplazamientos y el reparto diario se resolverán en UT11/UT12. Cada petición
+tiene un plazo total de 100 segundos y un límite técnico de 100 búsquedas; si
+se alcanza, se devuelven
+las evaluaciones ya disponibles con un aviso. Sin clave Tavily, la evaluación
+Gemini o local sigue funcionando y los datos externos permanecen desconocidos.
+
+El precio básico por persona se clasifica en `FREE` (0 €), `LOW` (>0–25 €),
+`MEDIUM` (>25–50 €), `HIGH` (>50 €) o `UNKNOWN`. Solo se clasifica cuando existe
+un precio atribuible a una fuente y expresado en euros; otras monedas siguen
+como `UNKNOWN` hasta disponer de una conversión fiable. Los precios extraídos
+de resultados de búsqueda se identifican como estimados. Los horarios de
+Geoapify siguen sin verificar; los encontrados en búsqueda se identifican como
+información parcial. No se rellenan horarios ni precios ausentes con supuestos.
+
+La respuesta pública usa DTO propios, no los esquemas de Gemini, Tavily o
+Geoapify. `CandidatoExceptionHandler` devuelve 400 para configuración inválida
+y 503 para fallos de obtención de lugares. El frontend muestra afinidad, motivo,
+duración estimada, coste, horario, procedencia y avisos. No muestra todavía un
+itinerario distribuido por días.
