@@ -82,7 +82,7 @@ public class GeneracionItinerarioService {
                 advertencias.add(avisoSinVentana(ventana.fecha()));
             }
             return new ItinerarioGeneradoDto(
-                    diasSinActividad(ventanas), List.copyOf(advertencias), true, 0, 0);
+                    diasSinActividad(ventanas), List.copyOf(advertencias), true, 0, 0, List.of(), false);
         }
 
         EvaluacionCandidatosDto resultado = evaluacion.evaluar(config);
@@ -341,7 +341,7 @@ public class GeneracionItinerarioService {
                 + String.join("; ", validacion.incidencias()));
         return new ItinerarioGeneradoDto(
                 List.copyOf(dias), List.copyOf(advertencias), parcial || validacion.parcial(),
-                candidatos.size(), puntos.size());
+                candidatos.size(), puntos.size(), List.copyOf(candidatos), resultado.fallback());
     }
 
     private static BloqueItinerarioDto bloqueSimple(TipoBloqueItinerario tipo,

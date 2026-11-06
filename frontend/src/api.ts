@@ -347,6 +347,51 @@ export interface EvaluacionCandidatos {
   minutosInvestigados: number
 }
 
+export type TipoBloqueItinerario = 'VISITA' | 'TRASLADO' | 'TIEMPO_LIBRE' | 'COMIDA' | 'DESCANSO' | 'MARGEN'
+
+export interface OpcionComida {
+  id: string
+  nombre: string
+  latitud: number | null
+  longitud: number | null
+  direccion: string | null
+  horario: string | null
+  horarioFuente: string | null
+}
+
+export interface BloqueItinerario {
+  tipo: TipoBloqueItinerario
+  inicio: string
+  fin: string
+  candidato: CandidatoEvaluado | null
+  origenId: string | null
+  destinoId: string | null
+  distanciaMetros: number | null
+  duracionSegundos: number | null
+  fuente: string | null
+  condicionada: boolean
+  descripcion: string | null
+  restaurante: OpcionComida | null
+  alternativasComida: OpcionComida[]
+}
+
+export interface DiaItinerario {
+  fecha: string
+  inicioDisponible: string | null
+  finDisponible: string | null
+  bloques: BloqueItinerario[]
+}
+
+export interface ItinerarioGenerado {
+  dias: DiaItinerario[]
+  advertencias: string[]
+  parcial: boolean
+  candidatosEvaluados: number
+  candidatosEnMatriz: number
+  candidatos: CandidatoEvaluado[]
+  evaluacionFallback: boolean
+}
+
 function esTextoONulo(valor: unknown): valor is string | null {
   return valor === null || typeof valor === 'string'
 }
@@ -390,4 +435,64 @@ export async function evaluarCandidatos(
     throw new Error('El servidor ha devuelto una evaluación de lugares no válida.')
   }
   return datos as unknown as EvaluacionCandidatos
+}
+
+function esOpcionComida(valor: unknown): valor is OpcionComida {
+  return esObjeto(valor) && typeof valor.id === 'string' && typeof valor.nombre === 'string'
+    && (valor.latitud === null || typeof valor.latitud === 'number' && Number.isFinite(valor.latitud))
+    && (valor.longitud === null || typeof valor.longitud === 'number' && Number.isFinite(valor.longitud))
+    && esTextoONulo(valor.direccion) && esTextoONulo(valor.horario) && esTextoONulo(valor.horarioFuente)
+}
+
+function esBloqueItinerario(valor: unknown): valor is BloqueItinerario {
+  const fechaHora = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/
+  return esObjeto(valor)
+    && typeof valor.tipo === 'string'
+    && ['VISITA', 'TRASLADO', 'TIEMPO_LIBRE', 'COMIDA', 'DESCANSO', 'MARGEN'].includes(valor.tipo)
+    && typeof valor.inicio === 'string' && fechaHora.test(valor.inicio)
+    && typeof valor.fin === 'string' && fechaHora.test(valor.fin)
+    && (valor.candidato === null || esCandidatoEvaluado(valor.candidato))
+    && esTextoONulo(valor.origenId) && esTextoONulo(valor.destinoId)
+    && esNumeroONulo(valor.distanciaMetros) && esNumeroONulo(valor.duracionSegundos)
+    && esTextoONulo(valor.fuente) && typeof valor.condicionada === 'boolean'
+    && esTextoONulo(valor.descripcion)
+    && (valor.restaurante === null || esOpcionComida(valor.restaurante))
+    && Array.isArray(valor.alternativasComida) && valor.alternativasComida.every(esOpcionComida)
+}
+
+function esDiaItinerario(valor: unknown): valor is DiaItinerario {
+  const fechaHora = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/
+  return esObjeto(valor) && typeof valor.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor.fecha)
+    && (valor.inicioDisponible === null || typeof valor.inicioDisponible === 'string' && fechaHora.test(valor.inicioDisponible))
+    && (valor.finDisponible === null || typeof valor.finDisponible === 'string' && fechaHora.test(valor.finDisponible))
+    && Array.isArray(valor.bloques) && valor.bloques.every(esBloqueItinerario)
+}
+
+function esItinerarioGenerado(valor: unknown): valor is ItinerarioGenerado {
+  return esObjeto(valor) && Array.isArray(valor.dias) && valor.dias.every(esDiaItinerario)
+    && esListaDeTextos(valor.advertencias) && typeof valor.parcial === 'boolean'
+    && typeof valor.candidatosEvaluados === 'number' && Number.isInteger(valor.candidatosEvaluados) && valor.candidatosEvaluados >= 0
+    && typeof valor.candidatosEnMatriz === 'number' && Number.isInteger(valor.candidatosEnMatriz) && valor.candidatosEnMatriz >= 0
+    && Array.isArray(valor.candidatos) && valor.candidatos.every(esCandidatoEvaluado)
+    && typeof valor.evaluacionFallback === 'boolean'
+}
+
+export async function generarItinerario(
+  configuracion: ConfiguracionItinerario, signal: AbortSignal
+): Promise<ItinerarioGenerado> {
+  const respuesta = await fetch('/api/itinerarios/generar', {
+    method: 'POST',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(configuracion),
+  })
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) {
+    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+      ? datos.mensaje : 'No se ha podido generar el itinerario. Comprueba la conexión y vuelve a intentarlo.')
+  }
+  if (!esItinerarioGenerado(datos)) {
+    throw new Error('El servidor ha devuelto un itinerario no válido. Vuelve a intentarlo.')
+  }
+  return datos
 }

@@ -71,6 +71,23 @@ class GeneracionItinerarioServiceTest {
     }
 
     @Test
+    void conservaTodosLosCandidatosYElFallbackDeUnaUnicaEvaluacion() {
+        var config = config(1);
+        var candidatos = List.of(candidato("programable", 90, CostLevel.FREE, 1.0),
+                candidato("sin-coordenadas", 50, CostLevel.UNKNOWN, null));
+        when(evaluacion.evaluar(config)).thenReturn(
+                new EvaluacionCandidatosDto(candidatos, true, List.of("Valoracion local"), 0, 0));
+
+        var plan = servicio.generar(config);
+
+        assertEquals(candidatos, plan.candidatos());
+        assertTrue(plan.evaluacionFallback());
+        assertEquals(2, plan.candidatosEvaluados());
+        assertEquals(1, plan.candidatosEnMatriz());
+        verify(evaluacion, times(1)).evaluar(config);
+    }
+
+    @Test
     void reservaComidaCompletaCadaDiaYNoSolapa() {
         var config = config(10);
         evaluar(config, List.of());
@@ -302,6 +319,8 @@ class GeneracionItinerarioServiceTest {
                         && d.finDisponible() == null));
         assertTrue(plan.parcial());
         assertEquals(0, plan.candidatosEvaluados());
+        assertTrue(plan.candidatos().isEmpty());
+        assertFalse(plan.evaluacionFallback());
         verifyNoInteractions(evaluacion, desplazamientos);
     }
 

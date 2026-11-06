@@ -9,6 +9,11 @@ import java.util.List;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import es.upv.pin.backend.dto.DiaItinerarioDto;
+import es.upv.pin.backend.dto.CandidatoEvaluadoDto;
+import es.upv.pin.backend.dto.LugarDto;
+import es.upv.pin.backend.model.CostLevel;
+import es.upv.pin.backend.model.CostConfidence;
+import es.upv.pin.backend.model.ScheduleStatus;
 import es.upv.pin.backend.dto.BloqueItinerarioDto;
 import es.upv.pin.backend.model.TipoBloqueItinerario;
 import es.upv.pin.backend.dto.ItinerarioGeneradoDto;
@@ -37,14 +42,23 @@ class GeneracionItinerarioControllerTests {
         var bloque = new BloqueItinerarioDto(TipoBloqueItinerario.TIEMPO_LIBRE, inicio, fin,
                 null, null, null, null, null, null, false, "Tiempo libre");
         var dia = new DiaItinerarioDto(LocalDate.of(2026, 11, 10), inicio, fin, List.of(bloque));
-        when(servicio.generar(any())).thenReturn(new ItinerarioGeneradoDto(List.of(dia), List.of("Aviso"), true, 5, 3));
+        var lugar = new LugarDto("museo", "Museo", null, 40.4, -3.7, List.of(), List.of(), null);
+        var candidato = new CandidatoEvaluadoDto(lugar, 80, 60, null, null, CostLevel.FREE,
+                null, List.of(), null, null, "LOCAL", CostConfidence.UNKNOWN,
+                ScheduleStatus.UNVERIFIED, null, null, null);
+        when(servicio.generar(any())).thenReturn(new ItinerarioGeneradoDto(
+                List.of(dia), List.of("Aviso"), true, 5, 3, List.of(candidato), true));
         mvc.perform(post("/api/itinerarios/generar").contentType(MediaType.APPLICATION_JSON).content(configuracion))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.dias[0].fecha").value("2026-11-10"))
                 .andExpect(jsonPath("$.dias[0].bloques[0].tipo").value("TIEMPO_LIBRE"))
                 .andExpect(jsonPath("$.advertencias[0]").value("Aviso"))
                 .andExpect(jsonPath("$.parcial").value(true)).andExpect(jsonPath("$.candidatosEvaluados").value(5))
-                .andExpect(jsonPath("$.candidatosEnMatriz").value(3));
+                .andExpect(jsonPath("$.candidatosEnMatriz").value(3))
+                .andExpect(jsonPath("$.candidatos[0].lugar.id").value("museo"))
+                .andExpect(jsonPath("$.candidatos[0].afinidad").value(80))
+                .andExpect(jsonPath("$.candidatos[0].origenEvaluacion").value("LOCAL"))
+                .andExpect(jsonPath("$.evaluacionFallback").value(true));
         verify(servicio).generar(any());
     }
 

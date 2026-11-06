@@ -1,0 +1,25 @@
+﻿.itinerario-por-dias { margin-top: 32px; }
+.itinerario-por-dias h2 { font-size: 1.3rem; letter-spacing: -.025em; }
+.itinerario-por-dias > p { margin: 10px 0 16px; color: var(--secundario); line-height: 1.6; }
+.itinerario-aviso { margin: 12px 0; padding: 12px 15px; border: 1px solid #d9b965; border-radius: 10px; background: #fff8e6; color: #674c11; line-height: 1.5; }
+.itinerario-aviso ul { margin: 6px 0 0; padding-left: 20px; }
+.itinerario-navegacion { display: flex; gap: 8px; overflow-x: auto; padding: 5px 2px 12px; }
+.itinerario-navegacion button { flex: 0 0 auto; padding: 9px 14px; border: 1px solid var(--borde); border-radius: 10px; background: white; color: inherit; cursor: pointer; font: inherit; font-weight: 600; }
+.itinerario-navegacion button span { display: block; margin-top: 3px; font-size: .73rem; font-weight: 400; }
+.itinerario-navegacion button[aria-pressed="true"] { background: #253f38; color: white; border-color: #253f38; }
+.itinerario-por-dias :is(button, summary, a):focus-visible { outline: 3px solid #438b78; outline-offset: 3px; }
+.itinerario-dia h3 { margin: 10px 0 16px; font-size: 1rem; }
+.itinerario-bloques { display: grid; gap: 10px; padding: 0; list-style: none; }
+.itinerario-bloque { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 15px; padding: 16px; border: 1px solid var(--borde); border-radius: 14px; background: white; overflow-wrap: anywhere; }
+.itinerario-horas { font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.itinerario-bloque-contenido p { margin: 5px 0; color: var(--secundario); font-size: .82rem; line-height: 1.6; white-space: pre-line; }
+.itinerario-bloque-contenido h4 { margin: 3px 0; font-size: .95rem; }
+.itinerario-bloque-contenido .itinerario-tipo { margin-top: 0; color: #355e51; font-weight: 700; }
+.itinerario-bloque-contenido .itinerario-condicion { color: #79540e; font-weight: 600; }
+.itinerario-detalles, .itinerario-comida details { margin-top: 10px; font-size: .82rem; }
+.itinerario-por-dias summary { cursor: pointer; font-weight: 600; }
+.itinerario-detalles-contenido { padding-top: 5px; }
+.itinerario-por-dias a { color: inherit; text-underline-offset: 3px; }
+.itinerario-comida ul { padding-left: 20px; }
+.itinerario-restaurante { margin: 8px 0; font-size: .82rem; }
+@media (max-width: 520px) { .itinerario-bloque { grid-template-columns: 1fr; gap: 8px; padding: 14px; } }

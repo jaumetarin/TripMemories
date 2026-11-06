@@ -6,6 +6,8 @@
 .candidatos-lista { display: grid; gap: 10px; padding: 0; list-style: none; }
 .candidato-tarjeta { padding: 18px 20px; border: 1px solid var(--borde); border-radius: 15px; background: white; overflow-wrap: anywhere; }
 .candidato-tarjeta h3 { font-size: .9rem; margin-bottom: 7px; }
+.candidato-tarjeta .candidato-programacion { display: inline-block; margin: 0 0 8px; padding: 3px 9px; border-radius: 999px; background: #eef6f0; color: #246555; font-weight: 600; }
+.candidato-tarjeta[data-programado="false"] .candidato-programacion { background: #f1f1f3; color: #5a5a60; }
 .candidato-tarjeta p { color: var(--secundario); font-size: .78rem; line-height: 1.65; }
 .candidato-tarjeta .candidato-horario { margin-top: 8px; white-space: pre-line; }
 .candidatos-atribucion a { color: inherit; text-underline-offset: 3px; }

@@ -7,4 +7,6 @@ public record ItinerarioGeneradoDto(
         List<String> advertencias,
         boolean parcial,
         int candidatosEvaluados,
-        int candidatosEnMatriz) {}
+        int candidatosEnMatriz,
+        List<CandidatoEvaluadoDto> candidatos,
+        boolean evaluacionFallback) {}
