@@ -22,4 +22,6 @@ public record CandidatoEvaluadoDto(
         ScheduleStatus estadoHorario,
         Double precioMinimo,
         Double precioMaximo,
-        String moneda) {}
+        String moneda,
+        String descripcion,
+        String fuenteDescripcion) {}

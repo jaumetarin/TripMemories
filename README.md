@@ -782,13 +782,35 @@ visitas, traslados y tiempo libre. Sitúa el descanso en una frontera entre
 actividades cuando se alcanza el intervalo configurado; la comida también
 cuenta como descanso. Los minutos del margen se suman a cada traslado ORS.
 
-Si se selecciona gastronomía, se buscan restaurantes reales. La comida puede
-incluir un restaurante principal y hasta tres alternativas. Solo el principal
-participa en los trayectos temporizados; las alternativas son sugerencias,
-sin reserva. Un restaurante con cierre inequívoco según su horario de fuente
-no se propone. Si no hay restaurante viable, se mantiene una comida genérica.
-Sin gastronomía no se buscan restaurantes. La comida genérica avisa de que
-el posible desvío para comer carece de ruta calculada.
+Cuando hay un día que incluye la franja de comida completa, se buscan
+restaurantes reales aunque no se haya marcado gastronomía como interés. Si
+gastronomía está excluida, no se proponen restaurantes. También se respetan las
+subcategorías excluidas. Se consulta Geoapify una vez por generación, solicitando
+hasta 100 restaurantes del destino, y se seleccionan hasta diez cerca de las
+zonas de las visitas candidatas. La proximidad geográfica sirve solo para
+preseleccionar: nunca se presenta como una ruta a pie.
+
+Con los recorridos de OpenRouteService se elige un restaurante al que se pueda
+llegar antes de la comida y se favorece la cercanía a las visitas de antes y
+después. Las visitas y los descansos previos dejan tiempo para ese traslado y
+su margen. Si no hay ruta al restaurante se conservan las visitas viables y la
+pausa para comer, sin inventar un desplazamiento. Los días que solo incluyen
+parte de la franja mantienen una pausa libre, sin forzar una reserva o acortar
+las visitas.
+
+La comida puede incluir un restaurante principal y hasta tres alternativas.
+Solo el principal participa en los trayectos temporizados. Las opciones muestran
+nombre, dirección, horario si existe y distancia/tiempo a pie desde la visita
+anterior cuando el proveedor los ha calculado. Si no hay visita previa, esos
+datos permanecen ausentes. Las alternativas no recalculan el itinerario al
+mostrarlas; elegir otra exige revisar los desplazamientos. No se infieren
+precios ni apertura confirmada. Un restaurante con cierre inequívoco según su
+horario de fuente no se propone.
+
+Si no hay restaurante viable, la tarjeta dice «Pausa para comer. Puedes elegir
+un restaurante por la zona», sin un aviso de disponibilidad o reserva para un
+local inexistente. El aviso general recuerda que ese desplazamiento no está
+calculado. Las visitas y restaurantes comparten el límite de 50 puntos de ORS.
 
 La validación final comprueba ventanas, orden, solapes, duraciones,
 desplazamientos, duplicados y exclusiones. Las visitas incompatibles con un
@@ -821,4 +843,81 @@ volver al itinerario conserva el día seleccionado.
 Si la generación falla, la configuración confirmada permanece disponible para
 reintentar. Volver al resumen y abrir de nuevo el resultado no genera otra vez;
 editar la configuración invalida el resultado. El plan permanece solo en la
-memoria de la pantalla: todavía no se guarda. El mapa corresponde a UT16.
+memoria de la pantalla: todavía no se guarda. El mapa se describe a continuación.
+
+## UT16: visitas del día en el mapa
+
+El itinerario muestra las tarjetas y el mapa juntos en ordenador. En móvil
+permite alternar entre «Lista» y «Mapa», conservando la visita seleccionada.
+Pulsar una tarjeta centra el mapa y destaca su marcador; pulsar un marcador
+destaca la tarjeta correspondiente. «Ver tarjeta» vuelve a la lista y enfoca
+esa visita. «Ver todas las visitas del día» restaura el encuadre completo.
+
+Solo se representan los bloques `VISITA` programados del día seleccionado,
+con los mismos números en tarjetas y marcadores. No se representan los
+candidatos descartados, las comidas ni sus alternativas. Cambiar de día
+actualiza ambas vistas y limpia la selección anterior. Volver desde «Lugares
+considerados» conserva el día y la selección; un plan nuevo no hereda la visita
+seleccionada del anterior.
+
+Las visitas sin coordenadas válidas permanecen en la lista con un aviso y no
+reciben ubicaciones inventadas. Las visitas con coordenadas idénticas comparten
+un marcador que permite seleccionar cada una. Los días sin visitas tienen un
+estado vacío explicativo. La lista mantiene horas, direcciones, traslados,
+detalles y avisos, y puede utilizarse sin depender del mapa. Si falla la carga
+del mapa o de su fondo, se muestra un aviso y se mantiene la alternativa textual.
+
+Se utilizan Leaflet y React Leaflet, ya incluidos en el frontend. El fondo
+predeterminado procede de OpenStreetMap con su atribución visible. No necesita
+clave API. Opcionalmente, `VITE_MAP_TILES_URL` permite configurar una URL de
+teselas compatible; si se cambia de proveedor debe revisarse también la
+atribución en `MapaItinerario.tsx`. Las variables `VITE_` son públicas: no deben
+contener claves privadas. El mapa no vuelve a generar el plan ni consulta
+Geoapify, Gemini u OpenRouteService al seleccionar visitas o cambiar de día;
+usa las coordenadas del itinerario recibido y carga las teselas del fondo.
+
+Cada tarjeta incluye «Sobre este lugar», separado de la dirección y de los
+datos prácticos. El backend puede entregar `descripcion` y `fuenteDescripcion`
+en cada candidato evaluado. Tavily extrae una frase descriptiva de los resultados
+de la búsqueda que ya se realiza para ese lugar, conserva su URL y limita el
+extracto a 600 caracteres. No se hace una petición adicional por abrir la tarjeta.
+Las frases que solo informan de precios u horarios no se usan como descripción.
+No todos los lugares tienen un extracto reconocible: en ese caso ambos campos
+son `null` y la tarjeta indica que la descripción no está disponible. El texto
+se presenta como extracto de una fuente externa, sin convertirlo en información
+verificada. Un resultado anterior o un backend sin estos campos sigue siendo
+compatible con el frontend.
+
+Las tarjetas distinguen la franja programada, el tipo de lugar, la dirección,
+la descripción y un desplegable «Datos prácticos de la visita». Este último
+conserva duración estimada, afinidad, coste, estado del horario y fuentes. Los
+costes desconocidos siguen siendo desconocidos. Para recibir descripciones en
+planes nuevos hay que reiniciar el backend actualizado y generar de nuevo;
+requieren que la investigación con Tavily esté configurada y encuentre un texto
+adecuado. No hay cambios en las tablas de la base de datos.
+
+Los avisos de «Antes de tu viaje» explican qué revisar antes de salir: horarios
+y precios pendientes de comprobar, visitas que no encajan y desplazamientos
+que no están calculados. No muestran identificadores de lugares ni términos
+internos como matrices o valoraciones locales. Los lugares descartados por
+horario se agrupan en un solo mensaje con sus nombres; los restantes se cuentan
+aparte. Los avisos repetidos se muestran una sola vez y el aviso de plan parcial
+se integra en el mismo panel. Las limitaciones del plan no cambian: solo su
+explicación al usuario.
+
+Validación desde `frontend`:
+
+```powershell
+npm run lint
+npm run build
+```
+
+Para comprobar manualmente la interacción:
+
+1. Generar un itinerario con visitas en varios días y abrir el resultado.
+2. Pulsar una tarjeta y comprobar su número y marcador destacado.
+3. Pulsar otro marcador y comprobar la tarjeta seleccionada; usar «Ver tarjeta».
+4. Cambiar de día y comprobar que solo aparecen las visitas de ese día.
+5. Repetir en móvil alternando «Lista» y «Mapa» y comprobar que se conserva la selección.
+6. Revisar un día vacío o una visita sin coordenadas: la explicación y el itinerario
+   textual deben seguir disponibles.

@@ -13,7 +13,9 @@ public record HallazgoGemini(
         Integer duracionMinutos,
         String fuentePrecio,
         String fuenteHorario,
-        String fuenteDuracion) {
+        String fuenteDuracion,
+        String descripcion,
+        String fuenteDescripcion) {
     public HallazgoGemini {
         fuentes = fuentes == null ? List.of() : List.copyOf(fuentes);
     }

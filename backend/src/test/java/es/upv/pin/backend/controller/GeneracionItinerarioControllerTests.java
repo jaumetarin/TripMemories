@@ -45,7 +45,7 @@ class GeneracionItinerarioControllerTests {
         var lugar = new LugarDto("museo", "Museo", null, 40.4, -3.7, List.of(), List.of(), null);
         var candidato = new CandidatoEvaluadoDto(lugar, 80, 60, null, null, CostLevel.FREE,
                 null, List.of(), null, null, "LOCAL", CostConfidence.UNKNOWN,
-                ScheduleStatus.UNVERIFIED, null, null, null);
+                ScheduleStatus.UNVERIFIED, null, null, null, null, null);
         when(servicio.generar(any())).thenReturn(new ItinerarioGeneradoDto(
                 List.of(dia), List.of("Aviso"), true, 5, 3, List.of(candidato), true));
         mvc.perform(post("/api/itinerarios/generar").contentType(MediaType.APPLICATION_JSON).content(configuracion))

@@ -52,7 +52,7 @@ class GeneracionItinerarioServiceTest {
         return new CandidatoEvaluadoDto(
                 lugar, afinidad, 60, null, null, coste, null, List.of(),
                 null, null, "GEMINI", CostConfidence.UNKNOWN,
-                ScheduleStatus.UNVERIFIED, null, null, null);
+                ScheduleStatus.UNVERIFIED, null, null, null, null, null);
     }
 
     private void evaluar(
@@ -182,7 +182,7 @@ class GeneracionItinerarioServiceTest {
                 .noneMatch(b -> b.tipo() == TipoBloqueItinerario.TRASLADO));
         assertTrue(plan.parcial());
         assertTrue(plan.advertencias().stream()
-                .anyMatch(a -> a.contains("rutas a pie no estan disponibles")));
+                .anyMatch(a -> a.contains("No hemos podido calcular algunos caminos a pie")));
         assertEquals(plan, servicio.generar(config));
     }
 
@@ -207,9 +207,10 @@ class GeneracionItinerarioServiceTest {
         assertEquals(56, plan.candidatosEvaluados());
         assertEquals(50, plan.candidatosEnMatriz());
         assertTrue(plan.advertencias().stream()
-                .anyMatch(a -> a.contains("no tienen coordenadas")));
+                .anyMatch(a -> a.contains("no conocemos su ubicación exacta")));
         assertTrue(plan.advertencias().stream()
-                .anyMatch(a -> a.contains("50 puntos")));
+                .anyMatch(a -> a.contains("Hemos limitado los lugares")));
+        assertTrue(plan.advertencias().stream().noneMatch(a -> a.contains("matriz")));
     }
 
     @Test

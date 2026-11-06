@@ -72,12 +72,14 @@ public class ValidadorPlanService {
                 } else if (bloque.tipo() == TipoBloqueItinerario.COMIDA) {
                     // La comida genérica no acredita una ubicación concreta.
                     OpcionComidaDto restaurante = bloque.restaurante();
-                    if (restaurante != null && ubicacion != null && !ubicacion.equals(restaurante.id()))
-                        incidencias.add("Falta traslado hasta el restaurante: " + restaurante.id());
-                    ubicacion = restaurante == null ? null : restaurante.id();
-                    ultimoLugar = restaurante == null ? null : new LugarDto(
+                    LugarDto lugarRestaurante = restaurante == null ? null : new LugarDto(
                             restaurante.id(), restaurante.nombre(), restaurante.direccion(),
                             restaurante.latitud(), restaurante.longitud(), List.of(), List.of(), restaurante.horario());
+                    if (restaurante != null && ubicacion != null && !ubicacion.equals(restaurante.id())
+                            && !mismoPunto(ultimoLugar, lugarRestaurante))
+                        incidencias.add("Falta traslado hasta el restaurante: " + restaurante.id());
+                    ubicacion = restaurante == null ? null : restaurante.id();
+                    ultimoLugar = lugarRestaurante;
                 }
             }
         }
