@@ -35,6 +35,21 @@ class ConfiguracionItinerarioServiceTests {
     }
 
     @Test
+    void aplicaValoresPredeterminadosYValidaRitmoPersonalizado() {
+        var defaults = servicio.validar(viaje(destino, fechas, "", preferencias)).ritmo();
+        assertEquals(new es.upv.pin.backend.dto.RitmoDiarioDto(java.time.LocalTime.of(13, 0),
+                java.time.LocalTime.of(15, 0), 120, 15, 10), defaults);
+        var personalizado = new es.upv.pin.backend.dto.RitmoDiarioDto(java.time.LocalTime.of(12, 30),
+                java.time.LocalTime.of(14, 0), 90, 20, 5);
+        assertEquals(personalizado, servicio.validar(new ConfiguracionItinerarioDto(
+                destino, fechas, "", preferencias, personalizado)).ritmo());
+        var invalido = new es.upv.pin.backend.dto.RitmoDiarioDto(java.time.LocalTime.of(15, 0),
+                java.time.LocalTime.of(14, 0), 90, 20, 5);
+        assertThrows(IllegalArgumentException.class, () -> servicio.validar(new ConfiguracionItinerarioDto(
+                destino, fechas, "", preferencias, invalido)));
+    }
+
+    @Test
     void normalizaLaConfiguracionCompletaYRecalculaLaDuracion() {
         var resultado = servicio.validar(viaje(destino, fechas, "  Hotel Madrid  ", preferencias));
         assertEquals(destino, resultado.destino());

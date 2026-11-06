@@ -18,6 +18,15 @@ export interface ConfiguracionItinerario {
   disponibilidad: FechaHora
   alojamiento: string
   preferencias: Preferencias
+  ritmo: RitmoDiario
+}
+
+export interface RitmoDiario {
+  comidaInicio: string
+  comidaFin: string
+  descansoCadaMinutos: number
+  descansoDuracionMinutos: number
+  margenMinutos: number
 }
 
 export interface Lugar {
@@ -183,6 +192,17 @@ function esConfiguracionItinerario(valor: unknown): valor is ConfiguracionItiner
     && typeof valor.disponibilidad.duracionDias === 'number'
     && Number.isInteger(valor.disponibilidad.duracionDias)
     && typeof valor.alojamiento === 'string' && esPreferencias(valor.preferencias)
+    && esRitmoDiario(valor.ritmo)
+}
+
+function esRitmoDiario(valor: unknown): valor is RitmoDiario {
+  const hora = /^\d{2}:\d{2}(?::\d{2})?$/
+  return esObjeto(valor)
+    && typeof valor.comidaInicio === 'string' && hora.test(valor.comidaInicio)
+    && typeof valor.comidaFin === 'string' && hora.test(valor.comidaFin)
+    && typeof valor.descansoCadaMinutos === 'number' && Number.isInteger(valor.descansoCadaMinutos)
+    && typeof valor.descansoDuracionMinutos === 'number' && Number.isInteger(valor.descansoDuracionMinutos)
+    && typeof valor.margenMinutos === 'number' && Number.isInteger(valor.margenMinutos)
 }
 
 export async function confirmarConfiguracion(

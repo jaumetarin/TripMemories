@@ -733,10 +733,10 @@ La respuesta tiene `Cache-Control: no-store` y contiene:
   corresponda, fuente, indicador `condicionada` y descripción. Si un día no
   tiene ventana entre 10:00 y 18:00, sus límites son `null` y no tiene bloques.
 - `advertencias`: explicaciones de datos o recorridos incompletos.
-- `parcial`: indica que hay un día sin visitas o sin ventana útil, o un hueco
-  de tiempo libre de al menos 15 minutos.
-- `candidatosEvaluados` y `candidatosEnMatriz`: contadores de candidatos
-  evaluados y considerados en el cálculo de recorridos.
+- `parcial`: indica que hay un día sin visitas o sin ventana útil, un hueco
+  de tiempo libre de al menos 15 minutos o lugares que no se han programado.
+- `candidatosEvaluados` y `candidatosEnMatriz`: contadores de lugares evaluados
+  y puntos considerados en la matriz de recorridos.
 
 La heurística distribuye visitas y traslados dentro de la ventana diaria de
 10:00 a 18:00, recortada por la llegada y la salida, sin solapamientos ni
@@ -749,14 +749,55 @@ en cinco puntos de afinidad, se prefiere un trayecto dentro de la distancia
 deseada, después menor tiempo a pie, gasto acorde y variedad de categorías.
 La distancia deseada es flexible y un coste desconocido no se considera gratis.
 
-La matriz de OpenRouteService admite hasta 50 candidatos con coordenadas
-válidas; si hay más, se limita la selección y se añade un aviso. Una ruta
+La matriz de OpenRouteService admite hasta 50 puntos con coordenadas
+válidas, incluyendo restaurantes si se proponen; si hay más, se limita la selección y se añade un aviso. Una ruta
 concreta no disponible puede causar un plan parcial con advertencia, sin
 inventar tiempos. Si falla el proveedor en conjunto, la respuesta es HTTP 503.
-Con menos de dos candidatos geolocalizados no se consulta ORS. Si ninguna fecha
+Con menos de dos puntos geolocalizados no se consulta ORS. Si ninguna fecha
 tiene tiempo disponible, no se consulta ningún proveedor.
 El JSON mal formado o una configuración inválida reciben HTTP 400. Ambos
 errores incluyen un objeto JSON con `mensaje`.
 
-UT13–UT16 siguen pendientes: comidas, descansos y márgenes; validación y
-explicación adicionales; presentación diaria; y sincronización con el mapa.
+## UT13 y UT14: pausas y validación del plan
+
+La configuración admite un objeto `ritmo` opcional. Cada campo omitido adopta
+su valor inicial:
+
+```json
+"ritmo": {
+  "comidaInicio": "13:00",
+  "comidaFin": "15:00",
+  "descansoCadaMinutos": 120,
+  "descansoDuracionMinutos": 15,
+  "margenMinutos": 10
+}
+```
+
+La franja de comida se reserva completa y puede ajustarse entre las 10:00 y
+las 18:00. En un día parcialmente disponible se reserva solo el solape con
+esa franja, sin moverla. Las visitas no se acortan ni dividen para encajar.
+El Planner puede añadir bloques `COMIDA`, `DESCANSO` y `MARGEN` además de
+visitas, traslados y tiempo libre. Sitúa el descanso en una frontera entre
+actividades cuando se alcanza el intervalo configurado; la comida también
+cuenta como descanso. Los minutos del margen se suman a cada traslado ORS.
+
+Si se selecciona gastronomía, se buscan restaurantes reales. La comida puede
+incluir un restaurante principal y hasta tres alternativas. Solo el principal
+participa en los trayectos temporizados; las alternativas son sugerencias,
+sin reserva. Un restaurante con cierre inequívoco según su horario de fuente
+no se propone. Si no hay restaurante viable, se mantiene una comida genérica.
+Sin gastronomía no se buscan restaurantes. La comida genérica avisa de que
+el posible desvío para comer carece de ruta calculada.
+
+La validación final comprueba ventanas, orden, solapes, duraciones,
+desplazamientos, duplicados y exclusiones. Las visitas incompatibles con un
+horario inequívoco se intentan recolocar y, si no caben, se explican y dejan
+tiempo libre. Solo se interpretan reglas semanales simples de Geoapify,
+como `Mo-Fr 10:00-18:00`, `Sa off` o `24/7`. Otros textos, incluidos los
+fragmentos externos, permanecen inciertos; una visita o restaurante así se
+presenta como propuesta condicionada. Los costes sin respaldo siguen como
+desconocidos. Si una incoherencia estructural permanece en el plan, la API no
+devuelve ese plan como válido.
+
+El formulario permite ajustar el ritmo y revisarlo antes de confirmar. La
+visualización del itinerario por días y el mapa corresponden a UT15 y UT16.

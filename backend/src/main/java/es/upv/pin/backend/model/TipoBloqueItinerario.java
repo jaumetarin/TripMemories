@@ -1,2 +1,2 @@
 package es.upv.pin.backend.model;
-public enum TipoBloqueItinerario { VISITA, TRASLADO, TIEMPO_LIBRE }
+public enum TipoBloqueItinerario { VISITA, TRASLADO, TIEMPO_LIBRE, COMIDA, DESCANSO, MARGEN }

@@ -40,7 +40,12 @@ class ConfiguracionItinerarioControllerTests {
                 .andExpect(jsonPath("$.preferencias.intereses.length()").value(1))
                 .andExpect(jsonPath("$.preferencias.subcategoriasExcluidas[0]").value("COMIDA_RAPIDA"))
                 .andExpect(jsonPath("$.preferencias.nivelGasto").value("ECONOMICO"))
-                .andExpect(jsonPath("$.preferencias.distanciaKm").value(3.0));
+                .andExpect(jsonPath("$.preferencias.distanciaKm").value(3.0))
+                .andExpect(jsonPath("$.ritmo.comidaInicio").exists())
+                .andExpect(jsonPath("$.ritmo.comidaFin").exists())
+                .andExpect(jsonPath("$.ritmo.descansoCadaMinutos").value(120))
+                .andExpect(jsonPath("$.ritmo.descansoDuracionMinutos").value(15))
+                .andExpect(jsonPath("$.ritmo.margenMinutos").value(10));
     }
 
     @Test
@@ -78,5 +83,14 @@ class ConfiguracionItinerarioControllerTests {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.mensaje").isNotEmpty());
         mvc.perform(post("/api/itinerarios/confirmar-configuracion").contentType(MediaType.APPLICATION_JSON).content(cuerpo()))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void rechazaFranjaDeComidaInvertida() throws Exception {
+        String entrada = cuerpo().replace("\"alojamiento\":",
+                "\"ritmo\":{\"comidaInicio\":\"15:00\",\"comidaFin\":\"13:00\"},\"alojamiento\":");
+        mvc.perform(post("/api/itinerarios/confirmar-configuracion")
+                .contentType(MediaType.APPLICATION_JSON).content(entrada))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.mensaje").isNotEmpty());
     }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { confirmarConfiguracion, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
-import type { CategoriaPreferencia, ConfiguracionItinerario, Destino, FechaHora, OpcionesGastoDistancia, Preferencias } from '../api'
+import type { CategoriaPreferencia, ConfiguracionItinerario, Destino, FechaHora, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
 import { Icon } from '../assets/Icon'
 import { BuscadorDestinos } from '../components/BuscadorDestinos'
 import { CampoFecha } from '../components/CampoFecha'
@@ -30,6 +30,7 @@ const selectoresEdicion: Record<CampoPlan, string> = {
   exclusiones: '#editar-exclusiones',
   gasto: '#editar-gasto',
   distancia: '#distancia-actividades',
+  ritmo: '#editar-ritmo',
 }
 
 export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
@@ -44,6 +45,10 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [preferencias, setPreferencias] = useState<Preferencias>({
     intereses: [], categoriasExcluidas: [], subcategoriasExcluidas: [],
     nivelGasto: null, distanciaKm: null,
+  })
+  const [ritmo, setRitmo] = useState<RitmoDiario>({
+    comidaInicio: '13:00', comidaFin: '15:00',
+    descansoCadaMinutos: 120, descansoDuracionMinutos: 15, margenMinutos: 10,
   })
   const [catalogo, setCatalogo] = useState<CategoriaPreferencia[]>([])
   const [opcionesGastoDistancia, setOpcionesGastoDistancia] = useState<OpcionesGastoDistancia | null>(null)
@@ -175,6 +180,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       nivelGasto: preferencias.nivelGasto,
       distanciaKm: preferencias.distanciaKm,
     },
+    ritmo,
   } : null
 
   async function confirmarPlan() {
@@ -197,6 +203,11 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       setHoraSalida(confirmada.disponibilidad.salida.split('T')[1].slice(0, 5))
       setAlojamiento(confirmada.alojamiento)
       setPreferencias(confirmada.preferencias)
+      setRitmo({
+        ...confirmada.ritmo,
+        comidaInicio: confirmada.ritmo.comidaInicio.slice(0, 5),
+        comidaFin: confirmada.ritmo.comidaFin.slice(0, 5),
+      })
     } catch (error) {
       if (controlador.signal.aborted) return
       setErrorConfirmacion(error instanceof Error && error.name === 'TimeoutError'
@@ -298,7 +309,8 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           catalogo={catalogo} cargandoCatalogo={cargandoCatalogo} errorCatalogo={errorCatalogo}
           opcionesGastoDistancia={opcionesGastoDistancia}
           onReintentarCatalogo={reintentarCatalogo}
-          datos={preferencias} onCambiar={setPreferencias} onAtras={editarDisponibilidad}
+          datos={preferencias} onCambiar={setPreferencias} ritmo={ritmo} onCambiarRitmo={setRitmo}
+          onAtras={editarDisponibilidad}
           editandoResumen={editandoResumen}
           onContinuar={confirmadas => {
             setPreferencias(actuales => ({ ...actuales, ...confirmadas }))
