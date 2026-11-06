@@ -26,15 +26,31 @@ public class TavilyResearchClient implements ResearchProvider {
             Pattern.compile(
                     "(?iu)(?:entrada|admission|ticket|precio|price|tarifa)[^.!?\\n"
                         + "]{0,55}?(?:€\\s*(\\d+(?:[.,]\\d{1,2})?)|(\\d+(?:[.,]\\d{1,2})?)\\s*(€|EUR|USD|GBP))");
+    // Captura también AM/PM para no perderlo antes de validar el horario.
     private static final Pattern HORA =
             Pattern.compile(
-                    "(?iu)(?:horario|horarios|abre|abierto|opening hours|open)[^.!?"
-                        + "]{0,100}?(?:[01]?\\d|2[0-3])[:.][0-5]\\d\\s*(?:-|–|a|to)\\s*"
-                        + "(?:[01]?\\d|2[0-3])[:.][0-5]\\d\\b");
+                    "(?iu)(?:horario|horarios|abre|abierto|opening hours|open)[^.!?]{0,100}?"
+                        + "(?:[01]?\\d|2[0-3])[:.][0-5]\\d"
+                        + "(?:\\s*(?:AM|PM)\\b)?"
+                        + "\\s*(?:-|–|a|to)\\s*"
+                        + "(?:[01]?\\d|2[0-3])[:.][0-5]\\d"
+                        + "(?:\\s*(?:AM|PM)\\b)?\\b");
     private static final Pattern GRATIS =
             Pattern.compile(
                     "(?iu)\\b(?:entrada gratuita|entrada gratis|admission is free|free"
                         + " admission)\\b");
+    // Evita interpretar como general una gratuidad negada o condicionada.
+    private static final Pattern GRATUIDAD_DUDOSA = Pattern.compile(
+            "(?iu)\\b(?:"
+                    + "no|not|never|nunca"
+                    + "|a\\s+partir|desde|hasta|antes|despu[eé]s"
+                    + "|from|after|before|until|starting"
+                    + "|para|for|si|if|cuando|when"
+                    + "|donaci[oó]n|donativo|donation|donations"
+                    + "|solo|s[oó]lo|only|menores|niñ[oa]s?|children"
+                    + "|domingos?|sundays?|excepto|except"
+                    + "|condiciones|conditions|ciertos|certain|d[ií]as|days"
+                    + ")\\b");
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http;
     private final String key;
@@ -111,12 +127,13 @@ public class TavilyResearchClient implements ResearchProvider {
                 }
                 if (cantidad == null) {
                     Matcher gratis = GRATIS.matcher(texto);
+
                     if (gratis.find()) {
-                        String contexto = contextoFrase(texto, gratis.start(), gratis.end());
-                        if (!Pattern.compile(
-                                        "(?iu)\\b(donaci[oó]n|donativo|donation|donations|solo|s[oó]lo|only|menores|niñ[oa]s?|children|domingos?|sundays?|excepto|except|condiciones|conditions|ciertos|certain|d[ií]as|days)\\b")
-                                .matcher(contexto)
-                                .find()) {
+                        String contexto = contextoFrase(
+                                texto, gratis.start(), gratis.end());
+
+                        // Solo asignamos cero si no detectamos negaciones ni restricciones.
+                        if (!GRATUIDAD_DUDOSA.matcher(contexto).find()) {
                             cantidad = 0.0;
                             moneda = "EUR";
                             fuentePrecio = url;
@@ -126,7 +143,8 @@ public class TavilyResearchClient implements ResearchProvider {
                 }
                 while (horarioTexto == null && horario.find()) {
                     String candidatoHorario = horario.group().replaceAll("\\s+", " ").trim();
-                    if (candidatoHorario.matches("(?iu).*\\b(?:AM|PM)\\b.*")) continue;
+                    // No interpretamos aún horarios de 12 horas; evitamos guardar datos ambiguos.
+                    if (candidatoHorario.matches("(?iu).*\\d\\s*(?:AM|PM)\\b.*")) continue;
                     horarioTexto = candidatoHorario;
                     fuenteHorario = url;
                     hechos.add(horarioTexto);
