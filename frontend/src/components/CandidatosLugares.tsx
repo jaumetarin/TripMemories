@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
-import { evaluarCandidatos } from '../api'
-import type { CandidatoEvaluado, ConfiguracionItinerario, CosteCandidato, EvaluacionCandidatos } from '../api'
+import type { CandidatoEvaluado, CosteCandidato } from '../api'
 import './CandidatosLugares.css'
 
 const costes: Record<CosteCandidato, string> = {
@@ -21,55 +19,26 @@ function mostrarPrecio(candidato: CandidatoEvaluado): string | null {
   return `${rango}${moneda ? ` ${moneda}` : ' (moneda desconocida)'}`
 }
 
-export function CandidatosLugares({ configuracion }: { configuracion: ConfiguracionItinerario }) {
-  const [resultado, setResultado] = useState<EvaluacionCandidatos | null>(null)
-  const [cargando, setCargando] = useState(false)
-  const [error, setError] = useState('')
-  const peticion = useRef<AbortController | null>(null)
-  useEffect(() => () => { peticion.current?.abort() }, [])
-
-  async function buscar() {
-    if (peticion.current || resultado !== null) return
-    const controlador = new AbortController()
-    peticion.current = controlador
-    setCargando(true)
-    setError('')
-    try {
-      const evaluacion = await evaluarCandidatos(configuracion, controlador.signal)
-      if (!controlador.signal.aborted) setResultado(evaluacion)
-    } catch (fallo) {
-      if (controlador.signal.aborted) return
-      setError(fallo instanceof Error && fallo.name === 'TimeoutError'
-        ? 'La búsqueda está tardando demasiado. Vuelve a intentarlo.'
-        : fallo instanceof Error && fallo.name === 'Error' ? fallo.message
-        : 'No se puede conectar con el backend. Vuelve a intentarlo.')
-    } finally {
-      if (!controlador.signal.aborted) {
-        peticion.current = null
-        setCargando(false)
-      }
-    }
-  }
-
-  return <section className="candidatos-lugares" aria-labelledby="titulo-candidatos" aria-busy={cargando}>
-    <h2 id="titulo-candidatos">Lugares para tu viaje</h2>
-    <p>Lugares que coinciden con tus intereses y exclusiones según la información disponible.</p>
-    {resultado === null && <button className="boton boton-primario" type="button" disabled={cargando} onClick={buscar}>
-      {cargando ? 'Buscando y evaluando lugares…' : error ? 'Reintentar búsqueda de lugares' : 'Buscar lugares disponibles'}
-    </button>}
-    <p role="status" aria-live="polite">{cargando ? 'Buscando y evaluando lugares…' : resultado === null ? ''
-      : resultado.candidatos.length === 0 ? 'No se han encontrado lugares con estas preferencias.'
-        : `${resultado.candidatos.length} lugares encontrados.`}</p>
-    {error && <p className="error-viaje" role="alert">{error}</p>}
-    {resultado !== null && <>
-      {resultado.fallback && <p className="candidatos-aviso" role="alert">La evaluación ha utilizado una alternativa local. Algunos datos pueden ser menos precisos.</p>}
-      {resultado.advertencias.map((advertencia, i) => <p className="candidatos-aviso" key={i}>{advertencia}</p>)}
-      {resultado.candidatos.length > 0 && <p id="explicacion-duracion">Las duraciones son estimaciones y pueden variar durante la visita.</p>}
+export function CandidatosLugares({ candidatos, fallback, programados }: {
+  candidatos: CandidatoEvaluado[]
+  fallback: boolean
+  programados: ReadonlySet<string>
+}) {
+  return <section className="candidatos-lugares" aria-labelledby="titulo-candidatos">
+    <h2 id="titulo-candidatos">Lugares considerados</h2>
+    <p>Estos lugares se evaluaron para generar el itinerario. Los que no aparecen en el plan pueden haber quedado fuera por tiempo, rutas u horarios.</p>
+    <p role="status" aria-live="polite">{candidatos.length === 0
+      ? 'No se evaluaron lugares para esta disponibilidad.'
+      : `${candidatos.length} lugares evaluados.`}</p>
+    {fallback && <p className="candidatos-aviso">La evaluación ha utilizado una alternativa local. Algunos datos pueden ser menos precisos.</p>}
+    {candidatos.length > 0 && <p id="explicacion-duracion">Las duraciones son estimaciones y pueden variar durante la visita.</p>}
       <ul className="candidatos-lista">
-        {resultado.candidatos.map(candidato => {
+        {candidatos.map(candidato => {
           const precio = mostrarPrecio(candidato)
-          return <li className="candidato-tarjeta" key={candidato.lugar.id}>
+          return <li className="candidato-tarjeta" key={candidato.lugar.id}
+            data-programado={programados.has(candidato.lugar.id)}>
           <h3>{candidato.lugar.nombre}</h3>
+          <p className="candidato-programacion">{programados.has(candidato.lugar.id) ? 'Incluido en el itinerario' : 'No programado'}</p>
           <p>{candidato.lugar.direccion || 'Dirección no disponible'}</p>
           <p className="candidato-etiqueta">{candidato.etiqueta}</p>
           <p><strong>Afinidad:</strong> {candidato.afinidad}/100</p>
@@ -91,6 +60,5 @@ export function CandidatosLugares({ configuracion }: { configuracion: Configurac
       </ul>
       <p className="candidatos-atribucion">Lugares de <a href="https://www.geoapify.com/" target="_blank" rel="noreferrer">Geoapify</a>
         {' · © '}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a></p>
-    </>}
   </section>
 }

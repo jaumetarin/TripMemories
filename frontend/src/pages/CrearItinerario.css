@@ -1,5 +1,6 @@
 .crear-viaje { max-width: 840px; margin: 0 auto; }
 .crear-viaje-preferencias { max-width: 1120px; }
+.crear-viaje-resultado { max-width: 1120px; }
 .crear-viaje-preferencias .crear-intro { text-align: left; }
 .crear-intro h1 { outline: none; }
 .crear-viaje .acompanamiento { overflow-x: auto; padding: 8px 7px 18px; margin-bottom: 22px; }
@@ -43,15 +44,15 @@
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 .pasos::before {
   content: '';
   position: absolute;
   top: 16px;
-  left: calc(100% / 6);
-  right: calc(100% / 6);
+  left: calc(100% / 8);
+  right: calc(100% / 8);
   height: 1px;
   background: #dcdce1;
 }
@@ -61,10 +62,17 @@
 .pasos li[data-completado] > span { background: var(--primario); color: white; }
 .pasos li[aria-current] strong { color: var(--primario); }
 .pasos strong { font-size: .82rem; font-weight: 550; }
+.resultado-itinerario { margin-top: 26px; }
+.resultado-nota { margin-top: 12px; color: var(--secundario); font-size: .78rem; line-height: 1.6; }
+.resultado-vistas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--borde); }
+.resultado-vistas button { padding: 10px 16px; border: 1px solid var(--borde); border-radius: 12px; background: white; color: var(--secundario); font: inherit; font-size: .85rem; cursor: pointer; }
+.resultado-vistas button[aria-current] { border-color: var(--primario); background: #eef6f0; color: var(--primario); font-weight: 650; }
+.resultado-vistas button:focus-visible { outline: 3px solid var(--primario); outline-offset: 3px; }
 @media (max-width: 520px) {
   .formulario-viaje { padding: 24px; }
   .crear-distribucion { margin-top: 28px; gap: 24px; }
   .pasos { gap: 8px; }
   .pasos strong { font-size: .7rem; }
+  .resultado-vistas button { flex: 1 1 180px; }
   .disponibilidad-campos { grid-template-columns: 1fr; }
 }

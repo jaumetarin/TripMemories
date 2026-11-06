@@ -145,7 +145,8 @@ Arranca también el frontend y reinicia Vite si estaba abierto antes de estos ca
 el proxy de desarrollo redirige `/api` a `http://localhost:8080`, sin necesitar CORS.
 En un futuro despliegue habrá que redirigir `/api` al backend desde el alojamiento.
 El buscador comunica los errores de conexión, de configuración y del proveedor.
-La generación y el guardado del itinerario siguen pendientes.
+La generación y la consulta del itinerario se describen en las secciones de
+UT12 a UT15. El guardado sigue pendiente.
 
 ### Destino, fechas y horas
 
@@ -649,9 +650,9 @@ información parcial. No se rellenan horarios ni precios ausentes con supuestos.
 
 La respuesta pública usa DTO propios, no los esquemas de Gemini, Tavily o
 Geoapify. `CandidatoExceptionHandler` devuelve 400 para configuración inválida
-y 503 para fallos de obtención de lugares. El frontend muestra afinidad, motivo,
-duración estimada, coste, horario, procedencia y avisos. No muestra todavía un
-itinerario distribuido por días.
+y 503 para fallos de obtención de lugares. La vista de candidatos muestra
+afinidad, motivo, duración estimada, coste, horario, procedencia y avisos. La
+consulta del itinerario por días se incorporó después, en UT15.
 
 La prueba real de Valencia (arte y museos, un día de 10:00 a 18:00) devolvió 81
 candidatos evaluados por Gemini. Tavily aportó fuentes para 6, precio para 4 y
@@ -800,4 +801,24 @@ desconocidos. Si una incoherencia estructural permanece en el plan, la API no
 devuelve ese plan como válido.
 
 El formulario permite ajustar el ritmo y revisarlo antes de confirmar. La
-visualización del itinerario por días y el mapa corresponden a UT15 y UT16.
+consulta por días se describe a continuación; el mapa corresponde a UT16.
+
+## UT15: consulta del itinerario por días
+
+Tras confirmar la configuración, «Generar itinerario» llama una sola vez a
+`POST /api/itinerarios/generar`. El backend evalúa los candidatos dentro de esa
+petición; la interfaz no consulta `/api/candidatos/evaluar` por separado. La
+respuesta incorpora `candidatos` y `evaluacionFallback` para conservar la lista
+completa de lugares considerados sin repetir consultas a los proveedores.
+
+El resultado principal permite cambiar de día y abrir detalles de cada visita.
+Muestra visitas, traslados, comida, descansos, márgenes y tiempo libre, así como
+avisos, datos condicionados y días sin disponibilidad. Al cambiar de día se
+cierran los detalles del día anterior. «Lugares considerados» es una vista
+secundaria que distingue los candidatos programados de los que quedaron fuera;
+volver al itinerario conserva el día seleccionado.
+
+Si la generación falla, la configuración confirmada permanece disponible para
+reintentar. Volver al resumen y abrir de nuevo el resultado no genera otra vez;
+editar la configuración invalida el resultado. El plan permanece solo en la
+memoria de la pantalla: todavía no se guarda. El mapa corresponde a UT16.

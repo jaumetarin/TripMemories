@@ -1,6 +1,5 @@
 import type { CategoriaPreferencia, ConfiguracionItinerario, OpcionesGastoDistancia } from '../api'
 import { Icon } from '../assets/Icon'
-import { CandidatosLugares } from '../components/CandidatosLugares'
 import './RevisarPlan.css'
 
 export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia' | 'ritmo'
@@ -10,11 +9,15 @@ type Props = {
   confirmada: boolean
   confirmando: boolean
   errorConfirmacion: string
+  generando: boolean
+  errorGeneracion: string
+  itinerarioDisponible: boolean
   catalogo: CategoriaPreferencia[]
   opcionesGastoDistancia: OpcionesGastoDistancia | null
   onEditar: (campo: CampoPlan) => void
   onAtras: () => void
   onConfirmar: () => void
+  onGenerar: () => void
 }
 
 function mostrarFecha(valor: string) {
@@ -23,8 +26,9 @@ function mostrarFecha(valor: string) {
     .format(new Date(valor.split('T')[0] + 'T12:00:00'))
 }
 
-export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfirmacion, catalogo,
-  opcionesGastoDistancia, onEditar, onAtras, onConfirmar }: Props) {
+export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfirmacion,
+  generando, errorGeneracion, itinerarioDisponible, catalogo,
+  opcionesGastoDistancia, onEditar, onAtras, onConfirmar, onGenerar }: Props) {
   const { destino, disponibilidad, alojamiento, preferencias, ritmo } = configuracion
   const nombreCategoria = (codigo: string) => catalogo.find(categoria => categoria.codigo === codigo)?.nombre ?? codigo
   const nombreSubcategoria = (codigo: string) => catalogo.flatMap(categoria => categoria.subcategorias)
@@ -74,7 +78,7 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
               {apartado.ayuda && <p className="revision-ayuda">{apartado.ayuda}</p>}
             </div>
             <button className="revision-editar" type="button" aria-label={'Editar ' + apartado.titulo.toLowerCase()}
-              disabled={confirmando} onClick={() => onEditar(apartado.campo)}>Editar</button>
+              disabled={confirmando || generando} onClick={() => onEditar(apartado.campo)}>Editar</button>
           </section>
         ))}
       </div>
@@ -83,20 +87,25 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
         <span>Confirma los datos de este resumen. Si editas algún apartado, tendrás que confirmar de nuevo. El viaje todavía no se guarda.</span>
       </p>
       <div className="revision-estado" role="status" aria-live="polite">
-        {confirmando ? 'Comprobando toda la configuración…' : confirmada
+        {generando ? 'Generando tu itinerario. Puede tardar unos minutos…' : confirmando ? 'Comprobando toda la configuración…' : confirmada
           ? 'Configuración confirmada. Estos son los últimos valores validados para tu itinerario.'
           : 'Configuración pendiente de confirmar.'}
       </div>
       {errorConfirmacion && <p className="error-viaje" role="alert">{errorConfirmacion}</p>}
+      {errorGeneracion && <p className="error-viaje" role="alert">{errorGeneracion}</p>}
       <div className="revision-acciones">
-        <button className="boton revision-atras" type="button" disabled={confirmando} onClick={onAtras}>← Atrás</button>
-        <button className="boton boton-primario" type="button" disabled={confirmando || confirmada}
-          onClick={onConfirmar}>
-          {confirmando ? 'Confirmando…' : confirmada ? 'Configuración confirmada' : errorConfirmacion ? 'Reintentar confirmación' : 'Confirmar configuración'} <Icon name="flecha" />
-        </button>
+        <button className="boton revision-atras" type="button" disabled={confirmando || generando} onClick={onAtras}>← Atrás</button>
+        {confirmada ? (
+          <button className="boton boton-primario" type="button" disabled={generando} onClick={onGenerar}>
+            {generando ? 'Generando itinerario…' : itinerarioDisponible ? 'Ver itinerario' : errorGeneracion ? 'Reintentar generación' : 'Generar itinerario'} <Icon name="flecha" />
+          </button>
+        ) : (
+          <button className="boton boton-primario" type="button" disabled={confirmando} onClick={onConfirmar}>
+            {confirmando ? 'Confirmando…' : errorConfirmacion ? 'Reintentar confirmación' : 'Confirmar configuración'} <Icon name="flecha" />
+          </button>
+        )}
       </div>
-      <p className="revision-generacion">La generación del itinerario estará disponible próximamente. Confirmar la configuración no genera actividades.</p>
-      {confirmada && <CandidatosLugares configuracion={configuracion} />}
+      <p className="revision-generacion">Confirmar la configuración no genera actividades. El itinerario se crea al pulsar «Generar itinerario» y todavía no se guarda.</p>
     </div>
   )
 }
