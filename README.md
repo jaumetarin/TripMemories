@@ -683,3 +683,38 @@ Gasto y distancia todavía no participan en el ranking de Gemini. El Planner
 deberá considerarlos como preferencias al disponer de precios y recorridos, y
 mantener `UNKNOWN` cuando un dato no esté respaldado. UT17 añadirá después el
 control de solicitudes repetidas y cuotas de generación.
+
+
+## UT11: desplazamientos a pie con OpenRouteService
+
+El backend incorpora el cálculo de distancias y tiempos peatonales mediante
+OpenRouteService.
+
+La clave se configura en la variable de entorno `ORS_API_KEY`. El archivo
+application.properties contiene únicamente la referencia a esa variable.
+
+### Endpoint
+
+POST /api/desplazamientos/calcular
+
+Recibe una lista de puntos con `id`, `latitud` y `longitud`.
+Admite hasta 50 puntos por cálculo, con identificadores únicos.
+
+Devuelve los desplazamientos entre lugares distintos, con distancia en metros,
+duración en segundos, identificadores de origen y destino, estado y fuente.
+
+Estados posibles:
+- DISPONIBLE.
+- COORDENADAS_AUSENTES.
+- RUTA_NO_DISPONIBLE.
+
+Los datos desconocidos permanecen como null. No se inventan tiempos ni distancias.
+
+Los errores de entrada devuelven HTTP 400. Los fallos del proveedor, la clave
+ausente y las respuestas inválidas del proveedor devuelven HTTP 503.
+
+Las pruebas del cliente, servicio y controlador utilizan respuestas simuladas.
+
+Pendiente: comprobar una consulta real con una API key válida. La UT12 podrá
+utilizar DesplazamientoService directamente y deberá gestionar los recorridos
+no disponibles. La presentación de avisos al usuario todavía debe integrarse.
