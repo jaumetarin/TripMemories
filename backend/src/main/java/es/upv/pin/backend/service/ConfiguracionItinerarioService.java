@@ -6,6 +6,8 @@ import es.upv.pin.backend.dto.ConfiguracionItinerarioDto;
 import es.upv.pin.backend.dto.DestinoDto;
 import es.upv.pin.backend.dto.FechaHoraDto;
 import es.upv.pin.backend.dto.PreferenciasDto;
+import es.upv.pin.backend.dto.RitmoDiarioDto;
+import java.time.LocalTime;
 
 @Service
 public class ConfiguracionItinerarioService {
@@ -27,7 +29,21 @@ public class ConfiguracionItinerarioService {
         FechaHoraDto disponibilidad = fechaHoraService.validar(configuracion.disponibilidad());
         PreferenciasDto preferencias = preferenciasService.validar(configuracion.preferencias());
         String alojamiento = textoOpcional(configuracion.alojamiento(), 250, "El alojamiento");
-        return new ConfiguracionItinerarioDto(destino, disponibilidad, alojamiento, preferencias);
+        return new ConfiguracionItinerarioDto(destino, disponibilidad, alojamiento, preferencias, validarRitmo(configuracion.ritmo()));
+    }
+
+    private RitmoDiarioDto validarRitmo(RitmoDiarioDto ritmo) {
+        LocalTime inicio = ritmo == null || ritmo.comidaInicio() == null ? LocalTime.of(13, 0) : ritmo.comidaInicio();
+        LocalTime fin = ritmo == null || ritmo.comidaFin() == null ? LocalTime.of(15, 0) : ritmo.comidaFin();
+        int cada = ritmo == null || ritmo.descansoCadaMinutos() == null ? 120 : ritmo.descansoCadaMinutos();
+        int duracion = ritmo == null || ritmo.descansoDuracionMinutos() == null ? 15 : ritmo.descansoDuracionMinutos();
+        int margen = ritmo == null || ritmo.margenMinutos() == null ? 10 : ritmo.margenMinutos();
+        if (inicio.isBefore(LocalTime.of(10, 0)) || fin.isAfter(LocalTime.of(18, 0))
+                || !inicio.isBefore(fin) || cada < 30 || cada > 480
+                || duracion < 5 || duracion > 120 || margen < 0 || margen > 120) {
+            throw new IllegalArgumentException("El ritmo diario debe tener una comida entre las 10:00 y las 18:00 y duraciones validas.");
+        }
+        return new RitmoDiarioDto(inicio, fin, cada, duracion, margen);
     }
 
     private DestinoDto validarDestino(DestinoDto destino) {

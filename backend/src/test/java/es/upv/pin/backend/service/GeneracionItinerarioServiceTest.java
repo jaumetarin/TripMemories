@@ -32,7 +32,8 @@ class GeneracionItinerarioServiceTest {
         var preferencias = new PreferenciasDto(
                 List.of(), List.of(), List.of(), gasto, distanciaKm);
         var config = new ConfiguracionItinerarioDto(
-                null, new FechaHoraDto(llegada, salida, dias), null, preferencias);
+                null, new FechaHoraDto(llegada, salida, dias), null, preferencias,
+                new RitmoDiarioDto(java.time.LocalTime.of(13, 0), java.time.LocalTime.of(15, 0), 120, 15, 10));
         when(configuraciones.validar(config)).thenReturn(config);
         return config;
     }
@@ -70,6 +71,38 @@ class GeneracionItinerarioServiceTest {
     }
 
     @Test
+    void reservaComidaCompletaCadaDiaYNoSolapa() {
+        var config = config(10);
+        evaluar(config, List.of());
+        var plan = servicio.generar(config);
+        assertEquals(10, plan.dias().size());
+        for (var dia : plan.dias()) {
+            var comidas = dia.bloques().stream().filter(b -> b.tipo() == TipoBloqueItinerario.COMIDA).toList();
+            assertEquals(1, comidas.size());
+            assertEquals(120, Duration.between(comidas.getFirst().inicio(), comidas.getFirst().fin()).toMinutes());
+            for (int i = 1; i < dia.bloques().size(); i++)
+                assertFalse(dia.bloques().get(i).inicio().isBefore(dia.bloques().get(i - 1).fin()));
+        }
+    }
+
+    @Test
+    void descansoSeInsertaTrasActividadSinCortarVisitas() {
+        var config = config(1);
+        evaluar(config, List.of(candidato("a", 90, CostLevel.FREE, 1.0),
+                candidato("b", 89, CostLevel.FREE, 1.0), candidato("c", 88, CostLevel.FREE, 1.0)));
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
+                ruta("a", "b", 100, 60), ruta("a", "c", 100, 60),
+                ruta("b", "c", 100, 60), ruta("b", "a", 100, 60),
+                ruta("c", "a", 100, 60), ruta("c", "b", 100, 60)));
+        var bloques = servicio.generar(config).dias().getFirst().bloques();
+        assertTrue(bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.VISITA)
+                .allMatch(b -> Duration.between(b.inicio(), b.fin()).toMinutes() == 60));
+        assertEquals(1, bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.COMIDA).count());
+        assertEquals(bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.TRASLADO).count(),
+                bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.MARGEN).count());
+    }
+
+    @Test
     void construyeVisitasYTrasladoDirigidoSinSolapes() {
         var config = config(1);
         evaluar(config, List.of(
@@ -84,15 +117,18 @@ class GeneracionItinerarioServiceTest {
 
         assertEquals(List.of(
                 TipoBloqueItinerario.VISITA,
+                TipoBloqueItinerario.TIEMPO_LIBRE,
+                TipoBloqueItinerario.COMIDA,
                 TipoBloqueItinerario.TRASLADO,
+                TipoBloqueItinerario.MARGEN,
                 TipoBloqueItinerario.VISITA,
                 TipoBloqueItinerario.TIEMPO_LIBRE),
                 bloques.stream().map(BloqueItinerarioDto::tipo).toList());
         assertEquals(2, Duration.between(
-                bloques.get(1).inicio(), bloques.get(1).fin()).toMinutes());
-        assertEquals("a", bloques.get(1).origenId());
-        assertEquals("b", bloques.get(1).destinoId());
-        assertEquals("openrouteservice", bloques.get(1).fuente());
+                bloques.get(3).inicio(), bloques.get(3).fin()).toMinutes());
+        assertEquals("a", bloques.get(3).origenId());
+        assertEquals("b", bloques.get(3).destinoId());
+        assertEquals("openrouteservice", bloques.get(3).fuente());
         assertTrue(bloques.get(0).condicionada());
         assertEquals(dia.inicioDisponible(), bloques.get(0).inicio());
         assertEquals(dia.finDisponible(), bloques.getLast().fin());
@@ -156,7 +192,7 @@ class GeneracionItinerarioServiceTest {
         assertTrue(plan.advertencias().stream()
                 .anyMatch(a -> a.contains("no tienen coordenadas")));
         assertTrue(plan.advertencias().stream()
-                .anyMatch(a -> a.contains("50 lugares")));
+                .anyMatch(a -> a.contains("50 puntos")));
     }
 
     @Test

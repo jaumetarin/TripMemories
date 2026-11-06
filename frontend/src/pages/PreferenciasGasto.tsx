@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { validarPreferencias } from '../api'
-import type { CategoriaPreferencia, Destino, FechaHora, OpcionesGastoDistancia, Preferencias } from '../api'
+import type { CategoriaPreferencia, Destino, FechaHora, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
 import { Icon } from '../assets/Icon'
 import './PreferenciasGasto.css'
 
@@ -16,6 +16,8 @@ type Props = {
   onReintentarCatalogo: () => void
   datos: Preferencias
   onCambiar: (datos: Preferencias) => void
+  ritmo: RitmoDiario
+  onCambiarRitmo: (ritmo: RitmoDiario) => void
   onAtras: () => void
   onContinuar: (preferencias: Preferencias) => void
   editandoResumen?: boolean
@@ -40,7 +42,8 @@ function mostrarFecha(fechaHora: string) {
 }
 
 export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalogo, cargandoCatalogo,
-  opcionesGastoDistancia, errorCatalogo, onReintentarCatalogo, datos, onCambiar, onAtras, onContinuar,
+  opcionesGastoDistancia, errorCatalogo, onReintentarCatalogo, datos, onCambiar,
+  ritmo, onCambiarRitmo, onAtras, onContinuar,
   editandoResumen = false }: Props) {
   const [validacion, setValidacion] = useState<Validacion | null>(null)
   const [reintento, setReintento] = useState(0)
@@ -51,7 +54,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
     .map(categoria => categoria.codigo))
   const tieneCatalogo = catalogo.length > 0 && opcionesGastoDistancia !== null && !cargandoCatalogo && !errorCatalogo
 
-  // Se valida la configuración completa que recibirá el Planner.
+  // Las preferencias se validan por separado; el ritmo se comprueba al confirmar el viaje.
   const seleccion = useMemo<Preferencias>(() => ({
     intereses: datos.intereses,
     categoriasExcluidas: datos.categoriasExcluidas,
@@ -61,7 +64,12 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
   }), [datos.intereses, datos.categoriasExcluidas, datos.subcategoriasExcluidas, datos.nivelGasto, datos.distanciaKm])
   const actual = validacion?.seleccion === seleccion && validacion.intento === reintento ? validacion : null
   const comprobando = tieneCatalogo && (!actual || (!actual.resultado && !actual.error))
-  const puedeContinuar = tieneCatalogo && Boolean(actual?.resultado)
+  const ritmoValido = ritmo.comidaInicio >= '10:00' && ritmo.comidaFin <= '18:00'
+    && ritmo.comidaInicio < ritmo.comidaFin
+    && Number.isInteger(ritmo.descansoCadaMinutos) && ritmo.descansoCadaMinutos >= 30 && ritmo.descansoCadaMinutos <= 480
+    && Number.isInteger(ritmo.descansoDuracionMinutos) && ritmo.descansoDuracionMinutos >= 5 && ritmo.descansoDuracionMinutos <= 120
+    && Number.isInteger(ritmo.margenMinutos) && ritmo.margenMinutos >= 0 && ritmo.margenMinutos <= 120
+  const puedeContinuar = tieneCatalogo && Boolean(actual?.resultado) && ritmoValido
 
   useEffect(() => {
     if (!tieneCatalogo) return
@@ -214,6 +222,40 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           </div>
         </div>
 
+        <fieldset className="grupo-preferencias" id="editar-ritmo" tabIndex={-1}>
+          <legend>Comida, descansos y margen</legend>
+          <p className="ayuda-preferencias" id="ayuda-ritmo">Puedes dejar estos valores como están. La franja de comida se reserva completa; las visitas y los trayectos a pie se ajustan al tiempo restante.</p>
+          <div className="ritmo-campos">
+            <label htmlFor="comida-inicio">Comida desde
+              <input id="comida-inicio" type="time" min="10:00" max="18:00" required
+                value={ritmo.comidaInicio} aria-describedby="ayuda-ritmo error-ritmo"
+                onChange={evento => onCambiarRitmo({ ...ritmo, comidaInicio: evento.target.value })} />
+            </label>
+            <label htmlFor="comida-fin">Comida hasta
+              <input id="comida-fin" type="time" min="10:00" max="18:00" required
+                value={ritmo.comidaFin} aria-describedby="ayuda-ritmo error-ritmo"
+                onChange={evento => onCambiarRitmo({ ...ritmo, comidaFin: evento.target.value })} />
+            </label>
+            <label htmlFor="descanso-cada">Descanso cada (minutos de actividad)
+              <input id="descanso-cada" type="number" min="30" max="480" step="1" required
+                value={ritmo.descansoCadaMinutos} aria-describedby="ayuda-ritmo error-ritmo"
+                onChange={evento => onCambiarRitmo({ ...ritmo, descansoCadaMinutos: Number(evento.target.value) })} />
+            </label>
+            <label htmlFor="descanso-duracion">Duración del descanso (minutos)
+              <input id="descanso-duracion" type="number" min="5" max="120" step="1" required
+                value={ritmo.descansoDuracionMinutos} aria-describedby="ayuda-ritmo error-ritmo"
+                onChange={evento => onCambiarRitmo({ ...ritmo, descansoDuracionMinutos: Number(evento.target.value) })} />
+            </label>
+            <label htmlFor="margen-minutos">Margen entre actividades (minutos)
+              <input id="margen-minutos" type="number" min="0" max="120" step="1" required
+                value={ritmo.margenMinutos} aria-describedby="ayuda-ritmo error-ritmo"
+                onChange={evento => onCambiarRitmo({ ...ritmo, margenMinutos: Number(evento.target.value) })} />
+            </label>
+          </div>
+          {!ritmoValido && <p className="error-viaje" id="error-ritmo" role="alert">Revisa el ritmo: la comida debe quedar entre las 10:00 y las 18:00, con el fin posterior al inicio. El descanso y el margen deben estar dentro de los límites indicados.</p>}
+          <p className="ayuda-preferencias">El margen se añade al traslado calculado a pie. La comida también cuenta como descanso.</p>
+        </fieldset>
+
         <div className="estado-validacion" aria-live="polite" role="status">
           {comprobando ? 'Comprobando tus preferencias…' : puedeContinuar ? 'Preferencias comprobadas. Puedes continuar.' : ''}
         </div>
@@ -248,6 +290,8 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
               <span>Entre actividades consecutivas, no por día.</span>
             </dd>
           </div>
+          <div><dt>Comida</dt><dd>{ritmo.comidaInicio}–{ritmo.comidaFin}<span>Franja reservada completa.</span></dd></div>
+          <div><dt>Descanso y margen</dt><dd>{ritmo.descansoDuracionMinutos} min cada {ritmo.descansoCadaMinutos} min de actividad<span>{ritmo.margenMinutos} min adicionales entre actividades.</span></dd></div>
         </dl>
         <p className="resumen-preferencias-nota">Un viaje a tu ritmo, desde el primer momento.</p>
       </aside>

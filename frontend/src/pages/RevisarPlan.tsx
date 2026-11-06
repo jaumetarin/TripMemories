@@ -3,7 +3,7 @@ import { Icon } from '../assets/Icon'
 import { CandidatosLugares } from '../components/CandidatosLugares'
 import './RevisarPlan.css'
 
-export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia'
+export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia' | 'ritmo'
 
 type Props = {
   configuracion: ConfiguracionItinerario
@@ -25,7 +25,7 @@ function mostrarFecha(valor: string) {
 
 export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfirmacion, catalogo,
   opcionesGastoDistancia, onEditar, onAtras, onConfirmar }: Props) {
-  const { destino, disponibilidad, alojamiento, preferencias } = configuracion
+  const { destino, disponibilidad, alojamiento, preferencias, ritmo } = configuracion
   const nombreCategoria = (codigo: string) => catalogo.find(categoria => categoria.codigo === codigo)?.nombre ?? codigo
   const nombreSubcategoria = (codigo: string) => catalogo.flatMap(categoria => categoria.subcategorias)
     .find(subcategoria => subcategoria.codigo === codigo)?.nombre ?? codigo
@@ -56,6 +56,11 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
     { campo: 'distancia', titulo: 'Distancia deseada entre actividades',
       valores: [preferencias.distanciaKm === null ? 'Sin seleccionar' : preferencias.distanciaKm + ' km'],
       ayuda: opcionesGastoDistancia?.significadoDistancia },
+    { campo: 'ritmo', titulo: 'Comida, descansos y margen', valores: [
+      `Comida: ${ritmo.comidaInicio.slice(0, 5)}–${ritmo.comidaFin.slice(0, 5)}`,
+      `Descanso: ${ritmo.descansoDuracionMinutos} min cada ${ritmo.descansoCadaMinutos} min de actividad`,
+      `Margen: ${ritmo.margenMinutos} min entre actividades`,
+    ], ayuda: 'La franja de comida se reserva completa. El margen se suma al trayecto a pie.' },
   ]
 
   return (
