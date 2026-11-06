@@ -666,8 +666,7 @@ y la compilación del frontend.
 
 El [documento de continuidad](docs/continuidad-planificador-ut09-ut16.md) contiene
 el contrato actual, decisiones justificadas, pruebas realizadas, límites conocidos,
-orden de trabajo y criterios de aceptación para el equipo. La secuencia pendiente
-del primer plan es:
+orden de trabajo y criterios de aceptación para el equipo. La secuencia del primer plan es:
 
 1. **UT11:** obtener tiempos y distancias a pie con OpenRouteService; avisar si
    una ruta no está disponible, sin inventar minutos.
@@ -715,6 +714,49 @@ ausente y las respuestas inválidas del proveedor devuelven HTTP 503.
 
 Las pruebas del cliente, servicio y controlador utilizan respuestas simuladas.
 
-Pendiente: comprobar una consulta real con una API key válida. La UT12 podrá
-utilizar DesplazamientoService directamente y deberá gestionar los recorridos
-no disponibles. La presentación de avisos al usuario todavía debe integrarse.
+La integración real de UT11 se comprobó el 6/11/2026 con tres lugares de Madrid
+y con una matriz de 50 puntos (2.450 pares dirigidos). La clave se pasó solo al
+proceso de prueba. La UT12 utiliza `DesplazamientoService` y gestiona los
+recorridos no disponibles; los avisos de un plan generado se presentan en su API.
+
+
+## UT12: generación del plan diario
+
+`POST /api/itinerarios/generar` recibe como JSON la misma configuración de
+`/api/itinerarios/confirmar-configuracion`: `destino`, `disponibilidad`,
+`alojamiento` y `preferencias`. El servicio valida la configuración y genera
+el itinerario a partir de los candidatos evaluados y sus desplazamientos a pie.
+La respuesta tiene `Cache-Control: no-store` y contiene:
+
+- `dias`: días con `fecha`, `inicioDisponible`, `finDisponible` y `bloques`.
+  Cada bloque incluye tipo, inicio y fin, candidato o datos del trayecto cuando
+  corresponda, fuente, indicador `condicionada` y descripción. Si un día no
+  tiene ventana entre 10:00 y 18:00, sus límites son `null` y no tiene bloques.
+- `advertencias`: explicaciones de datos o recorridos incompletos.
+- `parcial`: indica que hay un día sin visitas o sin ventana útil, o un hueco
+  de tiempo libre de al menos 15 minutos.
+- `candidatosEvaluados` y `candidatosEnMatriz`: contadores de candidatos
+  evaluados y considerados en el cálculo de recorridos.
+
+La heurística distribuye visitas y traslados dentro de la ventana diaria de
+10:00 a 18:00, recortada por la llegada y la salida, sin solapamientos ni
+visitas duplicadas. Si no hay suficientes visitas viables, deja tiempo libre
+explícito y comunica las limitaciones. Los horarios que no sean `VERIFIED`
+se presentan como propuestas condicionadas: el texto disponible no confirma
+que el lugar está abierto en la fecha y hora elegidas.
+La afinidad es prioritaria. Entre candidatos factibles que difieren como máximo
+en cinco puntos de afinidad, se prefiere un trayecto dentro de la distancia
+deseada, después menor tiempo a pie, gasto acorde y variedad de categorías.
+La distancia deseada es flexible y un coste desconocido no se considera gratis.
+
+La matriz de OpenRouteService admite hasta 50 candidatos con coordenadas
+válidas; si hay más, se limita la selección y se añade un aviso. Una ruta
+concreta no disponible puede causar un plan parcial con advertencia, sin
+inventar tiempos. Si falla el proveedor en conjunto, la respuesta es HTTP 503.
+Con menos de dos candidatos geolocalizados no se consulta ORS. Si ninguna fecha
+tiene tiempo disponible, no se consulta ningún proveedor.
+El JSON mal formado o una configuración inválida reciben HTTP 400. Ambos
+errores incluyen un objeto JSON con `mensaje`.
+
+UT13–UT16 siguen pendientes: comidas, descansos y márgenes; validación y
+explicación adicionales; presentación diaria; y sincronización con el mapa.
