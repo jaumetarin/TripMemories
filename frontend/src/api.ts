@@ -334,6 +334,8 @@ export interface CandidatoEvaluado {
   precioMaximo: number | null
   moneda: string | null
   informacion: string | null
+  descripcion?: string | null
+  fuenteDescripcion?: string | null
   fuentes: string[]
   horario: string | null
   horarioFuente: string | null
@@ -357,6 +359,8 @@ export interface OpcionComida {
   direccion: string | null
   horario: string | null
   horarioFuente: string | null
+  distanciaMetros?: number | null
+  duracionSegundos?: number | null
 }
 
 export interface BloqueItinerario {
@@ -411,6 +415,8 @@ function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado {
     && (valor.estadoHorario === 'VERIFIED' || valor.estadoHorario === 'PARTIAL' || valor.estadoHorario === 'UNVERIFIED')
     && esNumeroONulo(valor.precioMinimo) && esNumeroONulo(valor.precioMaximo) && esTextoONulo(valor.moneda)
     && esTextoONulo(valor.informacion) && esListaDeTextos(valor.fuentes)
+    && (valor.descripcion === undefined || esTextoONulo(valor.descripcion))
+    && (valor.fuenteDescripcion === undefined || esTextoONulo(valor.fuenteDescripcion))
     && esTextoONulo(valor.horario) && esTextoONulo(valor.horarioFuente)
 }
 
@@ -442,6 +448,8 @@ function esOpcionComida(valor: unknown): valor is OpcionComida {
     && (valor.latitud === null || typeof valor.latitud === 'number' && Number.isFinite(valor.latitud))
     && (valor.longitud === null || typeof valor.longitud === 'number' && Number.isFinite(valor.longitud))
     && esTextoONulo(valor.direccion) && esTextoONulo(valor.horario) && esTextoONulo(valor.horarioFuente)
+    && (valor.distanciaMetros === undefined || esNumeroONulo(valor.distanciaMetros))
+    && (valor.duracionSegundos === undefined || esNumeroONulo(valor.duracionSegundos))
 }
 
 function esBloqueItinerario(valor: unknown): valor is BloqueItinerario {

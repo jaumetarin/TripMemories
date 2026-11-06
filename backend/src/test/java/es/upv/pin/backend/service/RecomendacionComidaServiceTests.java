@@ -16,16 +16,33 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class RecomendacionComidaServiceTests {
  private MockRestServiceServer servidor;
  private RecomendacionComidaService servicio;
- private static final String URL = "https://api.geoapify.com/v2/places?categories=catering.restaurant&filter=place:madrid&limit=50&lang=es&apiKey=clave";
+ private static final String URL = "https://api.geoapify.com/v2/places?categories=catering.restaurant&filter=place:madrid&limit=100&lang=es&apiKey=clave";
  private PreferenciasDto preferencias() { return new PreferenciasDto(List.of(GASTRONOMIA), List.of(), List.of(COMIDA_RAPIDA), null, null); }
  @BeforeEach void preparar() {
   var builder = RestClient.builder().baseUrl("https://api.geoapify.com");
   servidor = MockRestServiceServer.bindTo(builder).build();
   servicio = new RecomendacionComidaService(new GeoapifyClient(builder.build(), "clave"), new ClasificacionLugaresService());
  }
- @Test void sinInteresNoConsulta() {
+ @Test void sinInteresGastronomicoTambienBuscaRestaurantes() {
+  servidor.expect(requestTo(URL)).andRespond(withSuccess("""
+   {"features":[{"properties":{"place_id":"r","name":"Restaurante","lat":40.4,"lon":-3.7}}]}
+   """, MediaType.APPLICATION_JSON));
   var r = servicio.buscar("madrid", new PreferenciasDto(List.of(ARTE_MUSEOS), List.of(), List.of(), null, null), Set.of());
-  assertTrue(r.opciones().isEmpty()); assertTrue(r.advertencias().isEmpty()); servidor.verify();
+  assertEquals("r", r.opciones().getFirst().id()); assertTrue(r.advertencias().isEmpty()); servidor.verify();
+ }
+ @Test void exclusionDeGastronomiaImpideConsulta() {
+  var r = servicio.buscar("madrid", new PreferenciasDto(List.of(ARTE_MUSEOS), List.of(GASTRONOMIA), List.of(), null, null), Set.of());
+  assertTrue(r.opciones().isEmpty()); servidor.verify();
+ }
+ @Test void priorizaRestaurantesCercaDeLasVisitasAunqueElProveedorLosDevuelvaAlFinal() {
+  var lejanos = java.util.stream.IntStream.range(0, 12).mapToObj(i ->
+    "{\"properties\":{\"place_id\":\"lejano" + i + "\",\"name\":\"Lejano " + i + "\",\"lat\":40.6,\"lon\":-3.9}}")
+    .collect(java.util.stream.Collectors.joining(","));
+  servidor.expect(requestTo(URL)).andRespond(withSuccess("{\"features\":[" + lejanos
+    + ",{\"properties\":{\"place_id\":\"cercano\",\"name\":\"Cercano\",\"lat\":40.4001,\"lon\":-3.7001}}]}", MediaType.APPLICATION_JSON));
+  var visita = new es.upv.pin.backend.dto.LugarDto("v", "Museo", null, 40.4, -3.7, List.of(ARTE_MUSEOS), List.of(), null);
+  var r = servicio.buscar("madrid", preferencias(), Set.of(), List.of(visita));
+  assertEquals(10, r.opciones().size()); assertEquals("cercano", r.opciones().getFirst().id()); servidor.verify();
  }
  @Test void normalizaFiltraYDeduplica() {
   servidor.expect(requestTo(URL)).andRespond(withSuccess("""

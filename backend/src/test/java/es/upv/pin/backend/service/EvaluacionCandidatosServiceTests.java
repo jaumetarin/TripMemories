@@ -90,12 +90,46 @@ class EvaluacionCandidatosServiceTests {
                                         null,
                                         null,
                                         null,
-                                        null)));
+                                        null, null, null)));
         var result = service.evaluar(viaje);
         assertEquals(45, result.candidatos().size());
         assertFalse(result.fallback());
         verify(ai, times(2)).evaluar(anyList(), anyList(), anyString());
         assertTrue(result.candidatos().stream().allMatch(c -> c.informacion() == null));
+    }
+
+    @Test
+    void conservaDescripcionYFuenteSinConvertirElCosteDesconocidoEnGratis() {
+        preparar(List.of(lugar(1)));
+        when(ai.evaluar(anyList(), anyList(), anyString()))
+                .thenReturn(Map.of("id1", new ValoracionGemini(80, 60, "Museo", "Arte")));
+        when(research.investigar(anyList(), anyString())).thenReturn(Map.of("id1",
+                new HallazgoGemini(null, List.of("https://museo.example/acerca"),
+                        null, null, null, null, null, null, null, null,
+                        "Una colección de arte local.", "https://museo.example/acerca")));
+
+        var candidato = service.evaluar(viaje).candidatos().getFirst();
+
+        assertEquals("Una colección de arte local.", candidato.descripcion());
+        assertEquals("https://museo.example/acerca", candidato.fuenteDescripcion());
+        assertEquals(CostLevel.UNKNOWN, candidato.coste());
+        assertNull(candidato.horario());
+    }
+
+    @Test
+    void descartaDescripcionSinUnaFuenteValida() {
+        preparar(List.of(lugar(1)));
+        when(ai.evaluar(anyList(), anyList(), anyString()))
+                .thenReturn(Map.of("id1", new ValoracionGemini(80, 60, "Museo", "Arte")));
+        when(research.investigar(anyList(), anyString())).thenReturn(Map.of("id1",
+                new HallazgoGemini(null, List.of("https://museo.example"),
+                        null, null, null, null, null, null, null, null,
+                        "Texto sin respaldo.", null)));
+
+        var candidato = service.evaluar(viaje).candidatos().getFirst();
+
+        assertNull(candidato.descripcion());
+        assertNull(candidato.fuenteDescripcion());
     }
 
     @Test
@@ -193,7 +227,7 @@ class EvaluacionCandidatosServiceTests {
         var resultado = service.evaluar(viaje);
         assertFalse(resultado.fallback());
         assertTrue(
-                resultado.advertencias().stream().anyMatch(a -> a.contains("no está configurada")));
+                resultado.advertencias().stream().anyMatch(a -> a.contains("Confirma los horarios y precios antes de ir")));
         verify(research, never()).investigar(anyList(), anyString());
     }
 
@@ -242,7 +276,7 @@ class EvaluacionCandidatosServiceTests {
                 null,
                 "https://example.com",
                 null,
-                null);
+                null, null, null);
     }
 
     @Test

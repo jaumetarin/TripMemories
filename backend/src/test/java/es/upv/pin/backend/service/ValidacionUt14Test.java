@@ -10,7 +10,7 @@ class ValidacionUt14Test {
  private static final LocalDateTime L = LocalDateTime.of(2026,11,9,9,0);
  private CandidatoEvaluadoDto candidato(String h,String f) {
   LugarDto lugar = new LugarDto("museo","Museo",null,null,null,List.of(CategoriaTuristica.ARTE_MUSEOS),List.of(),h);
-  return new CandidatoEvaluadoDto(lugar,1,60,null,null,null,null,List.of(),h,f,null,null,null,null,null,null);
+  return new CandidatoEvaluadoDto(lugar,1,60,null,null,null,null,List.of(),h,f,null,null,null,null,null,null, null, null);
  }
  private BloqueItinerarioDto visita(LocalDateTime t) { return new BloqueItinerarioDto(TipoBloqueItinerario.VISITA,t,t.plusHours(1),candidato(null,null),null,null,null,null,null,true,null); }
  @Test void horarioExplicitoYAmbiguedad() {

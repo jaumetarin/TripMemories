@@ -99,8 +99,8 @@ public class EvaluacionCandidatosService {
             for (var lugar : lugares)
                 valoraciones.put(lugar.id(), local(lugar, config.preferencias().intereses()));
             avisos.add(
-                    "La evaluación con IA no está disponible o fue incompleta; se ha usado una"
-                            + " valoración local para todos los candidatos.");
+                    "Las recomendaciones se han preparado a partir de tus intereses y del tipo de lugar;"
+                            + " algunas pueden ser menos precisas.");
         }
         var ordenados =
                 lugares.stream()
@@ -114,8 +114,7 @@ public class EvaluacionCandidatosService {
         int investigados = 0, llamadas = 0;
         if (!investigacion.disponible()) {
             avisos.add(
-                    "La investigación externa no está configurada; horarios, precios y detalles"
-                            + " pueden no estar disponibles.");
+                    "Confirma los horarios y precios antes de ir: no hemos podido comprobar toda la información.");
         }
         for (int i = 0;
                 investigacion.disponible()
@@ -138,8 +137,7 @@ public class EvaluacionCandidatosService {
                 }
             } catch (RuntimeException e) {
                 avisos.add(
-                        "No se pudo completar la investigación externa; algunos datos no están"
-                                + " disponibles.");
+                        "Confirma los horarios y precios antes de ir: no hemos podido comprobar toda la información.");
                 break;
             }
             llamadas += lote.size();
@@ -148,20 +146,26 @@ public class EvaluacionCandidatosService {
                 boolean economico =
                         config.preferencias().nivelGasto()
                                 == es.upv.pin.backend.model.NivelGasto.ECONOMICO;
-                if (h != null
+                // Una descripción por sí sola no completa la investigación de datos prácticos.
+                boolean tieneDatosPracticos = h != null && (fuenteValida(h.fuentePrecio())
+                        || fuenteValida(h.fuenteHorario()) || fuenteValida(h.fuenteDuracion()));
+                if (tieneDatosPracticos
                         && (!economico || coste(h) == CostLevel.FREE || coste(h) == CostLevel.LOW))
                     investigados += valoraciones.get(lugar.id()).duracionMinutos();
             }
         }
         if (llamadas >= MAX_BUSQUEDAS && investigados < disponible && ordenados.size() > llamadas)
             avisos.add(
-                    "La investigación externa alcanzó el límite de consultas; quedan candidatos sin"
-                            + " investigar.");
+                    "Confirma los horarios y precios antes de ir: no hemos podido comprobar toda la información.");
         List<CandidatoEvaluadoDto> candidatos = new ArrayList<>();
         for (var lugar : ordenados) {
             var v = valoraciones.get(lugar.id());
             var h = hallazgos.get(lugar.id());
             var fuentes = h == null ? List.<String>of() : fuentesValidas(h.fuentes());
+            String descripcion = h != null && fuenteValida(h.fuenteDescripcion())
+                            && fuentes.contains(h.fuenteDescripcion())
+                    ? texto(h.descripcion()) : null;
+            String fuenteDescripcion = descripcion == null ? null : h.fuenteDescripcion();
             String horario =
                     h != null && fuenteValida(h.fuenteHorario()) && texto(h.horario()) != null
                             ? texto(h.horario())
@@ -199,7 +203,9 @@ public class EvaluacionCandidatosService {
                                     : ScheduleStatus.PARTIAL,
                             h == null || !fuenteValida(h.fuentePrecio()) ? null : h.precioMinimo(),
                             h == null || !fuenteValida(h.fuentePrecio()) ? null : h.precioMaximo(),
-                            h == null || !fuenteValida(h.fuentePrecio()) ? null : h.moneda()));
+                            h == null || !fuenteValida(h.fuentePrecio()) ? null : h.moneda(),
+                            descripcion,
+                            fuenteDescripcion));
         }
         return new EvaluacionCandidatosDto(
                 List.copyOf(candidatos), fallback, List.copyOf(avisos), disponible, investigados);

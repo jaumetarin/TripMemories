@@ -87,18 +87,20 @@ public class GeneracionItinerarioService {
 
         EvaluacionCandidatosDto resultado = evaluacion.evaluar(config);
         List<CandidatoEvaluadoDto> candidatos = resultado.candidatos();
+        List<CandidatoEvaluadoDto> seleccionados = seleccionar(candidatos);
         List<OpcionComidaDto> restaurantes = List.of();
-        if (recomendaciones != null && config.preferencias().intereses().contains(CategoriaTuristica.GASTRONOMIA)
+        if (recomendaciones != null
                 && ventanas.stream().anyMatch(v -> v.disponible()
                     && !v.fecha().atTime(config.ritmo().comidaInicio()).isBefore(v.inicio())
                     && !v.fecha().atTime(config.ritmo().comidaFin()).isAfter(v.fin()))) {
-            var comidas = recomendaciones.buscar(config.destino().id(), config.preferencias(), Set.of());
+            var comidas = recomendaciones.buscar(config.destino().id(), config.preferencias(), Set.of(),
+                    seleccionados.stream().map(CandidatoEvaluadoDto::lugar).toList());
             restaurantes = comidas.opciones();
             advertencias.addAll(comidas.advertencias());
         }
         Set<String> idsRestaurantes = new HashSet<>();
         restaurantes.forEach(r -> idsRestaurantes.add(r.id()));
-        List<CandidatoEvaluadoDto> seleccionados = seleccionar(candidatos).stream()
+        seleccionados = seleccionados.stream()
                 .filter(c -> !idsRestaurantes.contains(c.lugar().id()))
                 .toList();
         List<CandidatoEvaluadoDto> pendientes = seleccionados.stream()
@@ -119,15 +121,15 @@ public class GeneracionItinerarioService {
         advertencias.addAll(resultado.advertencias());
         long conCoordenadas = candidatos.stream().filter(GeneracionItinerarioService::tieneCoordenadas).count();
         if (conCoordenadas < candidatos.size()) {
-            advertencias.add("Algunos lugares no tienen coordenadas validas y no se han programado.");
+            advertencias.add("Algunos lugares han quedado fuera porque no conocemos su ubicación exacta.");
         }
         if (conCoordenadas > MAXIMO_PUNTOS || seleccionados.size() > pendientes.size()) {
-            advertencias.add("La matriz de rutas admite 50 puntos entre visitas y restaurantes; otros candidatos quedaron fuera.");
+            advertencias.add("Hemos limitado los lugares que se comparan para calcular los desplazamientos; algunas opciones han quedado fuera.");
         }
         if (tramos.size() < puntos.size() * (puntos.size() - 1)
                 || tramos.stream().anyMatch(t -> !rutaValida(t))) {
             advertencias.add(
-                    "Algunas rutas a pie no estan disponibles; esas parejas de lugares se han omitido.");
+                    "No hemos podido calcular algunos caminos a pie. El plan evita esos desplazamientos.");
         }
 
         List<DiaItinerarioDto> dias = new ArrayList<>();
@@ -162,7 +164,16 @@ public class GeneracionItinerarioService {
 
             while (true) {
                 LocalDateTime limite = comidaPendiente ? comidaInicio : ventana.fin();
+                List<OpcionComidaDto> comidaDesdeAqui = comidaPendiente && comidaCompleta
+                        ? opcionesComida(restaurantes, anterior, rutas, cursor, comidaInicio, comidaFin,
+                                pendientes, ventana.fin(), config.ritmo().margenMinutos())
+                        : List.of();
+                // Una visita o un descanso no debe consumir el tiempo para llegar a comer.
+                boolean descansoPermiteComer = comidaDesdeAqui.isEmpty() || !opcionesComida(restaurantes,
+                        anterior, rutas, cursor.plusMinutes(config.ritmo().descansoDuracionMinutos()),
+                        comidaInicio, comidaFin, pendientes, ventana.fin(), config.ritmo().margenMinutos()).isEmpty();
                 if (actividad >= config.ritmo().descansoCadaMinutos()
+                        && descansoPermiteComer
                         && !cursor.plusMinutes(config.ritmo().descansoDuracionMinutos()).isAfter(limite)) {
                     LocalDateTime finDescanso = cursor.plusMinutes(config.ritmo().descansoDuracionMinutos());
                     bloques.add(bloqueSimple(TipoBloqueItinerario.DESCANSO, cursor, finDescanso, "Descanso"));
@@ -186,10 +197,10 @@ public class GeneracionItinerarioService {
                             }
                         }
                     }
-                    if (!conLlegada.isEmpty()) factibles = conLlegada;
+                    if (!conLlegada.isEmpty() || anterior != null && !comidaDesdeAqui.isEmpty()) factibles = conLlegada;
                 }
                 if (factibles.isEmpty()) {
-                    LocalDateTime siguiente = siguienteInicioConVisita(
+                    LocalDateTime siguiente = anterior != null && !comidaDesdeAqui.isEmpty() ? null : siguienteInicioConVisita(
                             pendientes, anterior, rutas, cursor, limite,
                             config.ritmo().margenMinutos(), conflictosHorario);
                     if (siguiente != null) {
@@ -200,15 +211,10 @@ public class GeneracionItinerarioService {
                         continue;
                     }
                     if (comidaPendiente) {
-                        List<OpcionComidaDto> alcanzables = new ArrayList<>();
-                        if (comidaCompleta) for (OpcionComidaDto restaurante :
-                                restaurantesAlcanzables(restaurantes, anterior, rutas, cursor, comidaInicio,
-                                        config.ritmo().margenMinutos())) {
-                            if (estadoHorarioRestaurante(restaurante, comidaInicio, comidaFin)
-                                    != EstadoHorarioVisita.CONFLICTO_SEGUN_FUENTE) alcanzables.add(restaurante);
-                        }
+                        List<OpcionComidaDto> alcanzables = comidaDesdeAqui;
                         if (!alcanzables.isEmpty()) {
                             OpcionComidaDto principal = alcanzables.getFirst();
+                            String origenComida = anterior;
                             DesplazamientoDto tramo = anterior == null ? null : rutas.get(new Par(anterior, principal.id()));
                             if (tramo != null && tramo.duracionSegundos() > 0) {
                                 LocalDateTime llegada = cursor.plusMinutes((long) Math.ceil(tramo.duracionSegundos() / 60.0));
@@ -230,21 +236,20 @@ public class GeneracionItinerarioService {
                             bloques.add(new BloqueItinerarioDto(TipoBloqueItinerario.COMIDA, comidaInicio, comidaFin, null,
                                     null, null, null, null, null, true,
                                     "Restaurante sugerido sin reserva; horario pendiente de confirmar",
-                                    principal, alcanzables.stream().skip(1).limit(3).toList()));
+                                    conTrayecto(principal, origenComida, rutas), alcanzables.stream().skip(1).limit(3)
+                                            .map(r -> conTrayecto(r, origenComida, rutas)).toList()));
                             anterior = principal.id();
                             hayCondicionadas = true;
                         } else {
                             hayComidaGenerica = true;
-                            if (!restaurantes.isEmpty()) advertencias.add("No hay restaurante alcanzable a tiempo; se propone una comida genérica.");
+                            if (!restaurantes.isEmpty()) advertencias.add("No hemos encontrado un restaurante al que puedas llegar a tiempo. Puedes elegir dónde comer durante la pausa.");
                             if (cursor.isBefore(comidaInicio)) {
                                 bloques.add(bloqueSimple(TipoBloqueItinerario.TIEMPO_LIBRE, cursor, comidaInicio, "Tiempo libre"));
                                 parcial |= Duration.between(cursor, comidaInicio).toMinutes() >= HUECO_PARCIAL_MINUTOS;
                             }
                             bloques.add(new BloqueItinerarioDto(TipoBloqueItinerario.COMIDA,
-                                    comidaInicio, comidaFin, null, null, null, null, null, null, true,
-                                    comidaCompleta
-                                            ? "Comida sin ubicación concreta; desvío no calculado"
-                                            : "Franja parcial de comida sin ubicación concreta; desvío no calculado"));
+                                    comidaInicio, comidaFin, null, null, null, null, null, null, false,
+                                    "Pausa para comer. Puedes elegir un restaurante por la zona."));
                         }
                         cursor = comidaFin;
                         comidaPendiente = false;
@@ -316,31 +321,36 @@ public class GeneracionItinerarioService {
                     ventana.fecha(), ventana.inicio(), ventana.fin(), List.copyOf(bloques)));
         }
 
-        for (CandidatoEvaluadoDto candidato : pendientes) {
-            if (conflictosHorario.contains(candidato.lugar().id()))
-                advertencias.add("No se ha programado " + candidato.lugar().nombre() + " (" + candidato.lugar().id()
-                        + "): conflicto con el horario facilitado por la fuente.");
+        List<String> fueraPorHorario = pendientes.stream()
+                .filter(c -> conflictosHorario.contains(c.lugar().id()))
+                .map(c -> c.lugar().nombre()).distinct().toList();
+        if (!fueraPorHorario.isEmpty()) {
+            advertencias.add("Estos lugares han quedado fuera porque sus horarios no encajan en tu plan: "
+                    + String.join(", ", fueraPorHorario) + ".");
         }
         if (!pendientes.isEmpty()) {
-            advertencias.add("Quedan " + pendientes.size()
-                    + " lugares sin programar por falta de tiempo, rutas o compatibilidad de horarios.");
+            long otrosPendientes = pendientes.stream()
+                    .filter(c -> !conflictosHorario.contains(c.lugar().id())).count();
+            if (otrosPendientes > 0) advertencias.add(otrosPendientes == 1
+                    ? "Un lugar ha quedado fuera porque no encaja con el tiempo o los desplazamientos del viaje."
+                    : otrosPendientes + " lugares han quedado fuera porque no encajan con el tiempo o los desplazamientos del viaje.");
             parcial = true;
         }
         if (hayCondicionadas) {
-            advertencias.add("Los horarios no verificados requieren confirmacion.");
+            advertencias.add("Confirma los horarios y precios antes de ir: no hemos podido comprobar toda la información.");
         }
         if (hayVisitas) {
-            advertencias.add("No se han calculado trayectos desde o hacia el alojamiento.");
+            advertencias.add("Los trayectos del plan no incluyen la ida y vuelta a tu alojamiento. Reserva tiempo para esos desplazamientos.");
         }
         if (hayComidaGenerica) {
-            advertencias.add("La comida no tiene una ubicacion concreta; el posible desvio para comer no esta incluido en los trayectos a pie.");
+            advertencias.add("Puedes elegir dónde comer durante la pausa. El tiempo para llegar al restaurante no está calculado.");
         }
         ResultadoValidacionPlan validacion = validadorPlan.validar(dias, config.preferencias());
         advertencias.addAll(validacion.incidencias());
         if (!validacion.valido()) throw new IllegalStateException("El itinerario generado no cumple sus invariantes: "
                 + String.join("; ", validacion.incidencias()));
         return new ItinerarioGeneradoDto(
-                List.copyOf(dias), List.copyOf(advertencias), parcial || validacion.parcial(),
+                List.copyOf(dias), advertencias.stream().distinct().toList(), parcial || validacion.parcial(),
                 candidatos.size(), puntos.size(), List.copyOf(candidatos), resultado.fallback());
     }
 
@@ -375,7 +385,8 @@ public class GeneracionItinerarioService {
     }
 
     private static String avisoSinVentana(LocalDate fecha) {
-        return "El dia " + fecha + " no tiene tiempo disponible entre las 10:00 y las 18:00.";
+        return "El " + fecha.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                + " no queda tiempo para visitas entre las 10:00 y las 18:00, teniendo en cuenta tu llegada y salida.";
     }
 
     private List<Opcion> opcionesFactibles(
@@ -438,7 +449,7 @@ public class GeneracionItinerarioService {
         var lugar = new es.upv.pin.backend.dto.LugarDto(restaurante.id(), restaurante.nombre(), restaurante.direccion(),
                 restaurante.latitud(), restaurante.longitud(), List.of(CategoriaTuristica.GASTRONOMIA), List.of(), restaurante.horario());
         var candidato = new CandidatoEvaluadoDto(lugar, 0, 1, null, null, null, null, List.of(),
-                restaurante.horario(), restaurante.horarioFuente(), null, null, null, null, null, null);
+                restaurante.horario(), restaurante.horarioFuente(), null, null, null, null, null, null, null, null);
         return evaluadorHorario.evaluar(candidato, inicio, fin);
     }
 
@@ -457,6 +468,39 @@ public class GeneracionItinerarioService {
                     .plusMinutes(margenMinutos).isAfter(limite);
         }).sorted(Comparator.comparingDouble(r -> anterior == null ? 0
                 : rutas.get(new Par(anterior, r.id())).duracionSegundos())).toList();
+    }
+
+    private List<OpcionComidaDto> opcionesComida(List<OpcionComidaDto> restaurantes,
+            String anterior, Map<Par, DesplazamientoDto> rutas, LocalDateTime cursor,
+            LocalDateTime inicio, LocalDateTime fin, List<CandidatoEvaluadoDto> pendientes,
+            LocalDateTime finDia, int margenMinutos) {
+        List<OpcionComidaDto> disponibles = restaurantesAlcanzables(
+                restaurantes, anterior, rutas, cursor, inicio, margenMinutos).stream()
+                .filter(r -> estadoHorarioRestaurante(r, inicio, fin)
+                        != EstadoHorarioVisita.CONFLICTO_SEGUN_FUENTE).toList();
+        Map<String, Double> distanciaSiguiente = new HashMap<>();
+        for (OpcionComidaDto restaurante : disponibles) {
+            // Miramos también qué visitas pueden hacerse después, sin reservarlas todavía.
+            double distancia = opcionesFactibles(pendientes, restaurante.id(), rutas, fin,
+                    finDia, margenMinutos, new HashSet<>()).stream()
+                    .mapToDouble(o -> o.tramo().distanciaMetros()).min().orElse(Double.POSITIVE_INFINITY);
+            distanciaSiguiente.put(restaurante.id(), distancia);
+        }
+        return disponibles.stream().sorted(Comparator
+                .comparingInt((OpcionComidaDto r) -> Double.isFinite(distanciaSiguiente.get(r.id())) ? 0 : 1)
+                .thenComparingDouble(r -> {
+                    double antes = anterior == null ? 0 : rutas.get(new Par(anterior, r.id())).distanciaMetros();
+                    double despues = distanciaSiguiente.get(r.id());
+                    return antes + (Double.isFinite(despues) ? despues : 0);
+                }).thenComparing(OpcionComidaDto::id)).toList();
+    }
+
+    private static OpcionComidaDto conTrayecto(OpcionComidaDto restaurante, String origen,
+            Map<Par, DesplazamientoDto> rutas) {
+        DesplazamientoDto tramo = origen == null ? null : rutas.get(new Par(origen, restaurante.id()));
+        return new OpcionComidaDto(restaurante.id(), restaurante.nombre(), restaurante.latitud(),
+                restaurante.longitud(), restaurante.direccion(), restaurante.horario(), restaurante.horarioFuente(),
+                tramo == null ? null : tramo.distanciaMetros(), tramo == null ? null : tramo.duracionSegundos());
     }
 
     private static Comparator<Opcion> ordenOpciones(

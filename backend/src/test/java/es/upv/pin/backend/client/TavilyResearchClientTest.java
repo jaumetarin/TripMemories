@@ -34,6 +34,62 @@ class TavilyResearchClientTest {
     }
 
     @Test
+    void extraeDescripcionLiteralConFuenteSinInventarPrecioNiHorario() throws Exception {
+        String descripcion = "El Museo Azul de Valencia alberga una colección de cerámica y pintura local.";
+        String respuesta = "{\"results\":[{\"title\":\"Museo Azul Valencia\","
+                + "\"url\":\"https://museo.example/acerca\",\"content\":\"" + descripcion + "\"}]}";
+        var hallazgo = cliente(respuesta).investigar(List.of(lugar), "Valencia").get(lugar.id());
+
+        assertEquals(descripcion, hallazgo.descripcion());
+        assertEquals("https://museo.example/acerca", hallazgo.fuenteDescripcion());
+        assertEquals(List.of(hallazgo.fuenteDescripcion()), hallazgo.fuentes());
+        assertNull(hallazgo.precioMinimo());
+        assertNull(hallazgo.horario());
+        assertNull(hallazgo.informacion());
+    }
+
+    @Test
+    void noConvierteDatosDeEntradaEnUnaDescripcion() throws Exception {
+        String respuesta = "{\"results\":[{\"title\":\"Museo Azul Valencia\","
+                + "\"url\":\"https://museo.example/visitas\","
+                + "\"content\":\"Museo Azul Valencia. Entrada general 10 EUR. Horario 09:00 - 18:00.\"}]}";
+        var hallazgo = cliente(respuesta).investigar(List.of(lugar), "Valencia").get(lugar.id());
+
+        assertNull(hallazgo.descripcion());
+        assertNull(hallazgo.fuenteDescripcion());
+        assertEquals(10.0, hallazgo.precioMinimo());
+    }
+
+    @Test
+    void rechazaDescripcionDeOtroLugarODestino() throws Exception {
+        String respuesta = "{\"results\":[{\"title\":\"Museo Rojo Madrid\","
+                + "\"url\":\"https://museo.example\","
+                + "\"content\":\"El Museo Rojo de Madrid alberga una colección de pintura local.\"}]}";
+        assertTrue(cliente(respuesta).investigar(List.of(lugar), "Valencia").isEmpty());
+    }
+
+    @Test
+    void separaFrasesDescriptivasDeLasTarifasAunqueIncluyanElNombreDelLugar() throws Exception {
+        String respuesta = "{\"results\":[{\"title\":\"Museo Azul Valencia\","
+                + "\"url\":\"https://museo.example/visitas\","
+                + "\"content\":\"El Museo Azul de Valencia ofrece entrada general 10 EUR.\"}]}";
+        var hallazgo = cliente(respuesta).investigar(List.of(lugar), "Valencia").get(lugar.id());
+        assertNull(hallazgo.descripcion());
+        assertEquals(10.0, hallazgo.precioMinimo());
+    }
+
+    @Test
+    void limitaElExtractoSinGenerarUnTextoNuevo() throws Exception {
+        String texto = "El Museo Azul de Valencia alberga " + "una extensa colección de arte local ".repeat(30);
+        String respuesta = "{\"results\":[{\"title\":\"Museo Azul Valencia\","
+                + "\"url\":\"https://museo.example/acerca\",\"content\":\"" + texto + "\"}]}";
+        var hallazgo = cliente(respuesta).investigar(List.of(lugar), "Valencia").get(lugar.id());
+        assertTrue(hallazgo.descripcion().length() <= 600);
+        assertTrue(hallazgo.descripcion().endsWith("…"));
+        assertTrue(texto.startsWith(hallazgo.descripcion().substring(0, hallazgo.descripcion().length() - 1)));
+    }
+
+    @Test
     void aceptaSoloHechosDeFuenteQueIdentificaLugarYDestino() throws Exception {
         String respuesta =
                 "{\"results\":[{\"title\":\"Museo Azul"

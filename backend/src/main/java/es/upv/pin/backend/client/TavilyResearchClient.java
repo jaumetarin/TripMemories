@@ -39,6 +39,9 @@ public class TavilyResearchClient implements ResearchProvider {
             Pattern.compile(
                     "(?iu)\\b(?:entrada gratuita|entrada gratis|admission is free|free"
                         + " admission)\\b");
+    private static final Pattern FRASE_DESCRIPTIVA = Pattern.compile(
+            "(?iu)\\b(?:es|son|fue|alberga|ofrece|cuenta con|se encuentra|se dedica|"
+                    + "is|are|was|houses|features|offers|located)\\b");
     // Evita interpretar como general una gratuidad negada o condicionada.
     private static final Pattern GRATUIDAD_DUDOSA = Pattern.compile(
             "(?iu)\\b(?:"
@@ -87,10 +90,11 @@ public class TavilyResearchClient implements ResearchProvider {
                             + destino
                             + " "
                             + (lugar.direccion() == null ? "" : lugar.direccion())
-                            + " entrada precio horario sitio oficial";
+                            + " descripción entrada precio horario sitio oficial";
             JsonNode respuesta = consultar(query);
             Double cantidad = null;
             String moneda = null, horarioTexto = null, fuentePrecio = null, fuenteHorario = null;
+            String descripcion = null, fuenteDescripcion = null;
             List<String> hechos = new ArrayList<>(), fuentes = new ArrayList<>();
             for (JsonNode fuente : respuesta.path("results")) {
                 String url = fuente.path("url").asText();
@@ -100,6 +104,10 @@ public class TavilyResearchClient implements ResearchProvider {
                 if (!urlValida(url)
                         || !tituloDelLugar(titulo, lugar, destino)
                         || !identidad.contains(normalizar(destino))) continue;
+                if (descripcion == null) {
+                    descripcion = extraerDescripcion(texto, lugar, destino);
+                    if (descripcion != null) fuenteDescripcion = url;
+                }
                 Matcher precio = PRECIO.matcher(texto), horario = HORA.matcher(texto);
                 if (cantidad == null && precio.find()) {
                     String importe = precio.group(1) != null ? precio.group(1) : precio.group(2);
@@ -149,15 +157,16 @@ public class TavilyResearchClient implements ResearchProvider {
                     fuenteHorario = url;
                     hechos.add(horarioTexto);
                 }
-                if ((url.equals(fuentePrecio) || url.equals(fuenteHorario)) && !fuentes.contains(url))
+                if ((url.equals(fuentePrecio) || url.equals(fuenteHorario) || url.equals(fuenteDescripcion))
+                        && !fuentes.contains(url))
                     fuentes.add(url);
-                if (cantidad != null && horarioTexto != null) break;
+                if (cantidad != null && horarioTexto != null && descripcion != null) break;
             }
-            if (!hechos.isEmpty()) {
+            if (!hechos.isEmpty() || descripcion != null) {
                 resultado.put(
                         lugar.id(),
                         new HallazgoGemini(
-                                String.join(". ", hechos),
+                                hechos.isEmpty() ? null : String.join(". ", hechos),
                                 List.copyOf(fuentes),
                                 cantidad,
                                 cantidad,
@@ -166,7 +175,9 @@ public class TavilyResearchClient implements ResearchProvider {
                                 null,
                                 fuentePrecio,
                                 fuenteHorario,
-                                null));
+                                null,
+                                descripcion,
+                                fuenteDescripcion));
             }
         }
         return resultado;
@@ -177,6 +188,22 @@ public class TavilyResearchClient implements ResearchProvider {
                 .replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT);
         return sinTildes.replaceAll("[^\\p{L}\\p{N}]+", " ").trim().replaceAll(" +", " ");
+    }
+
+    // Conserva un extracto literal del lugar, separado de precios y horarios.
+    // Si la fuente solo contiene datos prácticos, no inventa una descripción.
+    private static String extraerDescripcion(String texto, LugarDto lugar, String destino) {
+        for (String fragmento : texto.split("(?<=[.!?])\\s+|\\n+")) {
+            String frase = fragmento.replaceAll("\\s+", " ").trim();
+            if (frase.length() < 40 || !FRASE_DESCRIPTIVA.matcher(frase).find()
+                    || !tituloDelLugar(normalizar(frase), lugar, destino)) continue;
+            if (PRECIO.matcher(frase).find() || HORA.matcher(frase).find()
+                    || GRATIS.matcher(frase).find()) continue;
+            if (frase.length() <= 600) return frase;
+            int corte = frase.lastIndexOf(' ', 599);
+            return frase.substring(0, corte > 0 ? corte : 599) + "…";
+        }
+        return null;
     }
 
     private static boolean tituloDelLugar(String titulo, LugarDto lugar, String destino) {
