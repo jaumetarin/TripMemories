@@ -842,8 +842,9 @@ volver al itinerario conserva el día seleccionado.
 
 Si la generación falla, la configuración confirmada permanece disponible para
 reintentar. Volver al resumen y abrir de nuevo el resultado no genera otra vez;
-editar la configuración invalida el resultado. El plan permanece solo en la
-memoria de la pantalla: todavía no se guarda. El mapa se describe a continuación.
+editar la configuración invalida el resultado mostrado. El plan no se guarda de
+forma permanente; UT17 añade la reutilización temporal del último resultado en
+la sesión del backend. El mapa se describe a continuación.
 
 ## UT16: visitas del día en el mapa
 
@@ -921,3 +922,71 @@ Para comprobar manualmente la interacción:
 5. Repetir en móvil alternando «Lista» y «Mapa» y comprobar que se conserva la selección.
 6. Revisar un día vacío o una visita sin coordenadas: la explicación y el itinerario
    textual deben seguir disponibles.
+
+## UT17: control de generaciones por sesión
+
+El endpoint `POST /api/itinerarios/generar` aplica un control de sesión antes de
+entrar al generador y, por tanto, antes de llamar a proveedores. Se utiliza
+`HttpSession` y su cookie `JSESSIONID`, sin cuentas ni tablas nuevas. La versión
+inicial mantiene únicamente el último resultado por sesión en memoria.
+
+Valores iniciales y variables de entorno opcionales:
+
+| Variable | Valor inicial | Significado |
+| --- | --- | --- |
+| `ITINERARIOS_MAX_GENERACIONES` | `3` | Generaciones nuevas admitidas por periodo y sesión |
+| `ITINERARIOS_VENTANA_MINUTOS` | `60` | Duración del periodo del contador |
+| `ITINERARIOS_VIGENCIA_MINUTOS` | `15` | Tiempo de reutilización desde que termina la generación |
+
+Todos los valores deben ser positivos. La sesión expira tras dos horas de
+inactividad. Los contadores y resultados se pierden al terminar la sesión o
+reiniciar el backend. Este control está pensado para una única instancia;
+distintos navegadores o sesiones privadas tienen sesiones diferentes.
+
+El backend valida la configuración sin proveedores y compara los valores
+validados. El orden o la repetición de intereses y exclusiones no crea otra
+configuración. Si coincide con el último resultado vigente, lo devuelve sin
+consumir cuota, incluso cuando ya no quedan generaciones nuevas. Cambiar un
+parámetro relevante exige generar de nuevo. Solo un resultado nuevo correcto
+sustituye al anterior; consultar uno existente no prolonga su vigencia.
+
+La comprobación y la reserva del contador son atómicas. Mientras una generación
+está en curso, otra generación nueva de la misma sesión recibe HTTP `409`.
+Una solicitud por encima del límite recibe HTTP `429`. Ambas respuestas incluyen
+`mensaje`, `Retry-After` en segundos y `Cache-Control: no-store`. No entran al
+generador ni consumen otra ejecución. Se permite leer el resultado anterior
+compatible mientras se genera otro. Una generación admitida que falla cuenta
+como intento porque puede haber consumido proveedores, pero libera el bloqueo
+y no borra el resultado anterior. Desconectar el navegador no libera el control
+mientras el trabajo del backend siga ejecutándose.
+
+El JSON del itinerario mantiene su estructura. Las respuestas correctas añaden:
+
+- `X-Itinerario-Reutilizado`: `true` si se devuelve el resultado de la sesión.
+- `X-Itinerario-Vigente-Hasta`: instante ISO de caducidad de esa reutilización.
+
+`GET /api/itinerarios/consumo` devuelve `limite`, `restantes`, `reinicio` y
+`enCurso`, sin consumir cuota ni consultar proveedores. El frontend consulta
+este estado al abrir el resumen y ofrece «Actualizar disponibilidad». Desactiva
+«Generar» mientras trabaja, mientras consulta el estado o si otra petición de
+la sesión está generando. Un resultado ya abierto puede seguir leyéndose sin
+llamadas externas. Con cuota agotada se permite comprobar si la configuración
+actual tiene un resultado vigente; el backend rechaza cualquier ejecución nueva.
+La consulta del estado es informativa: la decisión definitiva se toma siempre
+en el POST. Al editar el formulario se mantienen las reglas de confirmación de UT6.
+
+Las llamadas del frontend usan `/api` y la cookie del mismo origen, compatible
+con el proxy de Vite. Para probar desde PowerShell hay que conservar la cookie
+usando la misma `WebRequestSession` y `-WebSession` en todas las peticiones;
+sin ello se prueban sesiones distintas.
+
+Pruebas de aceptación automatizadas en `ControlGeneracionServiceTests` y
+`GeneracionItinerarioControllerTests`: agotar cuota sin invocar el generador de
+nuevo; dos peticiones simultáneas con una única ejecución; reutilización incluso
+sin cuota; caducidad y renovación mediante reloj controlado; cambios relevantes,
+normalización de listas, aislamiento de sesiones y recuperación tras errores.
+Los proveedores se sustituyen por dobles de prueba, sin gastar sus cuotas.
+
+Esta UT simplificada controla el flujo de generación. No añade cachés de
+candidatos ni cuotas a los endpoints independientes de evaluación, búsqueda o
+desplazamientos. No es un límite global de las claves API de los proveedores.

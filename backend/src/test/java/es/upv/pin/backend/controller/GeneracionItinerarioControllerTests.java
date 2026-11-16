@@ -3,6 +3,7 @@ package es.upv.pin.backend.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import java.util.List;
@@ -19,6 +20,11 @@ import es.upv.pin.backend.model.TipoBloqueItinerario;
 import es.upv.pin.backend.dto.ItinerarioGeneradoDto;
 import es.upv.pin.backend.exception.GeneracionItinerarioExceptionHandler;
 import es.upv.pin.backend.service.GeneracionItinerarioService;
+import es.upv.pin.backend.service.ControlGeneracionService;
+import es.upv.pin.backend.service.ConfiguracionItinerarioService;
+import es.upv.pin.backend.service.FechaHoraService;
+import es.upv.pin.backend.service.PreferenciasService;
+import org.springframework.mock.web.MockHttpSession;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,7 +32,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class GeneracionItinerarioControllerTests {
     private final GeneracionItinerarioService servicio = mock(GeneracionItinerarioService.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new GeneracionItinerarioController(servicio))
+    private final ControlGeneracionService control = new ControlGeneracionService(servicio,
+            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()), 1, 60, 15);
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new GeneracionItinerarioController(control))
             .setControllerAdvice(new GeneracionItinerarioExceptionHandler()).build();
     private final String configuracion = """
             {"destino":{"id":"madrid","nombre":"Madrid","latitud":40.4,"longitud":-3.7},
@@ -50,6 +58,8 @@ class GeneracionItinerarioControllerTests {
                 List.of(dia), List.of("Aviso"), true, 5, 3, List.of(candidato), true));
         mvc.perform(post("/api/itinerarios/generar").contentType(MediaType.APPLICATION_JSON).content(configuracion))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("X-Itinerario-Reutilizado", "false"))
+                .andExpect(header().exists("X-Itinerario-Vigente-Hasta"))
                 .andExpect(jsonPath("$.dias[0].fecha").value("2026-11-10"))
                 .andExpect(jsonPath("$.dias[0].bloques[0].tipo").value("TIEMPO_LIBRE"))
                 .andExpect(jsonPath("$.advertencias[0]").value("Aviso"))
@@ -71,9 +81,9 @@ class GeneracionItinerarioControllerTests {
 
     @Test
     void rechazaConfiguracionInvalida() throws Exception {
-        when(servicio.generar(any())).thenThrow(new IllegalArgumentException("Configuracion invalida"));
         mvc.perform(post("/api/itinerarios/generar").contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.mensaje").value("Configuracion invalida"));
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.mensaje").isNotEmpty());
+        verifyNoInteractions(servicio);
     }
 
     @Test
@@ -81,5 +91,30 @@ class GeneracionItinerarioControllerTests {
         when(servicio.generar(any())).thenThrow(new IllegalStateException("ORS no disponible"));
         mvc.perform(post("/api/itinerarios/generar").contentType(MediaType.APPLICATION_JSON).content(configuracion))
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.mensaje").value("ORS no disponible"));
+    }
+
+    @Test
+    void laConsultaDeConsumoNoInvocaProveedores() throws Exception {
+        mvc.perform(get("/api/itinerarios/consumo")).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.limite").value(1)).andExpect(jsonPath("$.restantes").value(1))
+                .andExpect(jsonPath("$.enCurso").value(false));
+        verifyNoInteractions(servicio);
+    }
+
+    @Test
+    void rechazaElExcesoAntesDeProveedoresPeroPermiteRecuperarElResultado() throws Exception {
+        MockHttpSession sesion = new MockHttpSession();
+        when(servicio.generar(any())).thenReturn(new ItinerarioGeneradoDto(List.of(), List.of(), true, 0, 0, List.of(), false));
+        mvc.perform(post("/api/itinerarios/generar").session(sesion)
+                .contentType(MediaType.APPLICATION_JSON).content(configuracion)).andExpect(status().isOk());
+        mvc.perform(post("/api/itinerarios/generar").session(sesion)
+                .contentType(MediaType.APPLICATION_JSON).content(configuracion.replace("Hotel", "Otro hotel")))
+                .andExpect(status().isTooManyRequests()).andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty());
+        mvc.perform(post("/api/itinerarios/generar").session(sesion)
+                .contentType(MediaType.APPLICATION_JSON).content(configuracion)).andExpect(status().isOk())
+                .andExpect(header().string("X-Itinerario-Reutilizado", "true"));
+        verify(servicio).generar(any());
     }
 }

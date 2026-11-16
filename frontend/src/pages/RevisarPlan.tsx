@@ -1,4 +1,4 @@
-import type { CategoriaPreferencia, ConfiguracionItinerario, OpcionesGastoDistancia } from '../api'
+import type { CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, OpcionesGastoDistancia } from '../api'
 import { Icon } from '../assets/Icon'
 import './RevisarPlan.css'
 
@@ -12,6 +12,10 @@ type Props = {
   generando: boolean
   errorGeneracion: string
   itinerarioDisponible: boolean
+  consumo: ConsumoGeneracion | null
+  cargandoConsumo: boolean
+  errorConsumo: string
+  onActualizarConsumo: () => void
   catalogo: CategoriaPreferencia[]
   opcionesGastoDistancia: OpcionesGastoDistancia | null
   onEditar: (campo: CampoPlan) => void
@@ -28,7 +32,8 @@ function mostrarFecha(valor: string) {
 
 export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfirmacion,
   generando, errorGeneracion, itinerarioDisponible, catalogo,
-  opcionesGastoDistancia, onEditar, onAtras, onConfirmar, onGenerar }: Props) {
+  opcionesGastoDistancia, consumo, cargandoConsumo, errorConsumo, onActualizarConsumo,
+  onEditar, onAtras, onConfirmar, onGenerar }: Props) {
   const { destino, disponibilidad, alojamiento, preferencias, ritmo } = configuracion
   const nombreCategoria = (codigo: string) => catalogo.find(categoria => categoria.codigo === codigo)?.nombre ?? codigo
   const nombreSubcategoria = (codigo: string) => catalogo.flatMap(categoria => categoria.subcategorias)
@@ -93,11 +98,31 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
       </div>
       {errorConfirmacion && <p className="error-viaje" role="alert">{errorConfirmacion}</p>}
       {errorGeneracion && <p className="error-viaje" role="alert">{errorGeneracion}</p>}
+      <div className="revision-consumo" role="status" aria-live="polite">
+        {generando ? <p>La disponibilidad se actualizará cuando termine la generación.</p>
+          : cargandoConsumo ? <p>Consultando las generaciones disponibles…</p>
+          : errorConsumo ? <p>{errorConsumo}</p>
+          : consumo && <>
+            <p>{consumo.enCurso ? 'Ya se está preparando un itinerario en otra petición de esta sesión. Espera a que termine.'
+              : consumo.restantes > 0
+                ? `Generaciones nuevas disponibles: ${consumo.restantes} de ${consumo.limite}.`
+                : 'Has alcanzado el límite de generaciones nuevas de esta sesión.'}</p>
+            <p>El límite se renueva el {new Intl.DateTimeFormat('es-ES', {
+              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+            }).format(new Date(consumo.reinicio))}. Consultar el último resultado vigente con los mismos datos no consume otra generación.</p>
+          </>}
+        {!generando && <button type="button" disabled={cargandoConsumo} onClick={onActualizarConsumo}>
+          {errorConsumo ? 'Reintentar consulta' : 'Actualizar disponibilidad'}
+        </button>}
+      </div>
       <div className="revision-acciones">
         <button className="boton revision-atras" type="button" disabled={confirmando || generando} onClick={onAtras}>← Atrás</button>
         {confirmada ? (
-          <button className="boton boton-primario" type="button" disabled={generando} onClick={onGenerar}>
-            {generando ? 'Generando itinerario…' : itinerarioDisponible ? 'Ver itinerario' : errorGeneracion ? 'Reintentar generación' : 'Generar itinerario'} <Icon name="flecha" />
+          <button className="boton boton-primario" type="button"
+            disabled={generando || !itinerarioDisponible && (cargandoConsumo || !consumo || consumo.enCurso)} onClick={onGenerar}>
+            {generando ? 'Generando itinerario…' : itinerarioDisponible ? 'Ver itinerario'
+              : consumo?.restantes === 0 ? 'Consultar itinerario existente'
+              : errorGeneracion ? 'Reintentar generación' : 'Generar itinerario'} <Icon name="flecha" />
           </button>
         ) : (
           <button className="boton boton-primario" type="button" disabled={confirmando} onClick={onConfirmar}>

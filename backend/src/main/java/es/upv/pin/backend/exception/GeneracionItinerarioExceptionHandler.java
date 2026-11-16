@@ -11,6 +11,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = GeneracionItinerarioController.class)
 public class GeneracionItinerarioExceptionHandler {
+    @ExceptionHandler(ControlGeneracionException.class)
+    public ResponseEntity<Map<String, String>> limiteDeSesion(ControlGeneracionException error) {
+        return ResponseEntity.status(error.getEstado()).cacheControl(org.springframework.http.CacheControl.noStore())
+                .header("Retry-After", Long.toString(error.getEsperaSegundos()))
+                .body(Map.of("mensaje", error.getMessage()));
+    }
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> configuracionInvalida(IllegalArgumentException error) {
         return ResponseEntity.badRequest().body(Map.of("mensaje", mensaje(error, "Configuracion invalida.")));
