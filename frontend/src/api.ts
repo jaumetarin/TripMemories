@@ -485,11 +485,34 @@ function esItinerarioGenerado(valor: unknown): valor is ItinerarioGenerado {
     && typeof valor.evaluacionFallback === 'boolean'
 }
 
+export interface ConsumoGeneracion {
+  limite: number
+  restantes: number
+  reinicio: string
+  enCurso: boolean
+}
+
+export async function obtenerConsumoGeneracion(signal: AbortSignal): Promise<ConsumoGeneracion> {
+  const respuesta = await fetch('/api/itinerarios/consumo', {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' },
+  })
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok || !esObjeto(datos) || typeof datos.limite !== 'number' || !Number.isInteger(datos.limite)
+    || datos.limite < 1 || typeof datos.restantes !== 'number' || !Number.isInteger(datos.restantes)
+    || datos.restantes < 0 || datos.restantes > datos.limite || typeof datos.enCurso !== 'boolean'
+    || typeof datos.reinicio !== 'string' || !Number.isFinite(Date.parse(datos.reinicio))) {
+    throw new Error('No hemos podido consultar las generaciones disponibles. Vuelve a intentarlo.')
+  }
+  return datos as unknown as ConsumoGeneracion
+}
+
 export async function generarItinerario(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
-): Promise<ItinerarioGenerado> {
+): Promise<{ itinerario: ItinerarioGenerado; reutilizado: boolean }> {
   const respuesta = await fetch('/api/itinerarios/generar', {
     method: 'POST',
+    credentials: 'same-origin',
     signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(configuracion),
@@ -502,5 +525,5 @@ export async function generarItinerario(
   if (!esItinerarioGenerado(datos)) {
     throw new Error('El servidor ha devuelto un itinerario no válido. Vuelve a intentarlo.')
   }
-  return datos
+  return { itinerario: datos, reutilizado: respuesta.headers.get('X-Itinerario-Reutilizado') === 'true' }
 }

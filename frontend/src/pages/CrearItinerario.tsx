@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { confirmarConfiguracion, generarItinerario, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
-import type { CategoriaPreferencia, ConfiguracionItinerario, Destino, FechaHora, ItinerarioGenerado, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
+import { confirmarConfiguracion, generarItinerario, obtenerConsumoGeneracion, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
+import type { CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, Destino, FechaHora, ItinerarioGenerado, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
 import { Icon } from '../assets/Icon'
 import { BuscadorDestinos } from '../components/BuscadorDestinos'
 import { CandidatosLugares } from '../components/CandidatosLugares'
@@ -68,6 +68,11 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [vistaResultado, setVistaResultado] = useState<'plan' | 'candidatos'>('plan')
   const [generando, setGenerando] = useState(false)
   const [errorGeneracion, setErrorGeneracion] = useState('')
+  const [consumo, setConsumo] = useState<ConsumoGeneracion | null>(null)
+  const [cargandoConsumo, setCargandoConsumo] = useState(true)
+  const [errorConsumo, setErrorConsumo] = useState('')
+  const [reintentoConsumo, setReintentoConsumo] = useState(0)
+  const [resultadoReutilizado, setResultadoReutilizado] = useState(false)
   const peticion = useRef<AbortController | null>(null)
   const peticionConfirmacion = useRef<AbortController | null>(null)
   const peticionGeneracion = useRef<AbortController | null>(null)
@@ -81,6 +86,32 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     peticionConfirmacion.current?.abort()
     peticionGeneracion.current?.abort()
   }, [])
+
+  useEffect(() => {
+    if (paso !== 'resumen') return
+    const controlador = new AbortController()
+    obtenerConsumoGeneracion(controlador.signal).then(datos => {
+      if (!controlador.signal.aborted) setConsumo(datos)
+    }).catch(error => {
+      if (controlador.signal.aborted) return
+      setConsumo(null)
+      setErrorConsumo(error instanceof Error ? error.message : 'No se puede consultar la disponibilidad.')
+    }).finally(() => {
+      if (!controlador.signal.aborted) setCargandoConsumo(false)
+    })
+    return () => controlador.abort()
+  }, [paso, reintentoConsumo])
+
+  function actualizarConsumo() {
+    setCargandoConsumo(true)
+    setErrorConsumo('')
+    setReintentoConsumo(valor => valor + 1)
+  }
+
+  function mostrarResumen() {
+    actualizarConsumo()
+    setPaso('resumen')
+  }
 
   useEffect(() => {
     const controlador = new AbortController()
@@ -238,6 +269,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       setPaso('resultado')
       return
     }
+    if (cargandoConsumo || !consumo || consumo.enCurso) return
     const controlador = new AbortController()
     peticionGeneracion.current = controlador
     setGenerando(true)
@@ -245,7 +277,8 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     try {
       const generado = await generarItinerario(configuracionConfirmada, controlador.signal)
       if (controlador.signal.aborted || peticionGeneracion.current !== controlador) return
-      setItinerario(generado)
+      setItinerario(generado.itinerario)
+      setResultadoReutilizado(generado.reutilizado)
       setVistaResultado('plan')
       setPaso('resultado')
     } catch (error) {
@@ -258,6 +291,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       if (peticionGeneracion.current === controlador) {
         peticionGeneracion.current = null
         if (!controlador.signal.aborted) setGenerando(false)
+        if (!controlador.signal.aborted) actualizarConsumo()
       }
     }
   }
@@ -345,14 +379,19 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
         <RevisarPlan configuracion={configuracionConfirmada ?? configuracionActual}
           confirmada={configuracionConfirmada !== null} confirmando={confirmando} errorConfirmacion={errorConfirmacion}
           generando={generando} errorGeneracion={errorGeneracion} itinerarioDisponible={itinerario !== null}
+          consumo={consumo} cargandoConsumo={cargandoConsumo} errorConsumo={errorConsumo}
+          onActualizarConsumo={actualizarConsumo}
           catalogo={catalogo} opcionesGastoDistancia={opcionesGastoDistancia}
           onEditar={editarApartado} onAtras={() => editarApartado('intereses')} onConfirmar={confirmarPlan}
           onGenerar={generarPlan} />
       )}
       {itinerario && configuracionConfirmada && (
         <div className="resultado-itinerario" hidden={paso !== 'resultado'}>
-          <button className="boton-volver" type="button" onClick={() => setPaso('resumen')}>← Volver al resumen</button>
-          <p className="resultado-nota">Esta propuesta aún no se guarda. Si sales de esta pantalla, tendrás que generarla de nuevo.</p>
+          <button className="boton-volver" type="button" onClick={mostrarResumen}>← Volver al resumen</button>
+          <p className="resultado-nota" role="status">{resultadoReutilizado
+            ? 'Hemos recuperado tu último itinerario vigente. Esta consulta no consume otra generación.'
+            : 'Tu itinerario está listo. Puedes volver a consultarlo sin gastar otra generación mientras siga vigente.'}
+            {' '}Esta propuesta es temporal y no se guarda de forma permanente.</p>
           <nav className="resultado-vistas" aria-label="Vistas del resultado">
             <button type="button" aria-current={vistaResultado === 'plan' ? 'page' : undefined}
               onClick={() => setVistaResultado('plan')}>Itinerario por días</button>
@@ -377,7 +416,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           onContinuar={confirmadas => {
             setPreferencias(actuales => ({ ...actuales, ...confirmadas }))
             setEditandoResumen(false)
-            setPaso('resumen')
+            mostrarResumen()
           }} />
       )}
     </section>

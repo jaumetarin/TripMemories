@@ -1,4 +1,8 @@
 .crear-viaje-revision { max-width: 840px; }
+.revision-consumo { margin: 18px 0; padding: 16px 18px; border: 1px solid #dce6e1; border-radius: 12px; background: #f1f6f3; color: #355349; }
+.revision-consumo p { margin: 4px 0; font-size: .8rem; line-height: 1.65; }
+.revision-consumo p:first-child { font-weight: 600; }
+.revision-consumo button { margin-top: 8px; padding: 0; border: 0; background: none; color: #066b5e; font-size: .78rem; text-decoration: underline; text-underline-offset: 3px; }
 .crear-viaje-revision .crear-intro, .revision-plan { max-width: 680px; margin-left: auto; margin-right: auto; }
 .crear-viaje-revision .crear-intro { text-align: left; }
 .crear-viaje-revision .antetitulo { color: var(--primario); margin-bottom: 9px; }
