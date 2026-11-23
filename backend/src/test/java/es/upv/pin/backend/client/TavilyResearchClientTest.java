@@ -195,7 +195,9 @@ class TavilyResearchClientTest {
     void noAsignaGratuidadGeneralSiHayNegacionesOCondiciones() throws Exception {
         List<String> frases = List.of(
                 "No hay entrada gratuita.",
-                "Entrada gratuita a partir de las 18:00.");
+                "Entrada gratuita a partir de las 18:00.",
+                "Entrada gratuita los lunes.",
+                "Entrada gratuita de 18:00 a 20:00.");
 
         for (String frase : frases) {
             String respuesta = """
@@ -251,6 +253,65 @@ class TavilyResearchClientTest {
             assertTrue(
                     hallazgo == null || hallazgo.horario() == null,
                     "No debería aceptarse este horario sin interpretar: " + frase);
+        }
+    }
+    @Test
+    void noInterpretaUnaTarifaDeEstudiantesComoPrecioGeneral()
+            throws Exception {
+
+        String respuesta = """
+                {
+                  "results": [
+                    {
+                      "title": "Museo Azul Valencia",
+                      "url": "https://museo.example/visitas",
+                      "content": "Entrada para estudiantes 5 EUR."
+                    }
+                  ]
+                }
+                """;
+
+        var hallazgo = cliente(respuesta)
+                .investigar(List.of(lugar), "Valencia")
+                .get(lugar.id());
+
+        assertTrue(
+                hallazgo == null
+                        || (hallazgo.precioMinimo() == null
+                                && hallazgo.precioMaximo() == null),
+                "Una tarifa para estudiantes no debe convertirse en un precio general.");
+    }
+    @Test
+    void noConvierteUnRangoDePreciosEnUnImporteUnico()
+            throws Exception {
+
+        List<String> frases = List.of(
+                "Admission 10 to 20 EUR.",
+                "Entrada 10 a 20 EUR.",
+                "Entrada 10-20 EUR.");
+
+        for (String frase : frases) {
+            String respuesta = """
+                    {
+                      "results": [
+                        {
+                          "title": "Museo Azul Valencia",
+                          "url": "https://museo.example/visitas",
+                          "content": "%s"
+                        }
+                      ]
+                    }
+                    """.formatted(frase);
+
+            var hallazgo = cliente(respuesta)
+                    .investigar(List.of(lugar), "Valencia")
+                    .get(lugar.id());
+
+            assertTrue(
+                    hallazgo == null
+                            || (hallazgo.precioMinimo() == null
+                                    && hallazgo.precioMaximo() == null),
+                    "Un rango no debe convertirse en un precio único: " + frase);
         }
     }
 }

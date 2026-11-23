@@ -182,14 +182,21 @@ public class EvaluacionCandidatosService {
                             && fuentes.contains(h.fuenteDescripcion())
                     ? texto(h.descripcion()) : null;
             String fuenteDescripcion = descripcion == null ? null : h.fuenteDescripcion();
-            String horario =
-                    h != null && fuenteValida(h.fuenteHorario()) && texto(h.horario()) != null
-                            ? texto(h.horario())
-                            : lugar.horario();
-            String fuenteHorario =
-                    h != null && fuenteValida(h.fuenteHorario()) && texto(h.horario()) != null
-                            ? "Fuentes externas"
-                            : horario == null ? null : "Geoapify (sin verificar)";
+            String horario;
+            String fuenteHorario;
+
+            if (texto(lugar.horario()) != null) {
+                horario = lugar.horario();
+                fuenteHorario = "Geoapify (sin verificar)";
+            } else if (h != null
+                    && fuenteValida(h.fuenteHorario())
+                    && texto(h.horario()) != null) {
+                horario = texto(h.horario());
+                fuenteHorario = "Fuentes externas";
+            } else {
+                horario = null;
+                fuenteHorario = null;
+            }
             int duracion =
                     h != null
                                     && fuenteValida(h.fuenteDuracion())

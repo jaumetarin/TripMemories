@@ -1,6 +1,8 @@
 package es.upv.pin.backend.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 import es.upv.pin.backend.client.AiProvider;
@@ -341,5 +343,107 @@ class EvaluacionCandidatosServiceTests {
                                 LocalDateTime.parse("2026-01-01T12:00"),
                                 LocalDateTime.parse("2026-01-10T16:00"),
                                 10)));
+    }
+    @Test
+    void conservaElCierreSemanalAunqueTavilyDevuelvaUnHorarioIncompleto() {
+        String horarioSemanal = "Mo off; Tu-Su 09:00-18:00";
+
+        LugarDto museo = new LugarDto(
+                "museo",
+                "Museo Azul",
+                "Calle 1",
+                40.4,
+                -3.7,
+                List.of(CategoriaTuristica.ARTE_MUSEOS),
+                List.of(),
+                horarioSemanal);
+
+        LocalDateTime lunes = LocalDateTime.of(2026, 11, 23, 10, 0);
+
+        ConfiguracionItinerarioDto viajeLunes =
+                new ConfiguracionItinerarioDto(
+                        viaje.destino(),
+                        new FechaHoraDto(lunes, lunes.plusHours(8), 1),
+                        viaje.alojamiento(),
+                        viaje.preferencias());
+
+        when(config.validar(viajeLunes)).thenReturn(viajeLunes);
+        when(prep.preparar(viajeLunes)).thenReturn(List.of(museo));
+
+        when(ai.evaluar(anyList(), anyList(), anyString()))
+                .thenReturn(Map.of(
+                        "museo",
+                        new ValoracionGemini(
+                                80, null, 60, "Museo", "Interés artístico")));
+
+        String fuente = "https://museo.example/horarios";
+
+        HallazgoGemini horarioExterno = new HallazgoGemini(
+                null,
+                List.of(fuente),
+                null,
+                null,
+                null,
+                "Horario 09:00 - 18:00",
+                null,
+                null,
+                fuente,
+                null,
+                null,
+                null);
+
+        when(research.investigar(anyList(), anyString()))
+                .thenReturn(Map.of("museo", horarioExterno));
+
+        CandidatoEvaluadoDto candidato =
+                service.evaluar(viajeLunes).candidatos().getFirst();
+
+        assertEquals(horarioSemanal, candidato.horario());
+        assertEquals("Geoapify (sin verificar)", candidato.horarioFuente());
+        assertEquals(ScheduleStatus.UNVERIFIED, candidato.estadoHorario());
+
+        EstadoHorarioVisita estado = new EvaluadorHorarioService()
+                .evaluar(candidato, lunes, lunes.plusHours(1));
+
+        assertEquals(
+                EstadoHorarioVisita.CONFLICTO_SEGUN_FUENTE,
+                estado);
+    }
+    @Test
+    void usaElHorarioExternoCuandoGeoapifyNoAportaHorario() {
+        preparar(List.of(lugar(1)));
+
+        when(ai.evaluar(anyList(), anyList(), anyString()))
+                .thenReturn(Map.of(
+                        "id1",
+                        new ValoracionGemini(
+                                80, null, 60, "Museo", "Interés artístico")));
+
+        String fuente = "https://museo.example/horarios";
+
+        HallazgoGemini hallazgo = new HallazgoGemini(
+                null,
+                List.of(fuente),
+                null,
+                null,
+                null,
+                "Horario 09:00 - 18:00",
+                null,
+                null,
+                fuente,
+                null,
+                null,
+                null);
+
+        when(research.investigar(anyList(), anyString()))
+                .thenReturn(Map.of("id1", hallazgo));
+
+        CandidatoEvaluadoDto candidato =
+                service.evaluar(viaje).candidatos().getFirst();
+
+        assertEquals("Horario 09:00 - 18:00", candidato.horario());
+        assertEquals("Fuentes externas", candidato.horarioFuente());
+        assertEquals(ScheduleStatus.PARTIAL, candidato.estadoHorario());
+        assertTrue(candidato.fuentes().contains(fuente));
     }
 }
