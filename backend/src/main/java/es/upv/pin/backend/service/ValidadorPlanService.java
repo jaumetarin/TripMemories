@@ -14,6 +14,7 @@ public class ValidadorPlanService {
     public ResultadoValidacionPlan validar(List<DiaItinerarioDto> dias, PreferenciasDto preferencias) {
         List<String> incidencias = new ArrayList<>();
         Set<String> visitados = new HashSet<>();
+        List<LugarDto> lugaresVisitados = new ArrayList<>();
         if (dias == null) return new ResultadoValidacionPlan(List.of("Faltan los días del plan"), true);
         for (DiaItinerarioDto dia : dias) {
             // Un día sin ventana y sin bloques representa disponibilidad agotada, no un plan inválido.
@@ -43,7 +44,10 @@ public class ValidadorPlanService {
                     if (c == null || c.lugar() == null || c.lugar().id() == null || c.lugar().id().isBlank()) {
                         incidencias.add("Visita sin lugar identificado en " + dia.fecha()); continue;
                     }
-                    if (!visitados.add(c.lugar().id())) incidencias.add("Visita duplicada: " + c.lugar().id());
+                    if (!visitados.add(c.lugar().id()) || lugaresVisitados.stream()
+                            .anyMatch(lugar -> IdentidadLugares.mismoLugar(lugar, c.lugar())))
+                        incidencias.add("Visita duplicada: " + c.lugar().id());
+                    lugaresVisitados.add(c.lugar());
                     if (ubicacion != null && !ubicacion.equals(c.lugar().id()) && !mismoPunto(ultimoLugar, c.lugar()))
                         incidencias.add("Falta traslado hasta la visita: " + c.lugar().id());
                     ubicacion = c.lugar().id();

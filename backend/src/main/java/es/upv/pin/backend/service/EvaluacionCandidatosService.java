@@ -19,21 +19,23 @@ import java.util.concurrent.*;
 public class EvaluacionCandidatosService {
     private static final int EVALUACION = 40,
             INVESTIGACION = 1,
-            MAX_LLAMADAS = 20,
             MAX_BUSQUEDAS = 100;
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(EvaluacionCandidatosService.class);
     private final ConfiguracionItinerarioService configuraciones;
     private final PreparacionCandidatosService preparacion;
     private final AiProvider ia;
     private final ResearchProvider investigacion;
     private final long plazoNanos;
+    private final int maxCandidatos;
 
     @org.springframework.beans.factory.annotation.Autowired
     public EvaluacionCandidatosService(
             ConfiguracionItinerarioService configuraciones,
             PreparacionCandidatosService preparacion,
             AiProvider ia,
-            ResearchProvider investigacion) {
-        this(configuraciones, preparacion, ia, investigacion, TimeUnit.SECONDS.toNanos(100));
+            ResearchProvider investigacion,
+            @org.springframework.beans.factory.annotation.Value("${itinerarios.candidatos.max-evaluados:120}") int maxCandidatos) {
+        this(configuraciones, preparacion, ia, investigacion, maxCandidatos, TimeUnit.SECONDS.toNanos(100));
     }
 
     EvaluacionCandidatosService(
@@ -41,18 +43,24 @@ public class EvaluacionCandidatosService {
             PreparacionCandidatosService preparacion,
             AiProvider ia,
             ResearchProvider investigacion,
+            int maxCandidatos,
             long plazoNanos) {
+        if (maxCandidatos < 1 || maxCandidatos > 120)
+            throw new IllegalArgumentException("El límite de candidatos evaluados debe estar entre 1 y 120.");
         this.configuraciones = configuraciones;
         this.preparacion = preparacion;
         this.ia = ia;
         this.investigacion = investigacion;
         this.plazoNanos = plazoNanos;
+        this.maxCandidatos = maxCandidatos;
     }
 
     public EvaluacionCandidatosDto evaluar(ConfiguracionItinerarioDto entrada) {
         long limite = System.nanoTime() + plazoNanos;
         var config = configuraciones.validar(entrada);
-        var lugares = dentroDePlazo(() -> preparacion.preparar(config), limite);
+        var preparados = dentroDePlazo(() -> preparacion.preparar(config), limite);
+        // Preparación ya intercala los grupos. El recorte conserva esa variedad.
+        var lugares = preparados.stream().limit(maxCandidatos).toList();
         int disponible = minutosDisponibles(config.disponibilidad());
         if (lugares.isEmpty())
             return new EvaluacionCandidatosDto(
@@ -62,13 +70,18 @@ public class EvaluacionCandidatosService {
                     disponible,
                     0);
         List<String> avisos = new ArrayList<>();
+        if (preparados.size() > lugares.size()) {
+            avisos.add("Hemos seleccionado una muestra variada de lugares para preparar tu viaje.");
+        }
+        LOG.info("Evaluación: {} candidatos recuperados, {} seleccionados, máximo {} llamadas de IA",
+                preparados.size(), lugares.size(), (lugares.size() + EVALUACION - 1) / EVALUACION);
         Map<String, ValoracionGemini> valoraciones = new HashMap<>();
+        Set<String> evaluadosPorIa = new HashSet<>();
+        for (var lugar : lugares) valoraciones.put(lugar.id(), local(lugar, config.preferencias().intereses()));
         boolean fallback = false;
-        try {
-            if ((lugares.size() + EVALUACION - 1) / EVALUACION > MAX_LLAMADAS)
-                throw new IllegalStateException();
-            for (int i = 0; i < lugares.size(); i += EVALUACION) {
-                var lote = lugares.subList(i, Math.min(i + EVALUACION, lugares.size()));
+        for (int i = 0; i < lugares.size(); i += EVALUACION) {
+            var lote = lugares.subList(i, Math.min(i + EVALUACION, lugares.size()));
+            try {
                 var respuesta =
                         dentroDePlazo(
                                 () ->
@@ -84,29 +97,32 @@ public class EvaluacionCandidatosService {
                     if (v == null
                             || v.afinidad() < 0
                             || v.afinidad() > 100
+                            || (v.relevancia() != null && (v.relevancia() < 0 || v.relevancia() > 100))
                             || v.duracionMinutos() < 15
                             || v.duracionMinutos() > 480
                             || v.etiqueta() == null
                             || v.etiqueta().isBlank()
                             || v.motivo() == null
                             || v.motivo().isBlank()) throw new IllegalStateException();
-                    valoraciones.put(lugar.id(), v);
                 }
+                // Se acepta el lote completo; una respuesta parcial no mezcla resultados.
+                for (var lugar : lote) {
+                    valoraciones.put(lugar.id(), respuesta.get(lugar.id()));
+                    evaluadosPorIa.add(lugar.id());
+                }
+            } catch (RuntimeException e) {
+                fallback = true;
+                avisos.add("Algunas recomendaciones se han preparado a partir de tus intereses y del tipo de lugar;"
+                        + " pueden ser menos precisas.");
+                // Conservamos los lotes correctos y evitamos más llamadas tras un fallo o límite.
+                break;
             }
-        } catch (RuntimeException e) {
-            fallback = true;
-            valoraciones.clear();
-            for (var lugar : lugares)
-                valoraciones.put(lugar.id(), local(lugar, config.preferencias().intereses()));
-            avisos.add(
-                    "Las recomendaciones se han preparado a partir de tus intereses y del tipo de lugar;"
-                            + " algunas pueden ser menos precisas.");
         }
         var ordenados =
                 lugares.stream()
                         .sorted(
                                 Comparator.comparingInt(
-                                                (LugarDto l) -> valoraciones.get(l.id()).afinidad())
+                                                (LugarDto l) -> valoraciones.get(l.id()).prioridad())
                                         .reversed())
                         .toList();
         List<LugarDto> investigables = diversificar(ordenados, valoraciones);
@@ -194,7 +210,7 @@ public class EvaluacionCandidatosService {
                             fuentes,
                             horario,
                             fuenteHorario,
-                            fallback ? "LOCAL" : "GEMINI",
+                            evaluadosPorIa.contains(lugar.id()) ? "GEMINI" : "LOCAL",
                             coste(h) == CostLevel.UNKNOWN
                                     ? CostConfidence.UNKNOWN
                                     : CostConfidence.ESTIMATED,
@@ -205,7 +221,8 @@ public class EvaluacionCandidatosService {
                             h == null || !fuenteValida(h.fuentePrecio()) ? null : h.precioMaximo(),
                             h == null || !fuenteValida(h.fuentePrecio()) ? null : h.moneda(),
                             descripcion,
-                            fuenteDescripcion));
+                            fuenteDescripcion,
+                            v.relevancia()));
         }
         return new EvaluacionCandidatosDto(
                 List.copyOf(candidatos), fallback, List.copyOf(avisos), disponible, investigados);
@@ -241,10 +258,10 @@ public class EvaluacionCandidatosService {
         List<LugarDto> pendientes = new ArrayList<>(ordenados), resultado = new ArrayList<>();
         Map<CategoriaTuristica, Integer> usadas = new EnumMap<>(CategoriaTuristica.class);
         while (!pendientes.isEmpty()) {
-            int mejor = puntuaciones.get(pendientes.get(0).id()).afinidad();
+            int mejor = puntuaciones.get(pendientes.get(0).id()).prioridad();
             LugarDto elegido =
                     pendientes.stream()
-                            .filter(l -> puntuaciones.get(l.id()).afinidad() >= mejor - 5)
+                            .filter(l -> puntuaciones.get(l.id()).prioridad() >= mejor - 5)
                             .min(
                                     Comparator.comparingInt(
                                             l ->
@@ -281,6 +298,7 @@ public class EvaluacionCandidatosService {
                         : "Valoración basada en las categorías disponibles.";
         return new ValoracionGemini(
                 intereses.isEmpty() ? 50 : (int) Math.min(100, 40 + 20 * coincidencias),
+                null,
                 duracion,
                 "Estimación local",
                 motivo);

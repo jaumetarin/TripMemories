@@ -35,8 +35,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class GeneracionItinerarioService {
     private static final int MAXIMO_PUNTOS = 50;
-    private static final int BANDA_AFINIDAD = 5;
+    private static final int BANDA_PRIORIDAD = 5;
     private static final int HUECO_PARCIAL_MINUTOS = 15;
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(GeneracionItinerarioService.class);
 
     private final ConfiguracionItinerarioService configuraciones;
     private final EvaluacionCandidatosService evaluacion;
@@ -108,6 +109,10 @@ public class GeneracionItinerarioService {
         List<PuntoRutaDto> puntos = new ArrayList<>(pendientes.stream()
                 .map(c -> new PuntoRutaDto(c.lugar().id(), c.lugar().latitud(), c.lugar().longitud())).toList());
         restaurantes.forEach(r -> puntos.add(new PuntoRutaDto(r.id(), r.latitud(), r.longitud())));
+        Set<String> idsEnMatriz = new HashSet<>();
+        puntos.forEach(p -> idsEnMatriz.add(p.id()));
+        candidatos.stream().filter(c -> !idsEnMatriz.contains(c.lugar().id())).forEach(c ->
+                LOG.debug("Candidato {} fuera del cálculo de rutas: sin coordenadas o por selección previa", c.lugar().id()));
         Set<String> conflictosHorario = new HashSet<>();
 
         List<DesplazamientoDto> tramos = puntos.size() < 2
@@ -259,13 +264,13 @@ public class GeneracionItinerarioService {
                     break;
                 }
 
-                int mejorAfinidad = factibles.stream()
-                        .mapToInt(o -> o.candidato().afinidad())
+                int mejorPrioridad = factibles.stream()
+                        .mapToInt(o -> o.candidato().prioridad())
                         .max()
                         .orElseThrow();
                 String lugarAnterior = anterior;
                 Opcion elegido = factibles.stream()
-                        .filter(o -> o.candidato().afinidad() >= mejorAfinidad - BANDA_AFINIDAD)
+                        .filter(o -> o.candidato().prioridad() >= mejorPrioridad - BANDA_PRIORIDAD)
                         .min(ordenOpciones(
                                 lugarAnterior, config.preferencias().distanciaKm(),
                                 config.preferencias().nivelGasto(), categoriasDelDia))
@@ -300,7 +305,7 @@ public class GeneracionItinerarioService {
                 visitasDia = true;
                 cursor = finVisita;
                 actividad += candidato.duracionMinutos();
-                pendientes.remove(candidato);
+                pendientes.removeIf(p -> IdentidadLugares.mismoLugar(candidato.lugar(), p.lugar()));
                 anterior = candidato.lugar().id();
                 conflictosHorario.remove(anterior);
                 if (candidato.lugar().categorias() != null) {
@@ -324,6 +329,8 @@ public class GeneracionItinerarioService {
         List<String> fueraPorHorario = pendientes.stream()
                 .filter(c -> conflictosHorario.contains(c.lugar().id()))
                 .map(c -> c.lugar().nombre()).distinct().toList();
+        pendientes.forEach(c -> LOG.debug("Candidato {} no programado: {}", c.lugar().id(),
+                conflictosHorario.contains(c.lugar().id()) ? "horario incompatible" : "tiempo o rutas disponibles"));
         if (!fueraPorHorario.isEmpty()) {
             advertencias.add("Estos lugares han quedado fuera porque sus horarios no encajan en tu plan: "
                     + String.join(", ", fueraPorHorario) + ".");
@@ -449,7 +456,7 @@ public class GeneracionItinerarioService {
         var lugar = new es.upv.pin.backend.dto.LugarDto(restaurante.id(), restaurante.nombre(), restaurante.direccion(),
                 restaurante.latitud(), restaurante.longitud(), List.of(CategoriaTuristica.GASTRONOMIA), List.of(), restaurante.horario());
         var candidato = new CandidatoEvaluadoDto(lugar, 0, 1, null, null, null, null, List.of(),
-                restaurante.horario(), restaurante.horarioFuente(), null, null, null, null, null, null, null, null);
+                restaurante.horario(), restaurante.horarioFuente(), null, null, null, null, null, null, null, null, null);
         return evaluadorHorario.evaluar(candidato, inicio, fin);
     }
 
@@ -519,8 +526,7 @@ public class GeneracionItinerarioService {
                 .thenComparingInt(o -> repeticionCategoria(
                         o.candidato(), categoriasDelDia))
                 .thenComparing(Comparator.comparingInt(
-                        (Opcion o) -> o.candidato().afinidad()).reversed())
-                .thenComparing(o -> o.candidato().lugar().id());
+                        (Opcion o) -> o.candidato().prioridad()).reversed());
     }
 
     private static List<CandidatoEvaluadoDto> seleccionar(
@@ -528,8 +534,7 @@ public class GeneracionItinerarioService {
         List<CandidatoEvaluadoDto> restantes = new ArrayList<>(
                 candidatos.stream()
                         .filter(GeneracionItinerarioService::tieneCoordenadas)
-                        .sorted(Comparator.comparingInt(CandidatoEvaluadoDto::afinidad)
-                                .reversed().thenComparing(c -> c.lugar().id()))
+                        .sorted(Comparator.comparingInt(CandidatoEvaluadoDto::prioridad).reversed())
                         .toList());
         List<CandidatoEvaluadoDto> elegidos = new ArrayList<>();
         Set<String> ids = new HashSet<>();
@@ -537,15 +542,14 @@ public class GeneracionItinerarioService {
                 new EnumMap<>(CategoriaTuristica.class);
 
         while (!restantes.isEmpty() && elegidos.size() < MAXIMO_PUNTOS) {
-            int mejorAfinidad = restantes.get(0).afinidad();
+            int mejorPrioridad = restantes.get(0).prioridad();
             CandidatoEvaluadoDto elegido = restantes.stream()
-                    .filter(c -> c.afinidad() >= mejorAfinidad - BANDA_AFINIDAD)
+                    .filter(c -> c.prioridad() >= mejorPrioridad - BANDA_PRIORIDAD)
                     .min(Comparator.comparingInt(
                                     (CandidatoEvaluadoDto c) ->
                                             repeticionCategoria(c, categorias))
                             .thenComparing(Comparator.comparingInt(
-                                    CandidatoEvaluadoDto::afinidad).reversed())
-                            .thenComparing(c -> c.lugar().id()))
+                                    CandidatoEvaluadoDto::prioridad).reversed()))
                     .orElseThrow();
             restantes.remove(elegido);
             if (!ids.add(elegido.lugar().id())) {

@@ -21,7 +21,7 @@ class EvaluacionCandidatosServiceTests {
     private final AiProvider ai = mock(AiProvider.class);
     private final ResearchProvider research = mock(ResearchProvider.class);
     private final EvaluacionCandidatosService service =
-            new EvaluacionCandidatosService(config, prep, ai, research);
+            new EvaluacionCandidatosService(config, prep, ai, research, 120);
 
     @org.junit.jupiter.api.BeforeEach
     void habilitarInvestigacion() {
@@ -74,7 +74,7 @@ class EvaluacionCandidatosServiceTests {
                                                     LugarDto::id,
                                                     l ->
                                                             new ValoracionGemini(
-                                                                    80, 60, "bueno", "motivo")));
+                                                                    80, null, 60, "bueno", "motivo")));
                         });
         when(research.investigar(anyList(), anyString()))
                 .thenReturn(
@@ -102,7 +102,7 @@ class EvaluacionCandidatosServiceTests {
     void conservaDescripcionYFuenteSinConvertirElCosteDesconocidoEnGratis() {
         preparar(List.of(lugar(1)));
         when(ai.evaluar(anyList(), anyList(), anyString()))
-                .thenReturn(Map.of("id1", new ValoracionGemini(80, 60, "Museo", "Arte")));
+                .thenReturn(Map.of("id1", new ValoracionGemini(80, null, 60, "Museo", "Arte")));
         when(research.investigar(anyList(), anyString())).thenReturn(Map.of("id1",
                 new HallazgoGemini(null, List.of("https://museo.example/acerca"),
                         null, null, null, null, null, null, null, null,
@@ -120,7 +120,7 @@ class EvaluacionCandidatosServiceTests {
     void descartaDescripcionSinUnaFuenteValida() {
         preparar(List.of(lugar(1)));
         when(ai.evaluar(anyList(), anyList(), anyString()))
-                .thenReturn(Map.of("id1", new ValoracionGemini(80, 60, "Museo", "Arte")));
+                .thenReturn(Map.of("id1", new ValoracionGemini(80, null, 60, "Museo", "Arte")));
         when(research.investigar(anyList(), anyString())).thenReturn(Map.of("id1",
                 new HallazgoGemini(null, List.of("https://museo.example"),
                         null, null, null, null, null, null, null, null,
@@ -133,7 +133,7 @@ class EvaluacionCandidatosServiceTests {
     }
 
     @Test
-    void evaluaLosSeiscientosCandidatosQuePuedeEntregarUt8() {
+    void limitaLaEvaluacionATresLotesAunqueSeRecuperenSeiscientos() {
         var lugares = IntStream.range(0, 600).mapToObj(this::lugar).toList();
         preparar(lugares);
         when(research.disponible()).thenReturn(false);
@@ -145,15 +145,50 @@ class EvaluacionCandidatosServiceTests {
                                     .collect(
                                             Collectors.toMap(
                                                     LugarDto::id,
-                                                    lugar -> new ValoracionGemini(70, 60, "Museo", "Coincide con arte y museos.")));
+                                                    lugar -> new ValoracionGemini(70, null, 60, "Museo", "Coincide con arte y museos.")));
                         });
 
         var resultado = service.evaluar(viaje);
 
-        assertEquals(600, resultado.candidatos().size());
+        assertEquals(120, resultado.candidatos().size());
+        assertTrue(resultado.advertencias().stream().anyMatch(a -> a.contains("muestra variada")));
         assertFalse(resultado.fallback());
-        verify(ai, times(15)).evaluar(anyList(), anyList(), anyString());
+        verify(ai, times(3)).evaluar(anyList(), anyList(), anyString());
         verify(research, never()).investigar(anyList(), anyString());
+    }
+
+    @Test
+    void conservaLaRelevanciaDeLosLotesCorrectosSiElSiguienteFalla() {
+        preparar(IntStream.range(0, 85).mapToObj(this::lugar).toList());
+        when(research.disponible()).thenReturn(false);
+        when(ai.evaluar(anyList(), anyList(), anyString())).thenAnswer(inv -> {
+            List<LugarDto> lote = inv.getArgument(0);
+            if (!lote.getFirst().id().equals("id0")) throw new IllegalStateException("Cuota agotada");
+            return lote.stream().collect(Collectors.toMap(LugarDto::id,
+                    l -> new ValoracionGemini(80, 95, 60, "Arte", "Museo")));
+        });
+        var resultado = service.evaluar(viaje);
+        assertTrue(resultado.fallback());
+        assertEquals(40, resultado.candidatos().stream().filter(c -> c.origenEvaluacion().equals("GEMINI")).count());
+        assertTrue(resultado.candidatos().stream().filter(c -> c.origenEvaluacion().equals("GEMINI"))
+                .allMatch(c -> Integer.valueOf(95).equals(c.relevancia())));
+        assertTrue(resultado.candidatos().stream().filter(c -> c.origenEvaluacion().equals("LOCAL"))
+                .allMatch(c -> c.relevancia() == null && c.coste() == CostLevel.UNKNOWN));
+        verify(ai, times(2)).evaluar(anyList(), anyList(), anyString());
+    }
+
+    @Test
+    void laRelevanciaInfluyeEnLaPrioridadSinConvertirseEnInformacionConfirmada() {
+        preparar(List.of(lugar(1), lugar(2)));
+        when(research.disponible()).thenReturn(false);
+        when(ai.evaluar(anyList(), anyList(), anyString())).thenReturn(Map.of(
+                "id1", new ValoracionGemini(80, 20, 60, "Arte", "Visita"),
+                "id2", new ValoracionGemini(80, 95, 60, "Arte", "Referente")));
+        var resultado = service.evaluar(viaje);
+        assertEquals("id2", resultado.candidatos().getFirst().lugar().id());
+        assertEquals(95, resultado.candidatos().getFirst().relevancia());
+        assertNull(resultado.candidatos().getFirst().horario());
+        assertEquals(CostLevel.UNKNOWN, resultado.candidatos().getFirst().coste());
     }
 
     @Test
@@ -162,7 +197,7 @@ class EvaluacionCandidatosServiceTests {
         when(research.disponible()).thenReturn(false);
         when(ai.evaluar(anyList(), anyList(), anyString()))
                 .thenReturn(Map.of("id1", new ValoracionGemini(
-                        85, 90, "Entrada gratuita", "Abierto 24 horas y entrada gratuita.")));
+                        85, null, 90, "Entrada gratuita", "Abierto 24 horas y entrada gratuita.")));
 
         var candidato = service.evaluar(viaje).candidatos().get(0);
 
@@ -178,7 +213,7 @@ class EvaluacionCandidatosServiceTests {
     void respuestaParcialProvocaFallbackParaTodos() {
         preparar(List.of(lugar(1), lugar(2)));
         when(ai.evaluar(anyList(), anyList(), anyString()))
-                .thenReturn(Map.of("id1", new ValoracionGemini(99, 60, "x", "y")));
+                .thenReturn(Map.of("id1", new ValoracionGemini(99, null, 60, "x", "y")));
         var result = service.evaluar(viaje);
         assertTrue(result.fallback());
         assertTrue(
@@ -211,6 +246,7 @@ class EvaluacionCandidatosServiceTests {
                         prep,
                         ai,
                         research,
+                        120,
                         java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100));
         var result = limitado.evaluar(viaje);
         assertTrue(result.fallback());
@@ -223,7 +259,7 @@ class EvaluacionCandidatosServiceTests {
         preparar(List.of(lugar(1)));
         when(research.disponible()).thenReturn(false);
         when(ai.evaluar(anyList(), anyList(), anyString()))
-                .thenReturn(Map.of("id1", new ValoracionGemini(80, 60, "x", "y")));
+                .thenReturn(Map.of("id1", new ValoracionGemini(80, null, 60, "x", "y")));
         var resultado = service.evaluar(viaje);
         assertFalse(resultado.fallback());
         assertTrue(
@@ -250,8 +286,8 @@ class EvaluacionCandidatosServiceTests {
         when(ai.evaluar(anyList(), anyList(), anyString()))
                 .thenReturn(
                         Map.of(
-                                "id1", new ValoracionGemini(90, 480, "x", "y"),
-                                "id2", new ValoracionGemini(80, 480, "x", "y")));
+                                "id1", new ValoracionGemini(90, null, 480, "x", "y"),
+                                "id2", new ValoracionGemini(80, null, 480, "x", "y")));
         when(research.investigar(anyList(), anyString()))
                 .thenAnswer(
                         inv -> {

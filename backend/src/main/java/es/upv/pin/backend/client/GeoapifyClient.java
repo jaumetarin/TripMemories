@@ -10,9 +10,12 @@ import org.springframework.web.client.RestClientException;
 import es.upv.pin.backend.dto.RespuestaLugaresGeoapifyDto;
 import es.upv.pin.backend.dto.DestinoGeoapifyDto;
 import es.upv.pin.backend.dto.RespuestaDestinosGeoapifyDto;
+import es.upv.pin.backend.dto.DestinoDto;
+import es.upv.pin.backend.dto.LugarGeoapifyDto;
 
 @Component
 public class GeoapifyClient {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(GeoapifyClient.class);
 
     private final RestClient restClient;
     private final String apiKey;
@@ -62,6 +65,11 @@ public class GeoapifyClient {
             String destinoId,
             String categorias,
             int limite) {
+        return buscarLugares(destinoId, categorias, limite, 0);
+    }
+
+    public RespuestaLugaresGeoapifyDto buscarLugares(
+            String destinoId, String categorias, int limite, int offset) {
 
         if (destinoId == null || destinoId.isBlank()) {
             throw new IllegalArgumentException(
@@ -77,6 +85,7 @@ public class GeoapifyClient {
             throw new IllegalArgumentException(
                     "El límite de lugares debe estar entre 1 y 500.");
         }
+        if (offset < 0) throw new IllegalArgumentException("El desplazamiento de página no puede ser negativo.");
 
         if (apiKey.isBlank()) {
             throw new IllegalStateException(
@@ -88,7 +97,8 @@ public class GeoapifyClient {
                 + "&filter=place:{destinoId}"
                 + "&limit={limite}"
                 + "&lang=es"
-                + "&apiKey={clave}";
+                + "&apiKey={clave}"
+                + (offset == 0 ? "" : "&offset=" + offset);
 
         RespuestaLugaresGeoapifyDto respuesta;
 
@@ -99,6 +109,11 @@ public class GeoapifyClient {
                     .body(RespuestaLugaresGeoapifyDto.class);
 
         } catch (RestClientException exception) {
+            String detalle = exception instanceof org.springframework.web.client.RestClientResponseException respuestaError
+                    ? "HTTP " + respuestaError.getStatusCode().value()
+                    : exception.getCause() == null ? exception.getClass().getSimpleName()
+                    : exception.getCause().getClass().getSimpleName();
+            LOG.warn("No se pudo consultar Places: {} (offset {})", detalle, offset);
             throw new IllegalStateException(
                     "No se ha podido consultar el servicio de lugares.");
         }
@@ -109,5 +124,25 @@ public class GeoapifyClient {
         }
 
         return respuesta;
+    }
+
+    public LugarGeoapifyDto buscarCalle(String nombre, DestinoDto destino) {
+        if (nombre == null || nombre.isBlank() || destino == null || destino.id() == null)
+            throw new IllegalArgumentException("Indica la calle y el destino.");
+        if (apiKey.isBlank()) throw new IllegalStateException("La clave de Geoapify no está configurada.");
+        try {
+            var respuesta = restClient.get().uri("/v1/geocode/search?text={texto}&type=street"
+                            + "&filter=place:{destino}&format=geojson&lang=es&limit=1&apiKey={clave}",
+                            nombre + ", " + destino.nombre(), destino.id(), apiKey)
+                    .retrieve().body(RespuestaLugaresGeoapifyDto.class);
+            if (respuesta == null || respuesta.features() == null)
+                throw new IllegalStateException("El servicio de calles ha devuelto una respuesta no válida.");
+            if (respuesta.features().isEmpty()) return null;
+            var feature = respuesta.features().getFirst();
+            return feature == null ? null : feature.properties();
+        } catch (RestClientException e) {
+            // No propagamos una URL que pueda contener la clave.
+            throw new IllegalStateException("No se ha podido localizar la calle comercial.");
+        }
     }
 }

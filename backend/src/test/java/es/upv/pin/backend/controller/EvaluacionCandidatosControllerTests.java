@@ -40,7 +40,7 @@ class EvaluacionCandidatosControllerTests {
                         validacion,
                         preparacion,
                         mock(AiProvider.class),
-                        mock(ResearchProvider.class));
+                        mock(ResearchProvider.class), 120);
         mvc =
                 MockMvcBuilders.standaloneSetup(new EvaluacionCandidatosController(servicio))
                         .setControllerAdvice(new CandidatoExceptionHandler())

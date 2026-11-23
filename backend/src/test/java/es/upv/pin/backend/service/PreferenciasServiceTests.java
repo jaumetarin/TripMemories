@@ -111,14 +111,14 @@ class PreferenciasServiceTests {
     }
 
     @Test
-    void elCatalogoIncluyeSeisCategoriasYTresSubcategoriasPorCategoria() {
+    void elCatalogoIncluyeLasOpcionesVigentesDeLasSeisCategorias() {
         List<CategoriaDto> catalogo = servicio.obtenerCatalogo();
         assertEquals(6, catalogo.size());
-        assertEquals(18, catalogo.stream().flatMap(categoria -> categoria.subcategorias().stream())
+        assertEquals(19, catalogo.stream().flatMap(categoria -> categoria.subcategorias().stream())
                 .map(subcategoria -> subcategoria.codigo()).distinct().count());
         for (CategoriaDto categoria : catalogo) {
             assertEquals(categoria.codigo().getNombre(), categoria.nombre());
-            assertEquals(3, categoria.subcategorias().size());
+            assertEquals(categoria.codigo() == OCIO_ENTRETENIMIENTO ? 4 : 3, categoria.subcategorias().size());
             for (var subcategoria : categoria.subcategorias()) {
                 assertEquals(categoria.codigo(), subcategoria.codigo().getCategoria());
                 assertFalse(subcategoria.nombre().isBlank());

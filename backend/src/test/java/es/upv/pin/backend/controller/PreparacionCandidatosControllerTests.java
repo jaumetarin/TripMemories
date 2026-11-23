@@ -32,8 +32,14 @@ class PreparacionCandidatosControllerTests {
     @BeforeEach
     void preparar() {
         var constructor = RestClient.builder().baseUrl("https://api.geoapify.com");
-        proveedor = MockRestServiceServer.bindTo(constructor).build();
+        proveedor = MockRestServiceServer.bindTo(constructor).ignoreExpectOrder(true).build();
         var clasificacion = new ClasificacionLugaresService();
+        for (String consulta : clasificacion.consultasPorInteres(GASTRONOMIA).subList(1, 3)) {
+            proveedor.expect(org.springframework.test.web.client.ExpectedCount.between(0, 2), requestTo(
+                    "https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
+                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        }
         var servicio = new PreparacionCandidatosService(new GeoapifyClient(constructor.build(), "clave-de-prueba"),
                 new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()),
                 clasificacion);
@@ -43,7 +49,7 @@ class PreparacionCandidatosControllerTests {
 
     private String url() {
         return "https://api.geoapify.com/v2/places?categories="
-                + new ClasificacionLugaresService().categoriasConsulta(GASTRONOMIA).replace(",", "%2C")
+                + new ClasificacionLugaresService().consultasPorInteres(GASTRONOMIA).getFirst().replace(",", "%2C")
                 + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba";
     }
 

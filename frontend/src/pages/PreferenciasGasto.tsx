@@ -144,6 +144,10 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
               </label>
             ))}
           </div>
+          {datos.intereses.includes('OCIO_ENTRETENIMIENTO') && <p className="ayuda-preferencias">
+            Ocio incluye centros y calles comerciales, boleras, recreativos y parques de animales.
+            Los cines, cafés y bares no se incluyen en esta categoría.
+          </p>}
         </fieldset>
 
         <fieldset className="grupo-preferencias" id="editar-exclusiones" tabIndex={-1} disabled={!tieneCatalogo}>

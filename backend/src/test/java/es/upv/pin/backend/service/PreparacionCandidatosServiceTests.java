@@ -27,7 +27,7 @@ class PreparacionCandidatosServiceTests {
     @BeforeEach
     void preparar() {
         var constructor = RestClient.builder().baseUrl("https://api.geoapify.com");
-        proveedor = MockRestServiceServer.bindTo(constructor).build();
+        proveedor = MockRestServiceServer.bindTo(constructor).ignoreExpectOrder(true).build();
         servicio = new PreparacionCandidatosService(new GeoapifyClient(constructor.build(), "clave-de-prueba"),
                 new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()), clasificacion);
     }
@@ -41,8 +41,20 @@ class PreparacionCandidatosServiceTests {
                 """.formatted(intereses, exclusiones), ConfiguracionItinerarioDto.class);
     }
 
+    private org.springframework.test.web.client.ResponseActions esperar(CategoriaTuristica categoria) {
+        var principal = proveedor.expect(requestTo(url(categoria)));
+        List<String> consultas = clasificacion.consultasPorInteres(categoria);
+        for (String consulta : consultas.subList(1, consultas.size())) {
+            proveedor.expect(org.springframework.test.web.client.ExpectedCount.between(0, 1), requestTo(
+                    "https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
+                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        }
+        return principal;
+    }
+
     private String url(CategoriaTuristica categoria) {
-        return "https://api.geoapify.com/v2/places?categories=" + clasificacion.categoriasConsulta(categoria).replace(",", "%2C")
+        return "https://api.geoapify.com/v2/places?categories=" + clasificacion.consultasPorInteres(categoria).getFirst().replace(",", "%2C")
                 + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba";
     }
 
@@ -53,10 +65,266 @@ class PreparacionCandidatosServiceTests {
                 """.formatted(categoria);
     }
 
+    private void responderGrupos(CategoriaTuristica categoria, List<String> respuestas) {
+        List<String> consultas = clasificacion.consultasPorInteres(categoria);
+        for (int i = 0; i < consultas.size(); i++) {
+            proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories="
+                    + consultas.get(i).replace(",", "%2C")
+                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    .andRespond(withSuccess(i < respuestas.size() ? respuestas.get(i) : "{\"features\":[]}", MediaType.APPLICATION_JSON));
+        }
+    }
+
+    private String grupoGenerado(String prefijo, int cantidad, String categoria) {
+        return java.util.stream.IntStream.range(0, cantidad).mapToObj(i ->
+                "{\"properties\":{\"place_id\":\"" + prefijo + i + "\",\"name\":\"" + prefijo + i
+                + "\",\"categories\":[\"" + categoria + "\"]}}")
+                .collect(java.util.stream.Collectors.joining(",", "{\"features\":[", "]}"));
+    }
+
     @Test
-    void consultaUnaVezCadaInteresConLimiteCien() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess(lugares("catering.restaurant"), MediaType.APPLICATION_JSON));
-        proveedor.expect(requestTo(url(NATURALEZA_PARQUES))).andRespond(withSuccess(lugares("leisure.park"), MediaType.APPLICATION_JSON));
+    void agrupaElParqueYElLaberintoConDistintosIdsSinPerderDatosNiFusionarOtrosJardines() {
+        responderGrupos(NATURALEZA_PARQUES, List.of("""
+                {"features":[
+                 {"properties":{"place_id":"parque","name":"Parc del Laberint d'Horta","lat":41.439,"lon":2.145,"categories":["leisure.park"]}},
+                 {"properties":{"place_id":"laberinto","name":"Laberinto de Horta","lat":41.440,"lon":2.146,
+                    "formatted":"Passeig dels Castanyers, Barcelona","opening_hours":"Mo-Su 10:00-18:00","categories":["tourism.attraction"]}},
+                 {"properties":{"place_id":"otro","name":"Jardines del Palau","lat":41.439,"lon":2.145,"categories":["leisure.park"]}}]}
+                """, "{\"features\":[]}", "{\"features\":[]}"));
+        var resultado = servicio.preparar(configuracion("\"NATURALEZA_PARQUES\"", ""));
+        assertEquals(2, resultado.size());
+        var parque = resultado.stream().filter(l -> l.id().equals("parque")).findFirst().orElseThrow();
+        assertEquals("Mo-Su 10:00-18:00", parque.horario());
+        assertEquals("Passeig dels Castanyers, Barcelona", parque.direccion());
+        assertTrue(parque.categorias().contains(CULTURA_LOCAL));
+        assertTrue(resultado.stream().anyMatch(l -> l.id().equals("otro")));
+        proveedor.verify();
+    }
+
+    @Test
+    void lasExclusionesDeUnaCopiaSeAplicanTambienAlAliasConOtroIdentificador() {
+        responderGrupos(NATURALEZA_PARQUES, List.of("""
+                {"features":[
+                 {"properties":{"place_id":"parque","name":"Parque del Laberinto de Horta","lat":41.439,"lon":2.145,"categories":["leisure.park"]}},
+                 {"properties":{"place_id":"laberinto","name":"Laberinto de Horta","lat":41.440,"lon":2.146,
+                  "categories":["leisure.park"],"datasource":{"raw":{"route":"hiking"}}}}]}
+                """, "{\"features\":[]}", "{\"features\":[]}"));
+        assertTrue(servicio.preparar(configuracion("\"NATURALEZA_PARQUES\"", "\"SENDERISMO\"")).isEmpty());
+        proveedor.verify();
+    }
+
+    @Test
+    void horariosDistintosEntreAliasNoSeTransformanEnUnaDisponibilidadSegura() {
+        responderGrupos(NATURALEZA_PARQUES, List.of("""
+                {"features":[
+                 {"properties":{"place_id":"parque","name":"Parque del Laberinto de Horta","lat":41.439,"lon":2.145,
+                  "categories":["leisure.park"],"opening_hours":"Mo-Su 09:00-18:00"}},
+                 {"properties":{"place_id":"laberinto","name":"Laberinto de Horta","lat":41.440,"lon":2.146,
+                  "categories":["leisure.park"],"opening_hours":"Tu-Su 10:00-20:00"}}]}
+                """, "{\"features\":[]}", "{\"features\":[]}"));
+        var resultado = servicio.preparar(configuracion("\"NATURALEZA_PARQUES\"", ""));
+        assertEquals(1, resultado.size());
+        assertNull(resultado.getFirst().horario());
+        proveedor.verify();
+    }
+
+    @Test
+    void ocioIncluyeComprasJuegosYAnimalesPeroNoCinesCafesOBaresAunqueTenganEtiquetasCruzadas() {
+        responderGrupos(OCIO_ENTRETENIMIENTO, List.of("""
+                {"features":[
+                 {"properties":{"place_id":"mall","name":"Centro comercial","categories":["commercial.shopping_mall"]}},
+                 {"properties":{"place_id":"cine","name":"Cine del centro","categories":["commercial.shopping_mall","entertainment.cinema"]}}]}
+                """, """
+                {"features":[
+                 {"properties":{"place_id":"bolera","name":"Bolera","categories":["entertainment.bowling_alley"]}},
+                 {"properties":{"place_id":"juegos","name":"Recreativos","categories":["entertainment.amusement_arcade"]}},
+                 {"properties":{"place_id":"bar","name":"Bar con juegos","categories":["entertainment.amusement_arcade","catering.bar"]}},
+                 {"properties":{"place_id":"cafe","name":"Café con juegos","categories":["entertainment.activity_park"],"datasource":{"raw":{"amenity":"cafe"}}}}]}
+                """, """
+                {"features":[
+                 {"properties":{"place_id":"zoo","name":"Parque de animales","categories":["entertainment.zoo"]}},
+                 {"properties":{"place_id":"acuario","name":"Acuario","categories":["entertainment.aquarium"]}},
+                 {"properties":{"place_id":"tematico","name":"Parque temático","categories":["entertainment.theme_park"]}}]}
+                """, "{\"features\":[]}", """
+                {"features":[{"properties":{"place_id":"almacenes","name":"Grandes almacenes","categories":["commercial.department_store"]}}]}
+                """, "{\"features\":[]}"));
+        var resultado = servicio.preparar(configuracion("\"OCIO_ENTRETENIMIENTO\"", ""));
+        assertEquals(java.util.Set.of("mall", "bolera", "juegos", "zoo", "acuario", "tematico", "almacenes"),
+                resultado.stream().map(LugarDto::id).collect(java.util.stream.Collectors.toSet()));
+        proveedor.verify();
+    }
+
+    @Test
+    void excluirComprasEvitaSusConsultasYConservaElRestoDeOcio() {
+        for (String consulta : clasificacion.consultasPorInteres(OCIO_ENTRETENIMIENTO)) {
+            if (consulta.startsWith("commercial.")) continue;
+            proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
+                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    .andRespond(withSuccess(lugares("entertainment.zoo"), MediaType.APPLICATION_JSON));
+        }
+        assertEquals(1, servicio.preparar(configuracion("\"OCIO_ENTRETENIMIENTO\"", "\"COMPRAS\"")).size());
+        proveedor.verify();
+    }
+
+    @Test
+    void convierteLosComerciosEnUnaCalleVerificadaSinProgramarCadaTiendaNiCopiarSusHorarios() {
+        responderGrupos(OCIO_ENTRETENIMIENTO, List.of("{\"features\":[]}", "{\"features\":[]}", "{\"features\":[]}", """
+                {"features":[
+                 {"properties":{"place_id":"t1","name":"Tienda 1","lat":40.42,"lon":-3.706,"street":"Gran Vía","housenumber":"1","categories":["commercial.clothing"],"opening_hours":"Mo-Fr 10:00-20:00"}},
+                 {"properties":{"place_id":"t2","name":"Tienda 2","lat":40.42,"lon":-3.704,"street":"Gran Vía","housenumber":"3","categories":["commercial.clothing"]}},
+                 {"properties":{"place_id":"t3","name":"Tienda 3","lat":40.42,"lon":-3.702,"street":"Gran Vía","housenumber":"9","categories":["commercial.clothing"]}}]}
+                """, "{\"features\":[]}", "{\"features\":[]}"));
+        proveedor.expect(peticion -> {
+            assertEquals("/v1/geocode/search", peticion.getURI().getPath());
+            String parametros = java.net.URLDecoder.decode(peticion.getURI().getRawQuery(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(parametros.contains("text=Gran Vía, Madrid"));
+            assertTrue(parametros.contains("type=street"));
+            assertTrue(parametros.contains("filter=place:madrid"));
+        }).andRespond(withSuccess("""
+                {"features":[{"properties":{"place_id":"gran-via","street":"Gran Vía","lat":40.42,"lon":-3.704,
+                 "formatted":"Gran Vía, Madrid","result_type":"street"}}]}
+                """, MediaType.APPLICATION_JSON));
+        var resultado = servicio.preparar(configuracion("\"OCIO_ENTRETENIMIENTO\"", ""));
+        assertEquals(1, resultado.size());
+        assertEquals("gran-via", resultado.getFirst().id());
+        assertEquals("Gran Vía", resultado.getFirst().nombre());
+        assertTrue(resultado.getFirst().subcategorias().contains(COMPRAS));
+        assertNull(resultado.getFirst().horario());
+        proveedor.verify();
+    }
+
+    @Test
+    void losMercadosYEdificiosSecundariosNoDesplazanLosReferentesDeLaMuestraDeIa() {
+        String palacios = grupoGenerado("palacio", 60, "tourism.sights.manor");
+        String respaldo = palacios.substring(0, palacios.length() - 2) + """
+                ,{"properties":{"place_id":"conjunto","name":"Conjunto arquitectónico","categories":["tourism.attraction"]}},
+                 {"properties":{"place_id":"plaza","name":"Plaza principal","categories":["tourism.sights.square"]}}]}
+                """;
+        responderGrupos(HISTORIA_ARQUITECTURA, List.of(palacios,
+                grupoGenerado("edificio", 100, "tourism.sights.building"), respaldo));
+        proveedor.expect(requestTo(url(CULTURA_LOCAL))).andRespond(withSuccess(
+                grupoGenerado("mercado", 100, "commercial.marketplace"), MediaType.APPLICATION_JSON));
+
+        var muestra = servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\",\"CULTURA_LOCAL\"", ""))
+                .stream().limit(120).map(LugarDto::id).toList();
+
+        assertTrue(muestra.contains("conjunto"));
+        assertTrue(muestra.contains("plaza"));
+        assertTrue(muestra.stream().anyMatch(id -> id.startsWith("mercado")));
+        proveedor.verify();
+    }
+
+    @Test
+    void recuperaReferentesDeValenciaPorSusTiposSinListasDeNombresEnElServicio() {
+        responderGrupos(HISTORIA_ARQUITECTURA, List.of("""
+                {"features":[
+                 {"properties":{"place_id":"serrans","name":"Torres dels Serrans","categories":["tourism.sights.city_gate"]}},
+                 {"properties":{"place_id":"quart","name":"Torres de Quart","categories":["tourism.sights.city_gate"]}}]}
+                """, "{\"features\":[]}", """
+                {"features":[
+                 {"properties":{"place_id":"artes","name":"Ciutat de les Arts i les Ciències","categories":["tourism.attraction"]}},
+                 {"properties":{"place_id":"plaza","name":"Plaça de l'Ajuntament","categories":["tourism.sights.square"]}},
+                 {"properties":{"place_id":"toros","name":"Plaça de Bous de València","categories":["sport.stadium","tourism.attraction"]}}]}
+                """));
+        var resultado = servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\"", ""));
+        assertEquals(java.util.Set.of("serrans", "quart", "artes", "plaza", "toros"),
+                resultado.stream().map(LugarDto::id).collect(java.util.stream.Collectors.toSet()));
+        proveedor.verify();
+    }
+
+    @Test
+    void unaListaLargaDeMuseosNoDesplazaGaleriasYLasCopiasNoDuplicanElResultado() {
+        String museos = java.util.stream.IntStream.range(0, 100).mapToObj(i ->
+                "{\"properties\":{\"place_id\":\"m" + i + "\",\"name\":\"Museo " + i
+                + "\",\"categories\":[\"entertainment.museum\"]}}")
+                .collect(java.util.stream.Collectors.joining(",", "{\"features\":[", "]}"));
+        responderGrupos(ARTE_MUSEOS, List.of(museos, """
+                {"features":[
+                 {"properties":{"place_id":"galeria","name":"Galería","categories":["entertainment.culture.gallery"]}},
+                 {"properties":{"place_id":"m0","name":"Museo 0","categories":["entertainment.culture.gallery"]}}]}
+                """, "{\"features\":[]}"));
+        var resultado = servicio.preparar(configuracion("\"ARTE_MUSEOS\"", ""));
+        assertEquals(101, resultado.size());
+        assertEquals(List.of("m0", "galeria"), resultado.stream().limit(2).map(LugarDto::id).toList());
+        assertEquals(1, resultado.stream().filter(l -> l.id().equals("m0")).count());
+        proveedor.verify();
+    }
+
+    @Test
+    void historiaYCulturaLocalReutilizanConsultasCompartidasYSiguenRespetandoExclusiones() {
+        responderGrupos(HISTORIA_ARQUITECTURA, List.of("""
+                {"features":[{"properties":{"place_id":"puerta","name":"Puerta histórica",
+                 "categories":["tourism.sights.city_gate"]}}]}
+                """, "{\"features\":[]}", """
+                {"features":[{"properties":{"place_id":"castillo","name":"Castillo",
+                 "categories":["tourism.sights.castle"]}}]}
+                """));
+        proveedor.expect(requestTo(url(CULTURA_LOCAL))).andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        var resultado = servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\",\"CULTURA_LOCAL\"", "\"CASTILLOS_PALACIOS\""));
+        assertEquals(List.of("puerta"), resultado.stream().map(LugarDto::id).toList());
+        proveedor.verify();
+    }
+
+    @Test
+    void paginaElRespaldoYPriorizaAtraccionesGeneralesAntesDeRecortarLaMuestra() {
+        String memoriales = java.util.stream.IntStream.range(0, 100).mapToObj(i ->
+                "{\"properties\":{\"place_id\":\"memorial" + i + "\",\"name\":\"Memorial " + i
+                + "\",\"categories\":[\"tourism.sights.memorial\"]}}")
+                .collect(java.util.stream.Collectors.joining(",", "{\"features\":[", "]}"));
+        responderGrupos(HISTORIA_ARQUITECTURA, List.of("{\"features\":[]}", "{\"features\":[]}", memoriales));
+        String consultaGeneral = clasificacion.consultasPorInteres(HISTORIA_ARQUITECTURA).get(2);
+        proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consultaGeneral.replace(",", "%2C")
+                + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba&offset=100"))
+                .andRespond(withSuccess("""
+                        {"features":[{"properties":{"place_id":"conjunto","name":"Conjunto arquitectónico",
+                         "categories":["tourism.attraction"]}}]}
+                        """, MediaType.APPLICATION_JSON));
+        var resultado = servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\"", ""));
+        assertEquals(101, resultado.size());
+        assertEquals("conjunto", resultado.getFirst().id());
+        proveedor.verify();
+    }
+
+    @Test
+    void noConvierteCualquierEstadioOParqueDeAtraccionesEnPatrimonio() {
+        responderGrupos(HISTORIA_ARQUITECTURA, List.of("""
+                {"features":[
+                 {"properties":{"place_id":"estadio","name":"Campo de fútbol","categories":["sport.stadium"]}},
+                 {"properties":{"place_id":"arena","name":"Arena turística","categories":["sport.stadium","tourism.attraction"]}}]}
+                """, "{\"features\":[]}", """
+                {"features":[{"properties":{"place_id":"parque","name":"Parque de atracciones",
+                 "categories":["entertainment.theme_park","tourism.attraction"]}}]}
+                """));
+        assertEquals(List.of("arena"), servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\"", ""))
+                .stream().map(LugarDto::id).toList());
+        proveedor.verify();
+    }
+
+    @Test
+    void detieneLaPaginacionTrasCincoPaginasAunqueTodasEstenLlenas() {
+        List<String> paginas = new java.util.ArrayList<>();
+        for (int pagina = 0; pagina < 5; pagina++) {
+            final int indice = pagina;
+            paginas.add(java.util.stream.IntStream.range(0, 100).mapToObj(i ->
+                    "{\"properties\":{\"place_id\":\"p" + indice + "-" + i + "\",\"name\":\"Atracción " + i
+                    + "\",\"categories\":[\"tourism.attraction\"]}}")
+                    .collect(java.util.stream.Collectors.joining(",", "{\"features\":[", "]}")));
+        }
+        responderGrupos(HISTORIA_ARQUITECTURA, List.of("{\"features\":[]}", "{\"features\":[]}", paginas.getFirst()));
+        String consulta = clasificacion.consultasPorInteres(HISTORIA_ARQUITECTURA).get(2).replace(",", "%2C");
+        for (int pagina = 1; pagina < 5; pagina++) {
+            proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consulta
+                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba&offset=" + pagina * 100))
+                    .andRespond(withSuccess(paginas.get(pagina), MediaType.APPLICATION_JSON));
+        }
+        assertEquals(500, servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\"", "")).size());
+        proveedor.verify();
+    }
+
+    @Test
+    void consultaTresGruposPorInteresSinRepetirInteresesYConLimiteCien() {
+        esperar(GASTRONOMIA).andRespond(withSuccess(lugares("catering.restaurant"), MediaType.APPLICATION_JSON));
+        esperar(NATURALEZA_PARQUES).andRespond(withSuccess(lugares("leisure.park"), MediaType.APPLICATION_JSON));
         var resultado = servicio.preparar(configuracion("\"GASTRONOMIA\",\"NATURALEZA_PARQUES\",\"GASTRONOMIA\"", ""));
         assertEquals(List.of(new LugarDto("a", "Lugar A", "Calle A, Madrid", 40.4, -3.7,
                 List.of(GASTRONOMIA, NATURALEZA_PARQUES), List.of(PARQUES_JARDINES), null)), resultado);
@@ -65,7 +333,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void excluyeUnaSubcategoriaSinEliminarElRestoDelInteres() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"a","name":"Restaurante","categories":["catering.restaurant"]}},
                  {"properties":{"place_id":"b","name":"Comida rápida","categories":["catering.fast_food.burger"]}}
@@ -79,7 +347,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void unaCopiaExcluidaDescartaElLugarCompletoAunqueOtraNoTraigaEsaEtiqueta() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"a","name":"Local","categories":["catering.restaurant"]}},
                  {"properties":{"place_id":"a","name":"Local","categories":["catering.fast_food"]}}
@@ -91,7 +359,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void reconoceExclusionesEnLasEtiquetasDeOrigenSinDevolverlas() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[{"properties":{"place_id":"a","name":"Mercado","categories":["catering.restaurant"],
                  "datasource":{"raw":{"amenity":"marketplace","marketplace":"food"}}}}]}
                 """, MediaType.APPLICATION_JSON));
@@ -102,9 +370,7 @@ class PreparacionCandidatosServiceTests {
     @Test
     void culturaLocalConsultaMercadosYLosConservaSinEtiquetasDeOrigen() {
         // La URL es explícita para detectar que se deje de consultar esta categoría.
-        proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories="
-                + "entertainment.culture%2Cproduction.pottery%2Ccommercial.marketplace"
-                + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+        esperar(CULTURA_LOCAL)
                 .andRespond(withSuccess("""
                         {"features":[{"properties":{"place_id":"mercado-a","name":"Mercado de prueba",
                          "formatted":"Plaza del Mercado, Madrid","categories":["commercial.marketplace"]}}]}
@@ -118,7 +384,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void excluyeMercadosTradicionalesSinEtiquetasDeOrigenYConservaElRestoDeCulturaLocal() {
-        proveedor.expect(requestTo(url(CULTURA_LOCAL))).andRespond(withSuccess("""
+        esperar(CULTURA_LOCAL).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"mercado-a","name":"Mercado de prueba","categories":["commercial.marketplace"]}},
                  {"properties":{"place_id":"taller-a","name":"Taller de cerámica","categories":["production.pottery"]}}
@@ -132,7 +398,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void conservaEstablecimientosDistintosQueTienenElMismoNombre() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"a","name":"Local","formatted":"Calle A","categories":["catering.restaurant"]}},
                  {"properties":{"place_id":"b","name":"Local","formatted":"Calle B","categories":["catering.restaurant"]}}
@@ -146,7 +412,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void descartaNombresAusentesVaciosODesconocidosYRecuperaElNombreDeOtraCopia() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"a","categories":["catering.restaurant"]}},
                  {"properties":{"place_id":"b","name":null,"categories":["catering.restaurant"]}},
@@ -171,7 +437,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void rescataElHorarioDisponibleSinInventarloYLoConservaAlAgrupar() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"a","name":"Directo","opening_hours":"  Mo-Fr 10:00-18:00  ",
                   "categories":["catering.restaurant"],"datasource":{"raw":{"opening_hours":"24/7"}}}},
@@ -193,7 +459,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void conservaIdentidadCoordenadasYClasificacionDeTodasLasCopias() {
-        proveedor.expect(requestTo(url(ARTE_MUSEOS))).andRespond(withSuccess("""
+        esperar(ARTE_MUSEOS).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"museo-a","name":"Museo y galería","categories":["entertainment.museum"]}},
                  {"properties":{"place_id":"museo-a","lat":40.41,"lon":-3.69,"formatted":"Calle del Museo, Madrid",
@@ -208,7 +474,7 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void recuperaUnParValidoSinMezclarCoordenadasNiInventarLasAusentes() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
                 {"features":[
                  {"properties":{"place_id":"a","name":"Recuperado","lat":40.4,"categories":["catering.restaurant"]}},
                  {"properties":{"place_id":"a","lat":40.5,"lon":-3.8,"categories":["catering.restaurant"]}},
@@ -235,7 +501,7 @@ class PreparacionCandidatosServiceTests {
     @Test
     void sinInteresesConsultaLasCategoriasGenerales() {
         for (CategoriaTuristica categoria : CategoriaTuristica.values()) {
-            proveedor.expect(requestTo(url(categoria))).andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+            esperar(categoria).andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
         }
         assertTrue(servicio.preparar(configuracion("", "")).isEmpty());
         proveedor.verify();
@@ -243,8 +509,8 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void omiteCategoriasCompletasExcluidasYFiltraLasEtiquetasCruzadas() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("""
-                {"features":[{"properties":{"place_id":"a","name":"Local","categories":["catering.restaurant","catering.bar"]}}]}
+        esperar(GASTRONOMIA).andRespond(withSuccess("""
+                {"features":[{"properties":{"place_id":"a","name":"Local","categories":["catering.restaurant","entertainment.bowling_alley"]}}]}
                 """, MediaType.APPLICATION_JSON));
         var base = configuracion("", "");
         var preferencias = new PreferenciasDto(List.of(),
@@ -256,8 +522,8 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void cambiarUnaExclusionUtilizaLosValoresActuales() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess(lugares("catering.fast_food"), MediaType.APPLICATION_JSON));
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess(lugares("catering.fast_food"), MediaType.APPLICATION_JSON));
+        esperar(GASTRONOMIA).andRespond(withSuccess(lugares("catering.fast_food"), MediaType.APPLICATION_JSON));
+        esperar(GASTRONOMIA).andRespond(withSuccess(lugares("catering.fast_food"), MediaType.APPLICATION_JSON));
         assertEquals(1, servicio.preparar(configuracion("\"GASTRONOMIA\"", "")).size());
         assertTrue(servicio.preparar(configuracion("\"GASTRONOMIA\"", "\"COMIDA_RAPIDA\"")).isEmpty());
         proveedor.verify();
@@ -265,8 +531,8 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void unaRespuestaInvalidaOUnFalloNoSeConfundenConUnaListaVacia() {
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withSuccess("{\"features\":[{}]}", MediaType.APPLICATION_JSON));
-        proveedor.expect(requestTo(url(GASTRONOMIA))).andRespond(withServerError());
+        esperar(GASTRONOMIA).andRespond(withSuccess("{\"features\":[{}]}", MediaType.APPLICATION_JSON));
+        esperar(GASTRONOMIA).andRespond(withServerError());
         assertThrows(IllegalStateException.class, () -> servicio.preparar(configuracion("\"GASTRONOMIA\"", "")));
         assertThrows(IllegalStateException.class, () -> servicio.preparar(configuracion("\"GASTRONOMIA\"", "")));
         proveedor.verify();

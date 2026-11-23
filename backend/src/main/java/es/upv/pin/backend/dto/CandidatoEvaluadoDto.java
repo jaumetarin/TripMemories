@@ -24,4 +24,10 @@ public record CandidatoEvaluadoDto(
         Double precioMaximo,
         String moneda,
         String descripcion,
-        String fuenteDescripcion) {}
+        String fuenteDescripcion,
+        Integer relevancia) {
+    // Criterio interno de selección; no es una valoración confirmada del proveedor.
+    public int prioridad() {
+        return relevancia == null ? afinidad : (2 * afinidad + relevancia) / 3;
+    }
+}
