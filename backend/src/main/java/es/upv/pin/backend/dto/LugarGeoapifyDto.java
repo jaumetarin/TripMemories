@@ -14,5 +14,8 @@ public record LugarGeoapifyDto (
     List<String> categories,
     String formatted,
     String opening_hours,
-    OrigenLugarGeoapifyDto datasource){
+    OrigenLugarGeoapifyDto datasource,
+    String street,
+    String housenumber,
+    String result_type){
 }

@@ -46,13 +46,60 @@ class GeneracionItinerarioServiceTest {
 
     private CandidatoEvaluadoDto candidato(
             String id, int afinidad, CostLevel coste, Double latitud) {
+        return candidato(id, afinidad, coste, latitud, null);
+    }
+
+    private CandidatoEvaluadoDto candidato(
+            String id, int afinidad, CostLevel coste, Double latitud, Integer relevancia) {
         var lugar = new LugarDto(
                 id, id, null, latitud, 0.0,
                 List.of(CategoriaTuristica.ARTE_MUSEOS), List.of(), null);
         return new CandidatoEvaluadoDto(
                 lugar, afinidad, 60, null, null, coste, null, List.of(),
                 null, null, "GEMINI", CostConfidence.UNKNOWN,
-                ScheduleStatus.UNVERIFIED, null, null, null, null, null);
+                ScheduleStatus.UNVERIFIED, null, null, null, null, null, relevancia);
+    }
+
+    @Test
+    void noProgramaDosVecesElMismoRecintoConNombresEIdsDiferentes() {
+        var config = config(2);
+        evaluar(config, List.of(candidato("Parque del Laberinto de Horta", 80, CostLevel.UNKNOWN, 1.0),
+                candidato("Laberinto de Horta", 80, CostLevel.UNKNOWN, 1.0)));
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        var plan = servicio.generar(config);
+        assertEquals(1, plan.dias().stream().flatMap(d -> d.bloques().stream())
+                .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).count());
+    }
+
+    @Test
+    void priorizaUnReferenteAunqueSuIdSeaPosteriorYNoPermiteSolapes() {
+        var config = config(LocalDateTime.of(2026, 5, 1, 11, 0),
+                LocalDateTime.of(2026, 5, 1, 12, 0), NivelGasto.MODERADO, 5);
+        evaluar(config, List.of(candidato("a-secundario", 80, CostLevel.UNKNOWN, 1.0, 20),
+                candidato("z-referente", 80, CostLevel.UNKNOWN, 1.0, 95)));
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        var plan = servicio.generar(config);
+        var visitas = plan.dias().getFirst().bloques().stream()
+                .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).toList();
+        assertEquals(1, visitas.size());
+        assertEquals("z-referente", visitas.getFirst().candidato().lugar().id());
+        assertEquals(config.disponibilidad().salida(), visitas.getFirst().fin());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void unReferenteNoSePierdeAntesDeCalcularLaMatrizDeRutas() {
+        var config = config(1);
+        List<CandidatoEvaluadoDto> candidatos = new ArrayList<>();
+        for (int i = 0; i < 60; i++) candidatos.add(candidato("a" + i, 80, CostLevel.UNKNOWN, 1.0, 20));
+        candidatos.add(candidato("z-referente", 80, CostLevel.UNKNOWN, 1.0, 95));
+        evaluar(config, candidatos);
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        servicio.generar(config);
+        ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(desplazamientos).calcular(captor.capture());
+        assertEquals(50, captor.getValue().size());
+        assertTrue(captor.getValue().stream().anyMatch(p -> p.id().equals("z-referente")));
     }
 
     private void evaluar(

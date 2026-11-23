@@ -247,7 +247,7 @@ un error HTTP 400, al igual que un JSON incorrecto.
 Excluir una subcategoría de un interés es compatible. Seleccionar una categoría
 como interés y excluirla por completo produce un error con su nombre y pide
 desmarcar una de las dos opciones. No se elimina ninguna selección automáticamente.
-Excluir las tres subcategorías disponibles no implica por sí solo excluir toda
+Excluir todas las subcategorías disponibles no implica por sí solo excluir toda
 la categoría: la exclusión completa es siempre una selección explícita.
 
 El frontend comprueba las selecciones al cambiarlas y solo permite abrir el resumen
@@ -262,7 +262,10 @@ se desmarque el interés principal. El estado se mantiene en `CrearItinerario`,
 por lo que ir al resumen o volver al primer paso conserva las preferencias, el
 destino, las fechas, las horas, el alojamiento, el gasto y la distancia.
 
-**Vida nocturna** forma parte de las exclusiones de ocio.
+Las exclusiones de ocio son compras, boleras y centros recreativos, zoológicos y
+acuarios, y parques de atracciones. Ya no se ofrece «Vida nocturna»: cines, cafés,
+bares, pubs y discotecas no se clasifican como visitas de Ocio. Los cafés siguen
+perteneciendo a Gastronomía cuando se selecciona ese interés.
 El nivel de gasto y la distancia se incluyen en la configuración
 validada, como se describe en la UT5.
 
@@ -538,12 +541,20 @@ de TripMemories, y el horario solo cuando está disponible:
 - `PreparacionCandidatosService` valida la configuración, consulta Geoapify y filtra.
 - `ClasificacionLugaresService` relaciona las categorías del proveedor con nuestros
   intereses y exclusiones. Las categorías y subcategorías internas se conservan en el resultado.
-- Una consulta independiente por interés, con hasta 100 resultados, una detrás de otra.
-  El número final puede ser menor tras eliminar duplicados y aplicar los filtros.
+- Tres grupos de búsqueda por interés (cuatro para Historia/Cultura local y seis para Ocio), con hasta
+  100 resultados por página, en secuencia.
+  Los grupos idénticos de Historia y Cultura local se consultan una sola vez por preparación.
+  Solo el respaldo general de atracciones admite hasta cinco páginas. Con las seis categorías
+  son como máximo 24 llamadas de Places, sin incluir autocompletado ni restaurantes del plan.
+  Ocio puede añadir hasta tres geocodificaciones de calles comerciales detectadas.
+  La paginación termina antes si llega una página incompleta o repetida.
 - Sin intereses seleccionados se consultan las seis categorías generales, salvo
   las categorías completas que el usuario haya excluido.
 - Se agrupan los repetidos por identificador Geoapify y se reúnen sus etiquetas
   antes de aplicar las exclusiones. Una copia excluida descarta el lugar completo.
+- También se agrupan identificadores distintos cuando el nombre normalizado y la ubicación
+  identifican el mismo recinto. Se conservan las etiquetas, coordenadas y horario disponibles
+  y las exclusiones se aplican al grupo completo, no solo a una copia.
 - El resultado mantiene ese identificador y todas las categorías y subcategorías
   reconocidas en las distintas copias, sin repetidos, para relacionar el lugar entre fases.
 - Las coordenadas se recuperan del primer par válido de una misma copia del lugar.
@@ -582,8 +593,9 @@ Pruebas desde backend, sin necesitar ni modificar la base de datos:
 ## UT9 y UT10: evaluación de candidatos y alternativa local
 
 `POST /api/candidatos/evaluar` recibe la misma configuración completa que
-`/api/candidatos/preparar`. El backend prepara los lugares una vez, evalúa **todos**
-los candidatos conservados y devuelve cada `LugarDto` junto con afinidad (1–100),
+`/api/candidatos/preparar`. El backend prepara los lugares una vez y selecciona una muestra
+de hasta 120, intercalando los grupos de búsqueda. Devuelve cada `LugarDto` evaluado junto
+con afinidad (1–100), relevancia turística estimada (0–100 o `null` si se desconoce),
 duración estimada en minutos, etiqueta, motivo y origen de la evaluación. El
 identificador de Geoapify solo relaciona respuestas: Gemini recibe referencias
 temporales, nunca el identificador externo. Gemini no decide el itinerario ni el
@@ -591,20 +603,22 @@ orden de los días; esa tarea corresponde a UT12.
 
 El orden de las fases responde a una decisión del planificador: **Geoapify aporta
 lugares reales; UT8 elimina duplicados y aplica intereses y exclusiones; Gemini
-estima afinidad y duración para todos los supervivientes; Tavily investiga solo
+estima afinidad, relevancia y duración para la muestra seleccionada; Tavily investiga solo
 algunos de los mejor situados**. La IA no puede crear lugares ni fijar rutas.
 Después de Tavily no se hace otra llamada a Gemini: el plan diario de UT12 lo
 construirá una heurística propia del backend con tiempos peatonales de UT11.
 
-La afinidad y la duración de Gemini son estimaciones. La etiqueta y el motivo
+La afinidad, la relevancia y la duración de Gemini son estimaciones. La etiqueta y el motivo
 visibles se construyen a partir de las categorías del lugar y los intereses
 elegidos; no se publican afirmaciones libres de Gemini que no tengan respaldo
 en esos datos.
 
 La evaluación usa `gemini-3.1-flash-lite` con la clave `GEMINI_API_KEY` configurada
 solo en el backend. Ante clave ausente, error, respuesta incompleta o datos
-inválidos, todos los candidatos reciben una clasificación local determinista y
-la respuesta incluye `fallback: true` y una advertencia. Un fallo de Geoapify
+inválidos, se conservan los lotes anteriores correctos y los restantes usan una clasificación
+local determinista sin relevancia inventada. No se hacen más llamadas de IA tras el fallo;
+la respuesta incluye `fallback: true` y una advertencia. Cada candidato mantiene su propio
+`origenEvaluacion` (`GEMINI` o `LOCAL`). Un fallo de Geoapify
 continúa siendo un error 503; una búsqueda válida sin lugares devuelve una lista
 vacía. Las duraciones se muestran siempre con `≈` porque son orientativas.
 La alternativa local se basa en categorías e intereses, nunca en el identificador
@@ -745,8 +759,10 @@ visitas duplicadas. Si no hay suficientes visitas viables, deja tiempo libre
 explícito y comunica las limitaciones. Los horarios que no sean `VERIFIED`
 se presentan como propuestas condicionadas: el texto disponible no confirma
 que el lugar está abierto en la fecha y hora elegidas.
-La afinidad es prioritaria. Entre candidatos factibles que difieren como máximo
-en cinco puntos de afinidad, se prefiere un trayecto dentro de la distancia
+La prioridad combina afinidad y relevancia estimada: `(2 × afinidad + relevancia) / 3`.
+Sin estimación de relevancia se utiliza la afinidad. Se aplica tanto al recorte previo
+de la matriz como a las visitas factibles. Entre candidatos que difieren como máximo
+en cinco puntos de prioridad, se prefiere un trayecto dentro de la distancia
 deseada, después menor tiempo a pie, gasto acorde y variedad de categorías.
 La distancia deseada es flexible y un coste desconocido no se considera gratis.
 
@@ -990,3 +1006,94 @@ Los proveedores se sustituyen por dobles de prueba, sin gastar sus cuotas.
 Esta UT simplificada controla el flujo de generación. No añade cachés de
 candidatos ni cuotas a los endpoints independientes de evaluación, búsqueda o
 desplazamientos. No es un límite global de las claves API de los proveedores.
+
+## Mejora de cobertura y selección de candidatos
+
+Las consultas están organizadas en `ClasificacionLugaresService`, sin listas de nombres por ciudad:
+
+| Interés | Grupos de búsqueda |
+| --- | --- |
+| Gastronomía | Restaurantes; cafeterías y comida rápida; mercados |
+| Arte y museos | Museos; galerías; arte público |
+| Historia y arquitectura | Puertas, torres y fortificaciones; edificios y patrimonio religioso; respaldo de atractivos turísticos; estadios |
+| Naturaleza y parques | Parques; playas; espacios naturales |
+| Cultura local | Espacios culturales, artesanía y mercados; fortificaciones; respaldo de atractivos turísticos; estadios |
+| Ocio y entretenimiento | Centros comerciales; boleras, recreativos y actividades; parques temáticos, zoológicos y acuarios; moda, grandes almacenes y libros para descubrir calles comerciales |
+
+Un estadio solo se admite para Historia/Cultura si también tiene etiquetas de interés
+turístico o histórico. Las atracciones generales pueden ser candidatas culturales y
+arquitectónicas sin afirmar su historia. Las obras de arte, fuentes, miradores y los
+lugares ya identificados como comercios, restauración, ocio o naturaleza conservan su
+clasificación específica; no se convierten automáticamente en patrimonio.
+Un mercado solo se clasifica como gastronómico si sus etiquetas lo indican.
+
+Después de agrupar todas las copias y aplicar exclusiones se intercalan los grupos
+y se reparte la muestra por intereses. Dentro de Historia y Cultura local se favorecen
+conjuntos turísticos, puertas, torres, palacios y plazas
+frente a listas largas de memoriales u obras de arte. Es una preferencia por tipo para
+dar variedad a la muestra, no una afirmación de popularidad. Si se alcanza el límite de
+evaluación, el usuario recibe un aviso sobre la selección de una muestra.
+
+`ITINERARIOS_MAX_CANDIDATOS` permite bajar el máximo evaluado (1–120; por defecto 120).
+Gemini mantiene lotes de 40: como máximo tres llamadas por evaluación, sin una segunda
+llamada para la relevancia. El modelo sigue siendo `gemini-3.1-flash-lite`, con razonamiento
+`minimal`, respuestas breves y un máximo de 8192 tokens de salida por llamada.
+Puede reconocer referentes usando conocimiento general, pero debe devolver `relevancia: null`
+cuando no reconoce un lugar. No confirma precios ni horarios ni añade candidatos.
+La interfaz muestra la relevancia como estimada o «Sin estimación».
+
+Los registros del backend muestran el número de consultas, lugares únicos, candidatos
+evaluados y tokens comunicados por Gemini. Para revisar descartes se puede activar
+`logging.level.es.upv.pin.backend.service=DEBUG`; se distinguen filtros iniciales,
+selección previa de rutas y limitaciones de horario o tiempo/rutas al planificar.
+Estos registros no incluyen claves. UT17 sigue reutilizando el último plan compatible
+de cada sesión; esta mejora no añade una caché compartida entre usuarios.
+
+Las pruebas cubren los tipos observados en Valencia (Serranos, Quart, Ciudad de las Artes,
+plaza del Ayuntamiento y plaza de Toros), paginación, diversidad entre grupos, exclusiones,
+ausencia de duplicados, límite de IA y prioridad antes del recorte de rutas. Se simulan
+las respuestas externas; la relevancia no garantiza incluir un lugar si no cabe en las
+ventanas o sus horarios no son compatibles. La cobertura de Places tampoco es exhaustiva.
+
+Comprobación manual del 16/11/2026: con Historia y Cultura local en Valencia, el servicio
+preparó 226 candidatos en nueve llamadas a Places. Plaza de Toros, Serranos, Quart,
+plaza del Ayuntamiento y Ciudad de las Artes quedaron dentro de los primeros 120.
+Una petición real separada a Gemini con dos lugares validó el nuevo esquema y comunicó
+531 tokens en total; esta cifra no representa el consumo de un itinerario completo.
+
+### Refinado de recintos equivalentes y ocio
+
+`IdentidadLugares` normaliza acentos, puntuación, artículos y variantes como
+«Parc/Laberint» y «Parque/Laberinto». Agrupa nombres equivalentes con categorías
+compatibles a menos de 200 metros, o hasta 500 metros en recintos de parques.
+Un parque y su laberinto pueden tener categorías distintas y representar la misma
+visita. No basta con estar cerca: un museo dentro de un parque conserva su identidad
+si tiene otro nombre. Sin coordenadas no se deduce equivalencia entre IDs distintos.
+Los restaurantes con el mismo nombre requieren además la misma dirección y una
+distancia máxima de 30 metros, para conservar sucursales diferentes.
+
+La agrupación se realiza antes de filtrar, investigar o enviar datos a Gemini; un
+ID canónico relaciona mapa, lista y planificación. El planificador evita volver a
+insertar equivalentes y el validador también los detecta entre días.
+Si los alias publican horarios distintos, se devuelve el horario como desconocido
+para no elegir arbitrariamente una disponibilidad.
+
+Ocio consulta centros comerciales, boleras, recreativos, escape rooms, parques de
+actividades, minigolf, parques temáticos/acuáticos, zoológicos y acuarios. Los tipos
+de cine, café, bar, pub, cervecería y discoteca se descartan para esta categoría
+incluso si el proveedor les añade una etiqueta de ocio o compras. No se convierten
+automáticamente tiendas individuales en visitas.
+
+`CallesComercialesService` agrupa comercios reales de moda, libros y grandes almacenes
+por calle: exige al menos tres establecimientos únicos, dos portales distintos y
+una separación de al menos 120 metros. Prioriza la variedad comercial y localiza
+como máximo tres calles con Geocoding, `type=street` y filtro del destino. El nombre,
+el tipo y las coordenadas devueltos deben ser válidos. No hay listas fijas por ciudad
+ni llamadas adicionales a Gemini. La calle se clasifica como Compras, sin copiar
+horarios o precios de sus tiendas. No se afirma que todas esas calles sean famosas;
+su relevancia se evalúa después y la cobertura depende de los datos del proveedor.
+Excluir Compras evita las consultas comerciales y de calles; las restantes opciones
+de ocio siguen disponibles. La muestra de Gemini continúa limitada a 120 candidatos.
+
+Al probar cambios de catálogo o de selección, reinicia el backend y recarga la web
+para preparar una configuración nueva, sin conservar un resultado anterior en pantalla.

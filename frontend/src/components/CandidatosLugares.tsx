@@ -30,7 +30,7 @@ export function CandidatosLugares({ candidatos, fallback, programados }: {
     <p role="status" aria-live="polite">{candidatos.length === 0
       ? 'No se evaluaron lugares para esta disponibilidad.'
       : `${candidatos.length} lugares evaluados.`}</p>
-    {fallback && <p className="candidatos-aviso">La evaluación ha utilizado una alternativa local. Algunos datos pueden ser menos precisos.</p>}
+    {fallback && <p className="candidatos-aviso">Parte de la evaluación ha utilizado una alternativa local. Algunas recomendaciones pueden ser menos precisas.</p>}
     {candidatos.length > 0 && <p id="explicacion-duracion">Las duraciones son estimaciones y pueden variar durante la visita.</p>}
       <ul className="candidatos-lista">
         {candidatos.map(candidato => {
@@ -42,6 +42,8 @@ export function CandidatosLugares({ candidatos, fallback, programados }: {
           <p>{candidato.lugar.direccion || 'Dirección no disponible'}</p>
           <p className="candidato-etiqueta">{candidato.etiqueta}</p>
           <p><strong>Afinidad:</strong> {candidato.afinidad}/100</p>
+          <p><strong>Relevancia turística estimada:</strong> {candidato.relevancia == null
+            ? 'Sin estimación' : `${candidato.relevancia}/100`}</p>
           <p>{candidato.motivo}</p>
           <p><strong>Origen de la evaluación:</strong> {candidato.origenEvaluacion === 'LOCAL' ? 'Alternativa local' : 'Gemini'}</p>
           <p aria-describedby="explicacion-duracion"><strong>Duración estimada:</strong> ≈ {candidato.duracionMinutos} min</p>

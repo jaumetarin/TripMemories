@@ -323,6 +323,7 @@ export type CosteCandidato = 'FREE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
 export interface CandidatoEvaluado {
   lugar: Lugar
   afinidad: number
+  relevancia?: number | null
   duracionMinutos: number
   etiqueta: string
   motivo: string
@@ -407,6 +408,8 @@ function esNumeroONulo(valor: unknown): valor is number | null {
 function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado {
   return esObjeto(valor) && esLugar(valor.lugar)
     && typeof valor.afinidad === 'number' && Number.isFinite(valor.afinidad)
+    && (valor.relevancia == null || typeof valor.relevancia === 'number'
+      && Number.isInteger(valor.relevancia) && valor.relevancia >= 0 && valor.relevancia <= 100)
     && typeof valor.duracionMinutos === 'number' && Number.isFinite(valor.duracionMinutos) && valor.duracionMinutos > 0
     && typeof valor.etiqueta === 'string' && typeof valor.motivo === 'string'
     && typeof valor.coste === 'string' && ['FREE', 'LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'].includes(valor.coste)

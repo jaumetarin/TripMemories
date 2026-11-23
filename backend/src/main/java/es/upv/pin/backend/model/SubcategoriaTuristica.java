@@ -22,7 +22,8 @@ public enum SubcategoriaTuristica {
     TALLERES_ARTESANALES("Talleres artesanales", CategoriaTuristica.CULTURA_LOCAL),
     ESPECTACULOS_TRADICIONALES("Espectáculos tradicionales", CategoriaTuristica.CULTURA_LOCAL),
 
-    VIDA_NOCTURNA("Vida nocturna", CategoriaTuristica.OCIO_ENTRETENIMIENTO),
+    ACTIVIDADES_RECREATIVAS("Boleras y centros recreativos", CategoriaTuristica.OCIO_ENTRETENIMIENTO),
+    ZOOS_ACUARIOS("Zoológicos y acuarios", CategoriaTuristica.OCIO_ENTRETENIMIENTO),
     COMPRAS("Compras", CategoriaTuristica.OCIO_ENTRETENIMIENTO),
     PARQUES_ATRACCIONES("Parques de atracciones", CategoriaTuristica.OCIO_ENTRETENIMIENTO);
 

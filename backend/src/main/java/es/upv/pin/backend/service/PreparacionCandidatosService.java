@@ -2,8 +2,10 @@ package es.upv.pin.backend.service;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,7 +23,8 @@ import es.upv.pin.backend.model.SubcategoriaTuristica;
 
 @Service
 public class PreparacionCandidatosService {
-    private static final int LIMITE_POR_INTERES = 100;
+    private static final int LIMITE_POR_CONSULTA = 100;
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PreparacionCandidatosService.class);
     private static final Set<String> NOMBRES_DESCONOCIDOS = Set.of(
             "desconocido", "desconocida", "nombre desconocido", "sin nombre",
             "unknown", "unnamed", "no name", "n/a", "null", "undefined");
@@ -44,47 +47,156 @@ public class PreparacionCandidatosService {
 
         // Un grupo por identificador: el mismo lugar puede aparecer en varias consultas.
         Map<String, List<LugarGeoapifyDto>> grupos = new LinkedHashMap<>();
+        Map<String, List<String>> idsPorConsulta = new LinkedHashMap<>();
+        int llamadas = 0;
         for (CategoriaTuristica interes : intereses) {
             if (preferencias.categoriasExcluidas().contains(interes)) continue;
-            var respuesta = cliente.buscarLugares(configuracion.destino().id(),
-                    clasificacion.categoriasConsulta(interes), LIMITE_POR_INTERES);
-            for (var feature : respuesta.features()) {
-                if (feature == null || feature.properties() == null) {
-                    throw new IllegalStateException("El servicio de lugares ha devuelto un resultado no válido.");
+            for (String consulta : clasificacion.consultasPorInteres(interes)) {
+                if (interes == CategoriaTuristica.OCIO_ENTRETENIMIENTO
+                        && preferencias.subcategoriasExcluidas().contains(SubcategoriaTuristica.COMPRAS)
+                        && consulta.startsWith("commercial.")) continue;
+                if (idsPorConsulta.containsKey(consulta)) continue;
+                Set<String> ids = new LinkedHashSet<>();
+                for (int pagina = 0; pagina < clasificacion.maxPaginas(consulta); pagina++) {
+                    var respuesta = cliente.buscarLugares(configuracion.destino().id(), consulta,
+                            LIMITE_POR_CONSULTA, pagina * LIMITE_POR_CONSULTA);
+                    llamadas++;
+                    int cantidadAntes = ids.size();
+                    for (var feature : respuesta.features()) {
+                        if (feature == null || feature.properties() == null) {
+                            throw new IllegalStateException("El servicio de lugares ha devuelto un resultado no válido.");
+                        }
+                        LugarGeoapifyDto lugar = feature.properties();
+                        if (lugar.place_id() == null || lugar.place_id().isBlank()) continue;
+                        grupos.computeIfAbsent(lugar.place_id(), id -> new ArrayList<>()).add(lugar);
+                        ids.add(lugar.place_id());
+                    }
+                    if (respuesta.features().size() < LIMITE_POR_CONSULTA
+                            || (pagina > 0 && ids.size() == cantidadAntes)) break;
                 }
-                LugarGeoapifyDto lugar = feature.properties();
-                if (lugar.place_id() == null || lugar.place_id().isBlank()) continue;
-                grupos.computeIfAbsent(lugar.place_id(), id -> new ArrayList<>()).add(lugar);
+                idsPorConsulta.put(consulta, List.copyOf(ids));
             }
         }
 
-        List<LugarDto> resultados = new ArrayList<>();
-        for (List<LugarGeoapifyDto> grupo : grupos.values()) {
-            String id = grupo.getFirst().place_id();
-            String nombre = null;
-            String direccion = null;
-            String horario = null;
-            Double latitud = null;
-            Double longitud = null;
-            Set<CategoriaTuristica> categorias = EnumSet.noneOf(CategoriaTuristica.class);
-            Set<SubcategoriaTuristica> subcategorias = EnumSet.noneOf(SubcategoriaTuristica.class);
-            for (LugarGeoapifyDto lugar : grupo) {
-                categorias.addAll(clasificacion.categorias(lugar));
-                subcategorias.addAll(clasificacion.subcategorias(lugar));
-                if (nombre == null) nombre = nombreValido(lugar.name());
-                if (direccion == null) direccion = textoOpcional(lugar.formatted());
-                if (horario == null) horario = horarioDisponible(lugar);
-                // Las dos coordenadas deben pertenecer a la misma copia del lugar.
-                if (latitud == null && coordenadasValidas(lugar)) {
-                    latitud = lugar.lat();
-                    longitud = lugar.lon();
-                }
+        Set<String> idsCalles = new LinkedHashSet<>();
+        if (intereses.contains(CategoriaTuristica.OCIO_ENTRETENIMIENTO)
+                && !preferencias.categoriasExcluidas().contains(CategoriaTuristica.OCIO_ENTRETENIMIENTO)
+                && !preferencias.subcategoriasExcluidas().contains(SubcategoriaTuristica.COMPRAS)) {
+            var calles = new CallesComercialesService(cliente).buscar(configuracion.destino(),
+                    grupos.values().stream().flatMap(List::stream).toList());
+            for (var calle : calles) {
+                grupos.computeIfAbsent(calle.place_id(), k -> new ArrayList<>()).add(calle);
+                idsCalles.add(calle.place_id());
             }
-            if (nombre == null || !cumplePreferencias(categorias, subcategorias, preferencias)) continue;
-            resultados.add(new LugarDto(id, nombre, direccion, latitud, longitud,
-                    List.copyOf(categorias), List.copyOf(subcategorias), horario));
+            if (!idsCalles.isEmpty()) idsPorConsulta.put("calles comerciales localizadas", List.copyOf(idsCalles));
         }
-        return List.copyOf(resultados);
+        Map<String, String> alias = agruparEquivalentes(grupos, idsCalles);
+        idsPorConsulta.replaceAll((consulta, ids) -> ids.stream().map(alias::get).distinct().toList());
+
+        Map<String, LugarDto> admitidos = new LinkedHashMap<>();
+        for (var entradaGrupo : grupos.entrySet()) {
+            LugarDto lugar = convertir(entradaGrupo.getKey(), entradaGrupo.getValue(), idsCalles);
+            if (lugar == null || !cumplePreferencias(Set.copyOf(lugar.categorias()), Set.copyOf(lugar.subcategorias()), preferencias)) {
+                LOG.debug("Candidato {} descartado por nombre ausente o preferencias", entradaGrupo.getKey());
+                continue;
+            }
+            admitidos.put(lugar.id(), lugar);
+        }
+        // Una ronda por grupo evita que cien resultados de la primera consulta
+        // desplacen a los tipos y los intereses que se consultaron después.
+        List<List<String>> listas = idsPorConsulta.values().stream()
+                .map(ids -> ids.stream().filter(admitidos::containsKey)
+                        .sorted(Comparator.comparingInt((String id) -> grupos.get(id).stream()
+                                .mapToInt(clasificacion::prioridadBusqueda).max().orElse(0)).reversed())
+                        .toList()).toList();
+        Set<String> orden = intercalar(listas);
+        // Se da un turno a cada interés. Dentro de Historia/Cultura se adelantan
+        // los referentes por tipo sin quitar los turnos de Arte, Naturaleza, etc.
+        List<List<String>> porInteres = intereses.stream()
+                .filter(interes -> !preferencias.categoriasExcluidas().contains(interes))
+                .map(interes -> orden.stream().filter(id -> admitidos.get(id).categorias().contains(interes))
+                        .sorted(Comparator.comparingInt((String id) ->
+                                interes == CategoriaTuristica.HISTORIA_ARQUITECTURA || interes == CategoriaTuristica.CULTURA_LOCAL
+                                        ? grupos.get(id).stream().mapToInt(clasificacion::prioridadBusqueda).max().orElse(0)
+                                        : 0).reversed()).toList()).toList();
+        LOG.info("Candidatos: {} llamadas, {} grupos, {} lugares únicos, {} admitidos tras preferencias",
+                llamadas, idsPorConsulta.size(), grupos.size(), admitidos.size());
+        return intercalar(porInteres).stream().map(admitidos::get).toList();
+    }
+
+    private Map<String, String> agruparEquivalentes(Map<String, List<LugarGeoapifyDto>> grupos, Set<String> idsCalles) {
+        Map<String, String> alias = new LinkedHashMap<>();
+        Map<String, List<String>> porNombre = new LinkedHashMap<>();
+        Map<String, LugarDto> representantes = new LinkedHashMap<>();
+        for (var entrada : new ArrayList<>(grupos.entrySet())) {
+            String id = entrada.getKey();
+            LugarDto lugar = convertir(id, entrada.getValue(), idsCalles);
+            alias.put(id, id);
+            if (lugar == null) continue;
+            String nombre = IdentidadLugares.nombreComparable(lugar.nombre());
+            List<String> similares = porNombre.computeIfAbsent(nombre, k -> new ArrayList<>());
+            String canonico = similares.stream().filter(c -> IdentidadLugares.mismoLugar(lugar, representantes.get(c)))
+                    .findFirst().orElse(null);
+            if (canonico == null) {
+                similares.add(id);
+                representantes.put(id, lugar);
+            } else {
+                grupos.get(canonico).addAll(entrada.getValue());
+                grupos.remove(id);
+                alias.put(id, canonico);
+                // Todas las etiquetas se reúnen ANTES de aplicar las exclusiones.
+                representantes.put(canonico, convertir(canonico, grupos.get(canonico), idsCalles));
+                LOG.debug("Candidatos equivalentes {} y {} agrupados en una visita", canonico, id);
+            }
+        }
+        return alias;
+    }
+
+    private LugarDto convertir(String id, List<LugarGeoapifyDto> grupo, Set<String> idsCalles) {
+        String nombre = null, direccion = null, horario = null;
+        Set<String> horarios = new LinkedHashSet<>();
+        Double latitud = null, longitud = null;
+        Set<CategoriaTuristica> categorias = EnumSet.noneOf(CategoriaTuristica.class);
+        Set<SubcategoriaTuristica> subcategorias = EnumSet.noneOf(SubcategoriaTuristica.class);
+        boolean calleComercial = false, descartadoOcio = false;
+        for (LugarGeoapifyDto lugar : grupo) {
+            categorias.addAll(clasificacion.categorias(lugar));
+            subcategorias.addAll(clasificacion.subcategorias(lugar));
+            calleComercial |= idsCalles.contains(lugar.place_id());
+            descartadoOcio |= clasificacion.descartadoParaOcio(lugar);
+            if (nombre == null) nombre = nombreValido(lugar.name());
+            if (nombre == null && idsCalles.contains(lugar.place_id())) nombre = nombreValido(lugar.street());
+            if (direccion == null) direccion = textoOpcional(lugar.formatted());
+            String publicado = horarioDisponible(lugar);
+            if (publicado != null) horarios.add(publicado);
+            if (latitud == null && coordenadasValidas(lugar)) {
+                latitud = lugar.lat();
+                longitud = lugar.lon();
+            }
+        }
+        if (calleComercial) {
+            categorias.add(CategoriaTuristica.OCIO_ENTRETENIMIENTO);
+            subcategorias.add(SubcategoriaTuristica.COMPRAS);
+        }
+        if (descartadoOcio) {
+            categorias.remove(CategoriaTuristica.OCIO_ENTRETENIMIENTO);
+            subcategorias.removeIf(s -> s.getCategoria() == CategoriaTuristica.OCIO_ENTRETENIMIENTO);
+        }
+        // Dos horarios incompatibles no se convierten en una disponibilidad confirmada.
+        if (horarios.size() == 1) horario = horarios.iterator().next();
+        return nombre == null ? null : new LugarDto(id, nombre, direccion, latitud, longitud,
+                List.copyOf(categorias), List.copyOf(subcategorias), horario);
+    }
+
+    private Set<String> intercalar(List<List<String>> listas) {
+        Set<String> orden = new LinkedHashSet<>();
+        int mayor = listas.stream().mapToInt(List::size).max().orElse(0);
+        for (int i = 0; i < mayor; i++) {
+            for (List<String> lista : listas) {
+                if (i < lista.size()) orden.add(lista.get(i));
+            }
+        }
+        return orden;
     }
 
     private String nombreValido(String valor) {

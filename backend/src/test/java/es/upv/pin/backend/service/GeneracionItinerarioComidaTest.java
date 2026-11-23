@@ -41,7 +41,7 @@ class GeneracionItinerarioComidaTest {
                 List.of(CategoriaTuristica.ARTE_MUSEOS), List.of(), null);
         return new CandidatoEvaluadoDto(lugar, afinidad, duracion, null, null,
                 CostLevel.UNKNOWN, null, List.of(), null, null, "LOCAL",
-                CostConfidence.UNKNOWN, ScheduleStatus.UNVERIFIED, null, null, null, null, null);
+                CostConfidence.UNKNOWN, ScheduleStatus.UNVERIFIED, null, null, null, null, null, null);
     }
 
     private void evaluar(ConfiguracionItinerarioDto config, CandidatoEvaluadoDto... candidatos) {
@@ -177,7 +177,7 @@ class GeneracionItinerarioComidaTest {
                 cerradoBase.lugar().categorias(), List.of(), "Sa off");
         var cerrado = new CandidatoEvaluadoDto(cerradoLugar, 90, 60, null, null,
                 CostLevel.UNKNOWN, null, List.of(), "Sa off", "Geoapify (sin verificar)",
-                "LOCAL", CostConfidence.UNKNOWN, ScheduleStatus.UNVERIFIED, null, null, null, null, null);
+                "LOCAL", CostConfidence.UNKNOWN, ScheduleStatus.UNVERIFIED, null, null, null, null, null, null);
         evaluar(config, cerrado, lugar("abierto", 80, 60));
         rutas("cerrado", "abierto");
 
@@ -200,7 +200,7 @@ class GeneracionItinerarioComidaTest {
         var candidato = new CandidatoEvaluadoDto(lugar, 90, 60, null, null,
                 CostLevel.UNKNOWN, null, List.of(), "Sa 11:00-12:00",
                 "Geoapify (sin verificar)", "LOCAL", CostConfidence.UNKNOWN,
-                ScheduleStatus.UNVERIFIED, null, null, null, null, null);
+                ScheduleStatus.UNVERIFIED, null, null, null, null, null, null);
         evaluar(config, candidato);
 
         var plan = servicio.generar(config);
