@@ -19,14 +19,22 @@ public class GeoapifyClient {
 
     private final RestClient restClient;
     private final String apiKey;
+    private final CacheGeoapify cache = new CacheGeoapify();
+    private final LimiteConsultasGeoapify consultas;
 
-    // Recibe y guarda las dependencias.
+    // Construcción explícita de pruebas: mantiene el máximo simultáneo, sin pausas artificiales.
     public GeoapifyClient(
             RestClient restClient,
-            @Value("${geoapify.api-key}") String apiKey) {
+            String apiKey) {
+        this(restClient, apiKey, new LimiteConsultasGeoapify(3, 0));
+    }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public GeoapifyClient(RestClient restClient, @Value("${geoapify.api-key}") String apiKey,
+            LimiteConsultasGeoapify consultas) {
         this.restClient = restClient;
         this.apiKey = apiKey;
+        this.consultas = consultas;
     }
 
     public List<DestinoGeoapifyDto> autocompletar(String texto) {
@@ -43,10 +51,10 @@ public class GeoapifyClient {
         RespuestaDestinosGeoapifyDto respuesta;
 
         try {
-            respuesta = restClient.get()
+            respuesta = consultas.ejecutar(() -> restClient.get()
                     .uri(ruta, texto, apiKey)
                     .retrieve()
-                    .body(RespuestaDestinosGeoapifyDto.class);
+                    .body(RespuestaDestinosGeoapifyDto.class));
 
         } catch (RestClientException exception) {
             throw new IllegalStateException(
@@ -70,6 +78,30 @@ public class GeoapifyClient {
 
     public RespuestaLugaresGeoapifyDto buscarLugares(
             String destinoId, String categorias, int limite, int offset) {
+        return buscarLugares(destinoId, categorias, limite, offset, "");
+    }
+
+    public RespuestaLugaresGeoapifyDto buscarLugares(
+            String destinoId, String categorias, int limite, int offset, String nombre) {
+        return buscarLugares(destinoId, categorias, limite, offset, nombre, "");
+    }
+
+    public RespuestaLugaresGeoapifyDto buscarLugares(DestinoDto destino, String categorias,
+            int limite, int offset, String nombre) {
+        if (destino == null) throw new IllegalArgumentException("Indica el destino.");
+        String sesgo = destino.latitud() != null && destino.longitud() != null
+                && Double.isFinite(destino.latitud()) && Math.abs(destino.latitud()) <= 90
+                && Double.isFinite(destino.longitud()) && Math.abs(destino.longitud()) <= 180
+                ? destino.longitud() + "," + destino.latitud() : "";
+        // Ordenar grupos históricos específicos por cercanía puede agotar el tiempo de Places.
+        // El filtro place sigue acotando la ciudad; el reparto de pantalla ordena los resultados localmente.
+        if (categorias != null && java.util.Arrays.stream(categorias.split(","))
+                .anyMatch(c -> c.strip().startsWith("tourism.sights."))) sesgo = "";
+        return buscarLugares(destino.id(), categorias, limite, offset, nombre, sesgo);
+    }
+
+    private RespuestaLugaresGeoapifyDto buscarLugares(String destinoId, String categorias,
+            int limite, int offset, String nombre, String sesgo) {
 
         if (destinoId == null || destinoId.isBlank()) {
             throw new IllegalArgumentException(
@@ -92,30 +124,49 @@ public class GeoapifyClient {
                     "La clave de Geoapify no está configurada.");
         }
 
+        String categoriasOrdenadas = java.util.Arrays.stream(categorias.split(",")).map(String::strip)
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(","));
+        String nombreBuscado = nombre == null ? "" : nombre.strip();
+        return cache.obtener(new CacheGeoapify.Consulta("places", destinoId, categoriasOrdenadas, limite, offset, nombreBuscado, sesgo),
+                () -> consultarLugares(destinoId, categorias, limite, offset, nombreBuscado, sesgo));
+    }
+
+    private RespuestaLugaresGeoapifyDto consultarLugares(String destinoId, String categorias, int limite,
+            int offset, String nombre, String sesgo) {
+
         String ruta = "/v2/places"
                 + "?categories={categorias}"
                 + "&filter=place:{destinoId}"
                 + "&limit={limite}"
                 + "&lang=es"
+                + (sesgo.isEmpty() ? "" : "&bias=proximity:" + sesgo)
                 + "&apiKey={clave}"
-                + (offset == 0 ? "" : "&offset=" + offset);
+                + (offset == 0 ? "" : "&offset=" + offset)
+                + (nombre == null || nombre.isBlank() ? "" : "&name={nombre}");
 
-        RespuestaLugaresGeoapifyDto respuesta;
-
-        try {
-            respuesta = restClient.get()
-                    .uri(ruta, categorias, destinoId, limite, apiKey)
-                    .retrieve()
-                    .body(RespuestaLugaresGeoapifyDto.class);
-
-        } catch (RestClientException exception) {
-            String detalle = exception instanceof org.springframework.web.client.RestClientResponseException respuestaError
-                    ? "HTTP " + respuestaError.getStatusCode().value()
-                    : exception.getCause() == null ? exception.getClass().getSimpleName()
-                    : exception.getCause().getClass().getSimpleName();
-            LOG.warn("No se pudo consultar Places: {} (offset {})", detalle, offset);
-            throw new IllegalStateException(
-                    "No se ha podido consultar el servicio de lugares.");
+        RespuestaLugaresGeoapifyDto respuesta = null;
+        // Solo repetimos una vez una lectura que haya agotado su tiempo de espera.
+        // No repetimos errores HTTP (clave, cuota, parámetros...) ni respuestas no válidas.
+        for (int intento = 0; intento < 2; intento++) {
+            try {
+                respuesta = consultas.ejecutar(() -> restClient.get()
+                        .uri(ruta, categorias, destinoId, limite, apiKey, nombre == null ? "" : nombre)
+                        .retrieve().body(RespuestaLugaresGeoapifyDto.class));
+                LOG.info("Places: consulta externa completada (categorías {}, offset {})", categorias, offset);
+                break;
+            } catch (RestClientException exception) {
+                boolean tiempoAgotado = tiempoAgotado(exception);
+                String detalle = exception instanceof org.springframework.web.client.RestClientResponseException respuestaError
+                        ? "HTTP " + respuestaError.getStatusCode().value()
+                        : tiempoAgotado ? "tiempo de espera agotado" : "fallo de conexión o respuesta";
+                // No registrar la excepción ni la URL: pueden contener la API key.
+                LOG.warn("No se pudo consultar Places: {} (categorías {}, offset {}, intento {})",
+                        detalle, categorias, offset, intento + 1);
+                if (tiempoAgotado && intento == 0 && !Thread.currentThread().isInterrupted()) continue;
+                throw new IllegalStateException(tiempoAgotado
+                        ? "Geoapify está tardando demasiado en responder. No se han podido cargar los lugares; vuelve a intentarlo en unos instantes."
+                        : "No se ha podido consultar el servicio de lugares.");
+            }
         }
 
         if (respuesta == null || respuesta.features() == null) {
@@ -126,15 +177,25 @@ public class GeoapifyClient {
         return respuesta;
     }
 
+    private static boolean tiempoAgotado(Throwable error) {
+        for (Throwable causa = error; causa != null; causa = causa.getCause()) {
+            if (causa instanceof java.net.http.HttpTimeoutException
+                    || causa instanceof java.net.SocketTimeoutException) return true;
+        }
+        return false;
+    }
+
     public LugarGeoapifyDto buscarCalle(String nombre, DestinoDto destino) {
         if (nombre == null || nombre.isBlank() || destino == null || destino.id() == null)
             throw new IllegalArgumentException("Indica la calle y el destino.");
         if (apiKey.isBlank()) throw new IllegalStateException("La clave de Geoapify no está configurada.");
         try {
-            var respuesta = restClient.get().uri("/v1/geocode/search?text={texto}&type=street"
+            String texto = nombre + ", " + destino.nombre();
+            var respuesta = cache.obtener(new CacheGeoapify.Consulta("calle", destino.id(), "", 1, 0, texto),
+                    () -> consultas.ejecutar(() -> restClient.get().uri("/v1/geocode/search?text={texto}&type=street"
                             + "&filter=place:{destino}&format=geojson&lang=es&limit=1&apiKey={clave}",
-                            nombre + ", " + destino.nombre(), destino.id(), apiKey)
-                    .retrieve().body(RespuestaLugaresGeoapifyDto.class);
+                            texto, destino.id(), apiKey)
+                    .retrieve().body(RespuestaLugaresGeoapifyDto.class)));
             if (respuesta == null || respuesta.features() == null)
                 throw new IllegalStateException("El servicio de calles ha devuelto una respuesta no válida.");
             if (respuesta.features().isEmpty()) return null;

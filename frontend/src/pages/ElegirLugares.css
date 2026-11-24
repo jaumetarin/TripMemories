@@ -1,0 +1,56 @@
+.crear-viaje.crear-viaje-lugares { max-width: 1120px; }
+.lugares-explicacion { padding: 22px 26px; border: 1px solid #cfe4df; border-radius: 20px; background: #f0f8f5; margin-bottom: 26px; }
+.lugares-explicacion p { font-size: .9rem; line-height: 1.7; margin: 0; }
+.lugares-explicacion p + p { margin-top: 10px; }
+.lugares-buscador label { display: block; font-weight: 650; margin-bottom: 10px; }
+.lugares-buscador > div { display: flex; gap: 10px; }
+.lugares-buscador input { width: 100%; min-width: 0; padding: 17px 18px; border: 1px solid #ccd5d2; border-radius: 14px; background: white; font: inherit; }
+.lugares-buscador button, .lugares-pestanas button { padding: 12px 18px; border: 1px solid #cedbd6; border-radius: 12px; background: white; color: #146b60; font: inherit; font-size: .85rem; font-weight: 600; }
+.lugares-buscador button { flex-shrink: 0; }
+.lugares-buscador p, .lugares-mapa > p { font-size: .78rem; line-height: 1.6; color: #5c6b68; }
+.lugares-estado { min-height: 26px; font-size: .85rem; color: #2b5c52; }
+.lugares-distribucion { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; margin: 22px 0 32px; }
+.lugares-distribucion h2 { font-size: 1.1rem; margin: 0 0 16px; }
+.lugares-lista > h2:not(:first-child) { margin-top: 30px; }
+.lugares-lista { max-height: 760px; overflow-y: auto; padding: 4px 8px 4px 4px; scrollbar-width: thin; }
+.lugar-tarjeta { padding: 21px; border: 1px solid #e0e6e3; border-radius: 18px; background: white; margin-bottom: 12px; box-shadow: 0 3px 16px #263f3304; scroll-margin: 25px; }
+.lugar-activo { border-color: #078977; box-shadow: 0 0 0 2px #07897730; }
+.lugar-cabecera { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lugar-cabecera h3 { font-size: 1rem; margin: 0; line-height: 1.4; }
+.lugar-direccion { font-size: .8rem; line-height: 1.55; color: #62706c; margin: 9px 0 16px; }
+.lugar-categoria { display: inline-block; margin: 0 0 12px; padding: 4px 8px; border-radius: 7px; background: #edf3f0; color: #365f50; font-size: .72rem; }
+.lugares-reparto { padding: 16px; margin-bottom: 18px; background: #edf5f1; border: 1px solid #d9e8df; border-radius: 14px; }
+.lugares-reparto p { margin: 0; color: #456456; font-size: .76rem; line-height: 1.6; }
+.lugares-reparto ul { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; list-style: none; padding: 0; margin: 12px 0; }
+.lugares-reparto li { display: flex; justify-content: space-between; gap: 10px; font-size: .72rem; line-height: 1.5; }
+.lugares-reparto strong { white-space: nowrap; color: #1d6855; }
+.lugar-estados { display: flex; flex-wrap: wrap; gap: 7px; }
+.lugar-estados button { padding: 9px 10px; border: 1px solid var(--prioridad-borde); border-radius: 9px; background: var(--prioridad-fondo); color: var(--prioridad-texto); font: inherit; font-size: .74rem; }
+.lugar-estados button[aria-pressed="true"] { background: var(--prioridad-activo); color: var(--prioridad-contraste); border-color: var(--prioridad-activo); box-shadow: inset 0 0 0 1px currentColor; font-weight: 650; }
+.lugar-estados button:hover:not(:disabled) { filter: brightness(.96); }
+.lugar-enlaces { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
+.lugar-enlaces button, .lugares-mapa > button { border: 0; padding: 0; background: none; color: #126f62; text-decoration: underline; text-underline-offset: 3px; font-size: .75rem; }
+.lugares-vacio { padding: 18px; background: #edf2ef; border-radius: 14px; font-size: .85rem; line-height: 1.7; color: #53655e; }
+.lugares-cargar-mas { width: 100%; justify-content: center; margin: 12px 0 6px; padding: 12px; border: 1px solid #cbdad3; border-radius: 12px; background: white; color: #146b60; font-size: .78rem; }
+.lugares-mapa { position: sticky; top: 20px; min-width: 0; }
+.lugares-leyenda { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; font-size: .72rem; color: #5c6b68; }
+.lugares-carga-acciones { margin-top: 24px; }
+.lugares-pestanas { display: none; }
+.seleccion-marcador.OBLIGATORIO { border-radius: 9px; }
+.seleccion-marcador.prioridad { border-color: var(--prioridad-activo); background: var(--prioridad-fondo); color: var(--prioridad-texto); }
+.seleccion-marcador.prioridad.visita-marcador-activo { background: var(--prioridad-activo); color: var(--prioridad-contraste); border-color: white; box-shadow: 0 0 0 3px var(--prioridad-activo), 0 4px 14px #132c3450; }
+.seleccion-popup { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.5; }
+.seleccion-popup p { margin: 8px 0; font-size: 12px; line-height: 1.5; }
+.seleccion-popup button { padding: 8px 11px; border: 0; border-radius: 8px; background: #146b60; color: white; font: inherit; font-size: 12px; }
+.elegir-lugares button:disabled { opacity: .5; cursor: not-allowed; }
+.elegir-lugares :focus-visible { outline: 3px solid #087f70; outline-offset: 3px; }
+@media (max-width: 800px) {
+  .lugares-distribucion { grid-template-columns: 1fr; }
+  .lugares-pestanas { display: flex; gap: 8px; }
+  .lugares-pestanas button[aria-pressed="true"] { color: white; background: #146b60; }
+  .lugares-oculta-movil { display: none; }
+  .lugares-lista { max-height: none; overflow: visible; }
+  .lugares-mapa { position: static; }
+  .lugares-buscador > div { flex-direction: column; }
+  .lugares-explicacion { padding: 18px; }
+}

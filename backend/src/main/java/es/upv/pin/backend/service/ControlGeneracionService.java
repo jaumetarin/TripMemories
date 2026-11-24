@@ -119,7 +119,7 @@ public class ControlGeneracionService {
                 p.categoriasExcluidas().stream().sorted().toList(),
                 p.subcategoriasExcluidas().stream().sorted().toList(), p.nivelGasto(), p.distanciaKm());
         return new ConfiguracionItinerarioDto(configuracion.destino(), configuracion.disponibilidad(),
-                configuracion.alojamiento(), ordenadas, configuracion.ritmo());
+                configuracion.alojamiento(), ordenadas, configuracion.ritmo(), configuracion.selecciones());
     }
 
     public record Resultado(ItinerarioGeneradoDto itinerario, boolean reutilizado, Instant vigenteHasta) {}

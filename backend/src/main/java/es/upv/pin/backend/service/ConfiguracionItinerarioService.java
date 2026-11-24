@@ -29,7 +29,8 @@ public class ConfiguracionItinerarioService {
         FechaHoraDto disponibilidad = fechaHoraService.validar(configuracion.disponibilidad());
         PreferenciasDto preferencias = preferenciasService.validar(configuracion.preferencias());
         String alojamiento = textoOpcional(configuracion.alojamiento(), 250, "El alojamiento");
-        return new ConfiguracionItinerarioDto(destino, disponibilidad, alojamiento, preferencias, validarRitmo(configuracion.ritmo()));
+        return new ConfiguracionItinerarioDto(destino, disponibilidad, alojamiento, preferencias,
+                validarRitmo(configuracion.ritmo()), ReglasSeleccionLugares.validar(configuracion.selecciones(), preferencias));
     }
 
     private RitmoDiarioDto validarRitmo(RitmoDiarioDto ritmo) {

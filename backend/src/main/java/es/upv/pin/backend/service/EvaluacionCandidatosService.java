@@ -60,7 +60,11 @@ public class EvaluacionCandidatosService {
         var config = configuraciones.validar(entrada);
         var preparados = dentroDePlazo(() -> preparacion.preparar(config), limite);
         // Preparación ya intercala los grupos. El recorte conserva esa variedad.
-        var lugares = preparados.stream().limit(maxCandidatos).toList();
+        var priorizados = ReglasSeleccionLugares.aplicar(config, preparados);
+        long elegidos = priorizados.stream().filter(l -> ReglasSeleccionLugares.orden(l, config) < 2).count();
+        // Las decisiones manuales se conservan aunque se configure una muestra de IA menor.
+        // El máximo de selecciones es 50, de modo que seguimos dentro de 120 y tres lotes.
+        var lugares = CriteriosItinerario.muestra(priorizados, config, (int) Math.max(maxCandidatos, elegidos));
         int disponible = minutosDisponibles(config.disponibilidad());
         if (lugares.isEmpty())
             return new EvaluacionCandidatosDto(

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { confirmarConfiguracion, generarItinerario, obtenerConsumoGeneracion, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
-import type { CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, Destino, FechaHora, ItinerarioGenerado, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
+import { ErrorObligatoriosPendientes } from '../api'
+import { confirmarConfiguracion, generarItinerario, obtenerConsumoGeneracion, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora, revisarSeleccionLugares } from '../api'
+import type { CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, Destino, FechaHora, ItinerarioGenerado, OpcionesGastoDistancia, Preferencias, RitmoDiario, SeleccionLugar } from '../api'
 import { Icon } from '../assets/Icon'
 import { BuscadorDestinos } from '../components/BuscadorDestinos'
 import { CandidatosLugares } from '../components/CandidatosLugares'
@@ -9,6 +10,7 @@ import { CampoFecha } from '../components/CampoFecha'
 import ItinerarioPorDias from '../components/ItinerarioPorDias'
 import { PreferenciasGasto } from './PreferenciasGasto'
 import { RevisarPlan } from './RevisarPlan'
+import { ElegirLugares } from './ElegirLugares'
 import type { CampoPlan } from './RevisarPlan'
 import './CrearItinerario.css'
 
@@ -16,7 +18,7 @@ type CrearItinerarioProps = {
   onVolver: () => void
 }
 
-const etapas = ['Destino y disponibilidad', 'Preferencias y gasto', 'Revisar y generar', 'Tu itinerario']
+const etapas = ['Destino y disponibilidad', 'Preferencias y gasto', 'Elegir lugares', 'Revisar y generar', 'Tu itinerario']
 
 // Unimos los campos sin convertirlos a UTC: son horas locales del destino.
 function unirFechaHora(fecha: string, hora: string): string | null {
@@ -33,6 +35,7 @@ const selectoresEdicion: Record<CampoPlan, string> = {
   gasto: '#editar-gasto',
   distancia: '#distancia-actividades',
   ritmo: '#editar-ritmo',
+  lugares: '#buscar-lugar',
 }
 
 export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
@@ -43,7 +46,12 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [horaSalida, setHoraSalida] = useState('18:00')
   const [alojamiento, setAlojamiento] = useState('')
   const [disponibilidad, setDisponibilidad] = useState<FechaHora | null>(null)
-  const [paso, setPaso] = useState<'destino' | 'preferencias' | 'resumen' | 'resultado'>('destino')
+  const [paso, setPaso] = useState<'destino' | 'preferencias' | 'lugares' | 'resumen' | 'resultado'>('destino')
+  const [selecciones, setSelecciones] = useState<SeleccionLugar[]>([])
+  const [avisosSeleccion, setAvisosSeleccion] = useState<string[]>([])
+  const [errorSeleccion, setErrorSeleccion] = useState('')
+  const [revisandoSeleccion, setRevisandoSeleccion] = useState(false)
+  const revisionSeleccion = useRef<AbortController | null>(null)
   const [preferencias, setPreferencias] = useState<Preferencias>({
     intereses: [], categoriasExcluidas: [], subcategoriasExcluidas: [],
     nivelGasto: null, distanciaKm: null,
@@ -68,6 +76,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [vistaResultado, setVistaResultado] = useState<'plan' | 'candidatos'>('plan')
   const [generando, setGenerando] = useState(false)
   const [errorGeneracion, setErrorGeneracion] = useState('')
+  const [problemasObligatorios, setProblemasObligatorios] = useState<string[]>([])
   const [consumo, setConsumo] = useState<ConsumoGeneracion | null>(null)
   const [cargandoConsumo, setCargandoConsumo] = useState(true)
   const [errorConsumo, setErrorConsumo] = useState('')
@@ -85,6 +94,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     peticion.current?.abort()
     peticionConfirmacion.current?.abort()
     peticionGeneracion.current?.abort()
+    revisionSeleccion.current?.abort()
   }, [])
 
   useEffect(() => {
@@ -141,7 +151,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     if (campoEdicion.current && paso !== 'resumen') {
       document.querySelector<HTMLElement>(selectoresEdicion[campoEdicion.current])?.focus()
       campoEdicion.current = null
-    } else if (paso === 'resumen' || paso === 'preferencias' || paso === 'resultado') {
+    } else if (paso === 'resumen' || paso === 'preferencias' || paso === 'lugares' || paso === 'resultado') {
       titulo.current?.focus()
     }
   }, [paso])
@@ -169,7 +179,14 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       )
       if (!controlador.signal.aborted && destinoSeleccionado) {
         setDisponibilidad(resultado)
-        setPaso(editandoResumen ? 'resumen' : 'preferencias')
+        if (configuracionActual && selecciones.length) {
+          const revisada = await revisarSeleccionLugares({ ...configuracionActual,
+            destino: destinoSeleccionado, disponibilidad: resultado }, controlador.signal)
+          actualizarSeleccion(revisada.selecciones, revisada.avisos)
+        }
+        if (controlador.signal.aborted) return
+        if (editandoResumen) mostrarResumen()
+        else setPaso('preferencias')
         setEditandoResumen(false)
       }
     } catch (error) {
@@ -205,9 +222,10 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     setErrorConfirmacion('')
     setErrorGeneracion('')
     setEditandoResumen(true)
+    setProblemasObligatorios([])
     campoEdicion.current = campo
     const esDisponibilidad = ['destino', 'fechas', 'horarios', 'alojamiento'].includes(campo)
-    setPaso(esDisponibilidad ? 'destino' : 'preferencias')
+    setPaso(campo === 'lugares' ? 'lugares' : esDisponibilidad ? 'destino' : 'preferencias')
   }
 
   const configuracionActual: ConfiguracionItinerario | null = destinoSeleccionado && disponibilidad ? {
@@ -222,7 +240,40 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       distanciaKm: preferencias.distanciaKm,
     },
     ritmo,
+    selecciones,
   } : null
+
+  const actualizarSeleccion = useCallback((actuales: SeleccionLugar[], avisos: string[]) => {
+    setSelecciones(anteriores => JSON.stringify(anteriores) === JSON.stringify(actuales) ? anteriores : actuales)
+    if (avisos.length) setAvisosSeleccion(avisos)
+    setConfiguracionConfirmada(null)
+    setItinerario(null)
+    setErrorConfirmacion('')
+    setErrorGeneracion('')
+    setProblemasObligatorios([])
+  }, [])
+
+  async function continuarPreferencias(confirmadas: Preferencias) {
+    if (!configuracionActual || revisionSeleccion.current) return
+    const controlador = new AbortController()
+    revisionSeleccion.current = controlador
+    setRevisandoSeleccion(true)
+    setErrorSeleccion('')
+    try {
+      const nuevas = { ...preferencias, ...confirmadas }
+      const revisada = await revisarSeleccionLugares({ ...configuracionActual, preferencias: nuevas }, controlador.signal)
+      if (controlador.signal.aborted) return
+      setPreferencias(nuevas)
+      actualizarSeleccion(revisada.selecciones, revisada.avisos)
+      setEditandoResumen(false)
+      setPaso('lugares')
+    } catch (error) {
+      if (!controlador.signal.aborted) setErrorSeleccion(error instanceof Error ? error.message : 'No se pueden revisar las selecciones. Vuelve a intentarlo.')
+    } finally {
+      revisionSeleccion.current = null
+      if (!controlador.signal.aborted) setRevisandoSeleccion(false)
+    }
+  }
 
   async function confirmarPlan() {
     if (!configuracionActual || peticionConfirmacion.current || configuracionConfirmada) return
@@ -244,6 +295,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       setHoraSalida(confirmada.disponibilidad.salida.split('T')[1].slice(0, 5))
       setAlojamiento(confirmada.alojamiento)
       setPreferencias(confirmada.preferencias)
+      setSelecciones(confirmada.selecciones)
       setRitmo({
         ...confirmada.ritmo,
         comidaInicio: confirmada.ritmo.comidaInicio.slice(0, 5),
@@ -264,7 +316,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   }
 
   async function generarPlan() {
-    if (!configuracionConfirmada || peticionGeneracion.current) return
+    if (!configuracionConfirmada || peticionGeneracion.current || problemasObligatorios.length) return
     if (itinerario) {
       setPaso('resultado')
       return
@@ -283,6 +335,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       setPaso('resultado')
     } catch (error) {
       if (controlador.signal.aborted) return
+      if (error instanceof ErrorObligatoriosPendientes) setProblemasObligatorios(error.problemas)
       setErrorGeneracion(error instanceof Error && error.name === 'TimeoutError'
         ? 'La generación ha tardado demasiado. Tus datos siguen confirmados; vuelve a intentarlo.'
         : error instanceof Error && error.name === 'Error' ? error.message
@@ -296,13 +349,13 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     }
   }
 
-  const indiceActual = paso === 'destino' ? 0 : paso === 'preferencias' ? 1 : paso === 'resumen' ? 2 : 3
+  const indiceActual = paso === 'destino' ? 0 : paso === 'preferencias' ? 1 : paso === 'lugares' ? 2 : paso === 'resumen' ? 3 : 4
   const idsProgramados = new Set(itinerario?.dias.flatMap(dia => dia.bloques
     .filter(bloque => bloque.tipo === 'VISITA' && bloque.candidato !== null)
     .map(bloque => bloque.candidato!.lugar.id)) ?? [])
 
   return (
-    <section className={`crear-viaje${paso === 'preferencias' ? ' crear-viaje-preferencias' : paso === 'resumen' ? ' crear-viaje-revision' : paso === 'resultado' ? ' crear-viaje-resultado' : ''}`} aria-labelledby="crear-titulo">
+    <section className={`crear-viaje${paso === 'preferencias' ? ' crear-viaje-preferencias' : paso === 'lugares' ? ' crear-viaje-lugares' : paso === 'resumen' ? ' crear-viaje-revision' : paso === 'resultado' ? ' crear-viaje-resultado' : ''}`} aria-labelledby="crear-titulo">
       <button className="boton-volver" type="button" onClick={onVolver} disabled={confirmando || generando}>← Volver al inicio</button>
       <nav className="acompanamiento" aria-label="Etapas del itinerario">
         <ol className="pasos">
@@ -317,9 +370,13 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       </nav>
       <div className="crear-intro">
         <p className="antetitulo">{`PASO ${indiceActual + 1} DE ${etapas.length}`}</p>
-        <h1 ref={titulo} tabIndex={-1} id="crear-titulo">{paso === 'destino' ? '¿Dónde empieza tu próxima historia?' : paso === 'preferencias' ? 'Preferencias y gasto' : paso === 'resumen' ? 'Revisa tu plan' : 'Tu itinerario'}</h1>
-        <p className="subtitulo">{paso === 'destino' ? 'Elige el destino y el tiempo que tendrás para descubrirlo.' : paso === 'preferencias' ? 'Cuéntanos cómo te gusta viajar para darle forma a tu itinerario.' : paso === 'resumen' ? 'Comprueba los detalles antes de generar tu itinerario. Puedes editar cualquier apartado.' : `Una propuesta para descubrir ${configuracionConfirmada?.destino.nombre ?? 'tu destino'} a tu ritmo.`}</p>
+        <h1 ref={titulo} tabIndex={-1} id="crear-titulo">{paso === 'destino' ? '¿Dónde empieza tu próxima historia?' : paso === 'preferencias' ? 'Preferencias y gasto' : paso === 'lugares' ? 'Elige tus imprescindibles' : paso === 'resumen' ? generando ? 'Tu viaje está tomando forma' : 'Revisa tu plan' : 'Tu itinerario'}</h1>
+        <p className="subtitulo">{paso === 'destino' ? 'Elige el destino y el tiempo que tendrás para descubrirlo.' : paso === 'preferencias' ? 'Cuéntanos cómo te gusta viajar para darle forma a tu itinerario.' : paso === 'lugares' ? 'Busca lugares y decide cuáles quieres visitar, priorizar o evitar.' : paso === 'resumen' ? generando ? 'Estamos trabajando en tu propuesta. Tus datos siguen confirmados.' : 'Comprueba los detalles antes de generar tu itinerario. Puedes editar cualquier apartado.' : `Una propuesta para descubrir ${configuracionConfirmada?.destino.nombre ?? 'tu destino'} a tu ritmo.`}</p>
       </div>
+      {avisosSeleccion.length > 0 && <div className="mapa-aviso" role="status">{avisosSeleccion.map(aviso => <p key={aviso}>{aviso}</p>)}
+        <button type="button" onClick={() => setAvisosSeleccion([])}>Entendido</button></div>}
+      {errorSeleccion && <p className="error-viaje" role="alert">{errorSeleccion}</p>}
+      {revisandoSeleccion && <p role="status">Comprobando que tus lugares siguen siendo compatibles…</p>}
       <div className="crear-distribucion" hidden={paso !== 'destino'}>
         <form className="formulario-viaje" noValidate onSubmit={continuar} hidden={paso !== 'destino'} aria-busy={validando}>
           <div className="titulo-formulario"><span className="icono-coleccion"><Icon name="ubicacion" /></span><div><h2>Tu viaje</h2><p>Destino, fechas y horas en un solo lugar.</p></div></div>
@@ -379,10 +436,11 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
         <RevisarPlan configuracion={configuracionConfirmada ?? configuracionActual}
           confirmada={configuracionConfirmada !== null} confirmando={confirmando} errorConfirmacion={errorConfirmacion}
           generando={generando} errorGeneracion={errorGeneracion} itinerarioDisponible={itinerario !== null}
+          problemasObligatorios={problemasObligatorios}
           consumo={consumo} cargandoConsumo={cargandoConsumo} errorConsumo={errorConsumo}
           onActualizarConsumo={actualizarConsumo}
           catalogo={catalogo} opcionesGastoDistancia={opcionesGastoDistancia}
-          onEditar={editarApartado} onAtras={() => editarApartado('intereses')} onConfirmar={confirmarPlan}
+          onEditar={editarApartado} onAtras={() => editarApartado('lugares')} onConfirmar={confirmarPlan}
           onGenerar={generarPlan} />
       )}
       {itinerario && configuracionConfirmada && (
@@ -413,12 +471,12 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           datos={preferencias} onCambiar={setPreferencias} ritmo={ritmo} onCambiarRitmo={setRitmo}
           onAtras={editarDisponibilidad}
           editandoResumen={editandoResumen}
-          onContinuar={confirmadas => {
-            setPreferencias(actuales => ({ ...actuales, ...confirmadas }))
-            setEditandoResumen(false)
-            mostrarResumen()
-          }} />
+          continuando={revisandoSeleccion}
+          onContinuar={continuarPreferencias} />
       )}
+      {paso === 'lugares' && configuracionActual && <ElegirLugares configuracion={configuracionActual}
+        onActualizar={actualizarSeleccion} onAtras={() => { setEditandoResumen(false); setPaso('preferencias') }}
+        onContinuar={() => { setEditandoResumen(false); mostrarResumen() }} />}
     </section>
   )
 }

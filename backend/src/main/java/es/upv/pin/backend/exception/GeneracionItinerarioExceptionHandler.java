@@ -11,6 +11,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = GeneracionItinerarioController.class)
 public class GeneracionItinerarioExceptionHandler {
+    @ExceptionHandler(ObligatoriosPendientesException.class)
+    public ResponseEntity<Map<String, Object>> faltanObligatorios(ObligatoriosPendientesException error) {
+        return ResponseEntity.unprocessableContent().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(Map.of("codigo", "OBLIGATORIOS_PENDIENTES", "mensaje", error.getMessage(), "problemas", error.getProblemas()));
+    }
+
     @ExceptionHandler(ControlGeneracionException.class)
     public ResponseEntity<Map<String, String>> limiteDeSesion(ControlGeneracionException error) {
         return ResponseEntity.status(error.getEstado()).cacheControl(org.springframework.http.CacheControl.noStore())

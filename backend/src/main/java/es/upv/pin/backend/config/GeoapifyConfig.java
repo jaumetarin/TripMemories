@@ -20,8 +20,8 @@ public class GeoapifyConfig {
         JdkClientHttpRequestFactory requestFactory =
                 new JdkClientHttpRequestFactory(httpClient);
 
-        // Las consultas de Places pueden superar cinco segundos incluso siendo válidas.
-        requestFactory.setReadTimeout(Duration.ofSeconds(10));
+        // Una consulta amplia de Places puede superar diez segundos siendo válida.
+        requestFactory.setReadTimeout(Duration.ofSeconds(20));
 
         return RestClient.builder()
                 .baseUrl("https://api.geoapify.com")

@@ -21,6 +21,7 @@ type Props = {
   onAtras: () => void
   onContinuar: (preferencias: Preferencias) => void
   editandoResumen?: boolean
+  continuando?: boolean
 }
 
 type Validacion = {
@@ -44,7 +45,7 @@ function mostrarFecha(fechaHora: string) {
 export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalogo, cargandoCatalogo,
   opcionesGastoDistancia, errorCatalogo, onReintentarCatalogo, datos, onCambiar,
   ritmo, onCambiarRitmo, onAtras, onContinuar,
-  editandoResumen = false }: Props) {
+  editandoResumen = false, continuando = false }: Props) {
   const [validacion, setValidacion] = useState<Validacion | null>(null)
   const [reintento, setReintento] = useState(0)
   const [gruposAbiertos, setGruposAbiertos] = useState<string[]>(() => catalogo
@@ -115,7 +116,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
   function continuar(evento: SubmitEvent<HTMLFormElement>) {
     evento.preventDefault()
     // Solo se avanza con la respuesta válida correspondiente a esta selección exacta.
-    if (puedeContinuar && actual?.resultado) onContinuar(actual.resultado)
+    if (!continuando && puedeContinuar && actual?.resultado) onContinuar(actual.resultado)
   }
 
   const categoriasElegidas = catalogo.filter(categoria => datos.categoriasExcluidas.includes(categoria.codigo))
@@ -130,7 +131,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           <button type="button" className="enlace-preferencias" onClick={onReintentarCatalogo}>Reintentar carga del catálogo</button>
         </div>}
 
-        <fieldset className="grupo-preferencias" id="editar-intereses" tabIndex={-1} disabled={!tieneCatalogo}>
+        <fieldset className="grupo-preferencias" id="editar-intereses" tabIndex={-1} disabled={!tieneCatalogo || continuando}>
           <legend>Tus intereses</legend>
           <p className="ayuda-preferencias" id="ayuda-intereses">Selecciona todo lo que te apetezca descubrir.</p>
           <div className="intereses-opciones">
@@ -150,7 +151,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           </p>}
         </fieldset>
 
-        <fieldset className="grupo-preferencias" id="editar-exclusiones" tabIndex={-1} disabled={!tieneCatalogo}>
+        <fieldset className="grupo-preferencias" id="editar-exclusiones" tabIndex={-1} disabled={!tieneCatalogo || continuando}>
           <legend>Qué prefieres evitar</legend>
           <p className="ayuda-preferencias" id="ayuda-exclusiones">Puedes excluir actividades concretas de un interés. Una categoría completa no puede estar seleccionada a la vez como interés y como exclusión.</p>
           <div className="exclusiones-grupos">
@@ -197,7 +198,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           )}
         </fieldset>
 
-        <fieldset className="grupo-preferencias" id="editar-gasto" tabIndex={-1} disabled={!tieneCatalogo}>
+        <fieldset className="grupo-preferencias" id="editar-gasto" tabIndex={-1} disabled={!tieneCatalogo || continuando}>
           <legend>Nivel de gasto</legend>
           <p className="ayuda-preferencias" id="ayuda-gasto">{opcionesGastoDistancia?.significadoGasto}</p>
           <div className="gasto-opciones">
@@ -215,7 +216,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           <div className="distancia-control">
             <input id="distancia-actividades" name="distanciaKm" type="range"
               min={opcionesGastoDistancia?.distanciaMinimaKm} max={opcionesGastoDistancia?.distanciaMaximaKm}
-              step={opcionesGastoDistancia?.pasoDistanciaKm} disabled={!tieneCatalogo}
+              step={opcionesGastoDistancia?.pasoDistanciaKm} disabled={!tieneCatalogo || continuando}
               value={datos.distanciaKm ?? ''} aria-describedby="ayuda-distancia error-preferencias"
               aria-valuetext={`${datos.distanciaKm ?? 'Sin seleccionar'} kilómetros deseados entre actividades consecutivas`}
               onChange={evento => onCambiar({ ...datos, distanciaKm: Number(evento.target.value) })} />
@@ -226,7 +227,7 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
           </div>
         </div>
 
-        <fieldset className="grupo-preferencias" id="editar-ritmo" tabIndex={-1}>
+        <fieldset className="grupo-preferencias" id="editar-ritmo" tabIndex={-1} disabled={continuando}>
           <legend>Comida, descansos y margen</legend>
           <p className="ayuda-preferencias" id="ayuda-ritmo">Puedes dejar estos valores como están. La franja de comida se reserva completa; las visitas y los trayectos a pie se ajustan al tiempo restante.</p>
           <div className="ritmo-campos">
@@ -269,9 +270,9 @@ export function PreferenciasGasto({ destino, disponibilidad, alojamiento, catalo
         </div>
         <p className="nota-preferencias">Puedes cambiar estas opciones al volver a este paso. De momento forman parte de tu borrador.</p>
         <div className="acciones-preferencias">
-          <button className="boton boton-secundario" type="button" onClick={onAtras}>← Atrás</button>
-          <button className="boton boton-primario" type="submit" disabled={!puedeContinuar}>
-            {comprobando ? 'Comprobando…' : editandoResumen ? 'Guardar cambios y volver al resumen' : 'Continuar'} <Icon name="derecha" />
+          <button className="boton boton-secundario" type="button" disabled={continuando} onClick={onAtras}>← Atrás</button>
+          <button className="boton boton-primario" type="submit" disabled={!puedeContinuar || continuando}>
+            {continuando || comprobando ? 'Comprobando…' : editandoResumen ? 'Guardar cambios y revisar lugares' : 'Continuar a elegir lugares'} <Icon name="derecha" />
           </button>
         </div>
       </form>
