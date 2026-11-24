@@ -2,13 +2,14 @@ package es.upv.pin.backend.service;
 
 import es.upv.pin.backend.dto.*;
 import es.upv.pin.backend.model.EstadoLugar;
+import es.upv.pin.backend.model.LimitesItinerario;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 /** Reglas locales compartidas por el formulario, la confirmación y el Planner. */
 public final class ReglasSeleccionLugares {
-    public static final int MAX_SELECCIONES = 50;
+    public static final int MAX_SELECCIONES = LimitesItinerario.MAXIMO_LUGARES;
     private ReglasSeleccionLugares() {}
 
     public static boolean compatible(LugarDto lugar, PreferenciasDto preferencias) {

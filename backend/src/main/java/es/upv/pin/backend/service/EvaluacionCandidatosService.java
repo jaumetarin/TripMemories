@@ -82,9 +82,16 @@ public class EvaluacionCandidatosService {
         Map<String, ValoracionGemini> valoraciones = new HashMap<>();
         Set<String> evaluadosPorIa = new HashSet<>();
         for (var lugar : lugares) valoraciones.put(lugar.id(), local(lugar, config.preferencias().intereses()));
+        var lugaresParaIa = lugares.stream()
+                .filter(lugar -> !esAlojamiento(
+                        lugar, config.alojamientoLocalizado()))
+                .toList();
+
         boolean fallback = false;
-        for (int i = 0; i < lugares.size(); i += EVALUACION) {
-            var lote = lugares.subList(i, Math.min(i + EVALUACION, lugares.size()));
+
+        for (int i = 0; i < lugaresParaIa.size(); i += EVALUACION) {
+        var lote = lugaresParaIa.subList(
+                i, Math.min(i + EVALUACION, lugaresParaIa.size()));
             try {
                 var respuesta =
                         dentroDePlazo(
@@ -186,14 +193,21 @@ public class EvaluacionCandidatosService {
                             && fuentes.contains(h.fuenteDescripcion())
                     ? texto(h.descripcion()) : null;
             String fuenteDescripcion = descripcion == null ? null : h.fuenteDescripcion();
-            String horario =
-                    h != null && fuenteValida(h.fuenteHorario()) && texto(h.horario()) != null
-                            ? texto(h.horario())
-                            : lugar.horario();
-            String fuenteHorario =
-                    h != null && fuenteValida(h.fuenteHorario()) && texto(h.horario()) != null
-                            ? "Fuentes externas"
-                            : horario == null ? null : "Geoapify (sin verificar)";
+            String horario;
+            String fuenteHorario;
+
+            if (texto(lugar.horario()) != null) {
+                horario = lugar.horario();
+                fuenteHorario = "Geoapify (sin verificar)";
+            } else if (h != null
+                    && fuenteValida(h.fuenteHorario())
+                    && texto(h.horario()) != null) {
+                horario = texto(h.horario());
+                fuenteHorario = "Fuentes externas";
+            } else {
+                horario = null;
+                fuenteHorario = null;
+            }
             int duracion =
                     h != null
                                     && fuenteValida(h.fuenteDuracion())
@@ -392,4 +406,24 @@ public class EvaluacionCandidatosService {
                 .distinct()
                 .toList();
     }
+    private static boolean esAlojamiento(
+        LugarDto lugar,
+        AlojamientoDto alojamiento) {
+
+    if (alojamiento == null) {
+        return false;
+    }
+
+    if (alojamiento.id().equals(lugar.id())) {
+        return true;
+    }
+
+    String nombre = IdentidadLugares.normalizar(alojamiento.nombre());
+    String direccion = IdentidadLugares.normalizar(alojamiento.direccion());
+
+    return (!nombre.isBlank()
+            && nombre.equals(IdentidadLugares.normalizar(lugar.nombre())))
+            || (!direccion.isBlank()
+            && direccion.equals(IdentidadLugares.normalizar(lugar.direccion())));
+}
 }

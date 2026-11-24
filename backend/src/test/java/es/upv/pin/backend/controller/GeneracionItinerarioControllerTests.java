@@ -32,17 +32,35 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class GeneracionItinerarioControllerTests {
     private final GeneracionItinerarioService servicio = mock(GeneracionItinerarioService.class);
-    private final ControlGeneracionService control = new ControlGeneracionService(servicio,
-            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()), 1, 60, 15);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new GeneracionItinerarioController(control,
-            mock(es.upv.pin.backend.service.CatalogoLugaresService.class)))
-            .setControllerAdvice(new GeneracionItinerarioExceptionHandler()).build();
+    private final ControlGeneracionService control = new ControlGeneracionService(
+            servicio,
+            new ConfiguracionItinerarioService(
+                    new FechaHoraService(java.time.Clock.fixed(
+                            java.time.Instant.parse("2026-01-01T12:00:00Z"),
+                            java.time.ZoneOffset.UTC)),
+                    new PreferenciasService()),
+            1, 60, 15);
+
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+            new GeneracionItinerarioController(
+                    control,
+                    mock(es.upv.pin.backend.service.CatalogoLugaresService.class)))
+            .setControllerAdvice(new GeneracionItinerarioExceptionHandler())
+            .build();
+            
     private final String configuracion = """
             {"destino":{"id":"madrid","nombre":"Madrid","latitud":40.4,"longitud":-3.7},
              "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-10T18:00"},
-             "alojamiento":"Hotel","preferencias":{"intereses":["GASTRONOMIA"],
+             "alojamiento":"Hotel",
+             "alojamientoLocalizado":{
+             "id":"hotel-prueba",
+             "nombre":"Hotel",
+             "direccion":"Calle de Prueba 10",
+             "latitud":40.4168,
+             "longitud":-3.7038
+                },"preferencias":{"intereses":["GASTRONOMIA"],
              "categoriasExcluidas":[],"subcategoriasExcluidas":[],"nivelGasto":"MODERADO","distanciaKm":3}}
-            """;
+             """;
 
     @Test
     void unObligatorioNoIncluidoDevuelve422ConMotivosYSinUnPlanIncompleto() throws Exception {

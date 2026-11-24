@@ -99,15 +99,30 @@ public class CatalogoLugaresService {
         var catalogo = catalogo(sesion, base.destino().id());
         synchronized (catalogo) {
             var selecciones = revisar(entrada, base, catalogo, new ArrayList<>(), true);
-            return new ConfiguracionItinerarioDto(base.destino(), base.disponibilidad(), base.alojamiento(),
-                    base.preferencias(), base.ritmo(), selecciones);
+            return new ConfiguracionItinerarioDto(
+                    base.destino(),
+                    base.disponibilidad(),
+                    base.alojamiento(),
+                    base.preferencias(),
+                    base.ritmo(),
+                    base.alojamientoLocalizado(),
+                    selecciones);
         }
     }
 
     private ConfiguracionItinerarioDto base(ConfiguracionItinerarioDto entrada) {
-        if (entrada == null) throw new IllegalArgumentException("Envía la configuración del viaje.");
-        return configuraciones.validar(new ConfiguracionItinerarioDto(entrada.destino(), entrada.disponibilidad(),
-                entrada.alojamiento(), entrada.preferencias(), entrada.ritmo()));
+        if (entrada == null) {
+            throw new IllegalArgumentException("Envía la configuración del viaje.");
+        }
+
+        return configuraciones.validar(new ConfiguracionItinerarioDto(
+                entrada.destino(),
+                entrada.disponibilidad(),
+                entrada.alojamiento(),
+                entrada.preferencias(),
+                entrada.ritmo(),
+                entrada.alojamientoLocalizado(),
+                List.of()));
     }
 
     private List<SeleccionLugarDto> revisar(ConfiguracionItinerarioDto entrada, ConfiguracionItinerarioDto base,

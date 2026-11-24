@@ -40,11 +40,42 @@ class PrioridadesItinerarioTests {
         var inicio = LocalDateTime.of(2026, 5, 1, 10, 0);
         return viaje(inicio, inicio.plusHours(horas), intereses, List.of(selecciones));
     }
-    private void escenario(ConfiguracionItinerarioDto config, List<CandidatoEvaluadoDto> candidatos) {
-        when(evaluacion.evaluar(config)).thenReturn(new EvaluacionCandidatosDto(candidatos, true, List.of(), 0, 0));
+    private void escenario(
+            ConfiguracionItinerarioDto config,
+            List<CandidatoEvaluadoDto> candidatos) {
+
+        when(evaluacion.evaluar(config)).thenReturn(
+                new EvaluacionCandidatosDto(
+                        candidatos, true, List.of(), 0, 0));
+
         List<DesplazamientoDto> tramos = new ArrayList<>();
-        for (var a : candidatos) for (var b : candidatos) if (a != b) tramos.add(new DesplazamientoDto(
-                a.lugar().id(), b.lugar().id(), 0.0, 0.0, EstadoDesplazamiento.DISPONIBLE, "openrouteservice"));
+
+        for (var candidato : candidatos) {
+            tramos.add(new DesplazamientoDto(
+                    "referencia:inicio",
+                    candidato.lugar().id(),
+                    0.0,
+                    0.0,
+                    EstadoDesplazamiento.DISPONIBLE,
+                    "openrouteservice"));
+        }
+
+        for (var origen : candidatos) {
+            for (var destino : candidatos) {
+                if (origen == destino) {
+                    continue;
+                }
+
+                tramos.add(new DesplazamientoDto(
+                        origen.lugar().id(),
+                        destino.lugar().id(),
+                        0.0,
+                        0.0,
+                        EstadoDesplazamiento.DISPONIBLE,
+                        "openrouteservice"));
+            }
+        }
+
         when(rutas.calcular(anyList())).thenReturn(tramos);
     }
     private List<BloqueItinerarioDto> visitas(ItinerarioGeneradoDto plan) {
@@ -102,8 +133,22 @@ class PrioridadesItinerarioTests {
         escenario(config, List.of(flexible, limitado));
         // Visitar la plaza primero impediría llegar a las 11:00; el orden inverso sí cabe.
         when(rutas.calcular(anyList())).thenReturn(List.of(
-                new DesplazamientoDto("plaza-flexible", "museo-limitado", 100.0, 600.0, EstadoDesplazamiento.DISPONIBLE, "openrouteservice"),
-                new DesplazamientoDto("museo-limitado", "plaza-flexible", 0.0, 0.0, EstadoDesplazamiento.DISPONIBLE, "openrouteservice")));
+                new DesplazamientoDto(
+                        "referencia:inicio", "museo-limitado",
+                        0.0, 0.0,
+                        EstadoDesplazamiento.DISPONIBLE, "openrouteservice"),
+                new DesplazamientoDto(
+                        "referencia:inicio", "plaza-flexible",
+                        0.0, 0.0,
+                        EstadoDesplazamiento.DISPONIBLE, "openrouteservice"),
+                new DesplazamientoDto(
+                        "plaza-flexible", "museo-limitado",
+                        100.0, 600.0,
+                        EstadoDesplazamiento.DISPONIBLE, "openrouteservice"),
+                new DesplazamientoDto(
+                        "museo-limitado", "plaza-flexible",
+                        0.0, 0.0,
+                        EstadoDesplazamiento.DISPONIBLE, "openrouteservice")));
         var plan = servicio.generar(config);
         assertEquals(List.of("museo-limitado", "plaza-flexible"), visitas(plan).stream().map(b -> b.candidato().lugar().id()).toList());
         assertEquals(LocalTime.of(11, 0), visitas(plan).getFirst().inicio().toLocalTime());
@@ -126,7 +171,15 @@ class PrioridadesItinerarioTests {
         var config = viaje(3, List.of(HISTORIA_ARQUITECTURA, ARTE_MUSEOS),
                 new SeleccionLugarDto(a.lugar(), EstadoLugar.OBLIGATORIO), new SeleccionLugarDto(b.lugar(), EstadoLugar.OBLIGATORIO));
         escenario(config, List.of(a, b));
-        when(rutas.calcular(anyList())).thenReturn(List.of());
+        when(rutas.calcular(anyList())).thenReturn(List.of(
+                new DesplazamientoDto(
+                        "referencia:inicio", a.lugar().id(),
+                        0.0, 0.0,
+                        EstadoDesplazamiento.DISPONIBLE, "openrouteservice"),
+                new DesplazamientoDto(
+                        "referencia:inicio", b.lugar().id(),
+                        0.0, 0.0,
+                        EstadoDesplazamiento.DISPONIBLE, "openrouteservice")));
         var error = assertThrows(ObligatoriosPendientesException.class, () -> servicio.generar(config));
         assertTrue(error.getProblemas().stream().anyMatch(p -> p.contains("trayectos")));
     }
@@ -158,7 +211,7 @@ class PrioridadesItinerarioTests {
         servicio.generar(config);
         org.mockito.ArgumentCaptor<List<PuntoRutaDto>> captor = org.mockito.ArgumentCaptor.forClass(List.class);
         verify(rutas).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         for (var categoria : config.preferencias().intereses()) {
             long cantidad = captor.getValue().stream().filter(p -> p.id().startsWith(categoria.name())).count();
             assertTrue(cantidad >= 12 && cantidad <= 13, categoria + ": " + cantidad);

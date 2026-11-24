@@ -118,8 +118,14 @@ public class ControlGeneracionService {
         PreferenciasDto ordenadas = new PreferenciasDto(p.intereses().stream().sorted().toList(),
                 p.categoriasExcluidas().stream().sorted().toList(),
                 p.subcategoriasExcluidas().stream().sorted().toList(), p.nivelGasto(), p.distanciaKm());
-        return new ConfiguracionItinerarioDto(configuracion.destino(), configuracion.disponibilidad(),
-                configuracion.alojamiento(), ordenadas, configuracion.ritmo(), configuracion.selecciones());
+        return new ConfiguracionItinerarioDto(
+                configuracion.destino(),
+                configuracion.disponibilidad(),
+                configuracion.alojamiento(),
+                ordenadas,
+                configuracion.ritmo(),
+                configuracion.alojamientoLocalizado(),
+                configuracion.selecciones());
     }
 
     public record Resultado(ItinerarioGeneradoDto itinerario, boolean reutilizado, Instant vigenteHasta) {}

@@ -32,8 +32,22 @@ class GeneracionItinerarioServiceTest {
         var preferencias = new PreferenciasDto(
                 List.of(), List.of(), List.of(), gasto, distanciaKm);
         var config = new ConfiguracionItinerarioDto(
-                null, new FechaHoraDto(llegada, salida, dias), null, preferencias,
-                new RitmoDiarioDto(java.time.LocalTime.of(13, 0), java.time.LocalTime.of(15, 0), 120, 15, 10));
+                new DestinoDto(
+                        "madrid",
+                        "Madrid",
+                        "Comunidad de Madrid",
+                        "España",
+                        40.4168,
+                        -3.7038),
+                new FechaHoraDto(llegada, salida, dias),
+                null,
+                preferencias,
+                new RitmoDiarioDto(
+                        java.time.LocalTime.of(13, 0),
+                        java.time.LocalTime.of(15, 0),
+                        120,
+                        15,
+                        10));
         when(configuraciones.validar(config)).thenReturn(config);
         return config;
     }
@@ -65,7 +79,11 @@ class GeneracionItinerarioServiceTest {
         var config = config(2);
         evaluar(config, List.of(candidato("Parque del Laberinto de Horta", 80, CostLevel.UNKNOWN, 1.0),
                 candidato("Laberinto de Horta", 80, CostLevel.UNKNOWN, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        when(desplazamientos.calcular(anyList())).thenReturn(
+        conRutasDesdeInicio(
+                List.of(),
+                "Parque del Laberinto de Horta",
+                "Laberinto de Horta"));
         var plan = servicio.generar(config);
         assertEquals(1, plan.dias().stream().flatMap(d -> d.bloques().stream())
                 .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).count());
@@ -83,14 +101,38 @@ class GeneracionItinerarioServiceTest {
         var fecha = LocalDateTime.of(2026, 5, 1, 11, 0);
         var obligatorio = candidato("obligatorio", 1, CostLevel.UNKNOWN, 1.0);
         var preferido = candidato("preferido", 90, CostLevel.UNKNOWN, 1.0);
-        var config = conSelecciones(config(fecha, fecha.plusHours(1), NivelGasto.MODERADO, 3),
-                new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO),
-                new SeleccionLugarDto(preferido.lugar(), EstadoLugar.PREFERIDO));
-        evaluar(config, List.of(candidato("automatico", 100, CostLevel.UNKNOWN, 1.0), preferido, obligatorio));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        var config = conSelecciones(
+                config(fecha, fecha.plusMinutes(70), NivelGasto.MODERADO, 3),
+                new SeleccionLugarDto(
+                        obligatorio.lugar(), EstadoLugar.OBLIGATORIO),
+                new SeleccionLugarDto(
+                        preferido.lugar(), EstadoLugar.PREFERIDO));
+
+        evaluar(config, List.of(
+                candidato("automatico", 100, CostLevel.UNKNOWN, 1.0),
+                preferido,
+                obligatorio));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "obligatorio", "preferido", "automatico"));
+
         var plan = servicio.generar(config);
-        assertEquals("obligatorio", plan.dias().getFirst().bloques().getFirst().candidato().lugar().id());
-        assertTrue(plan.advertencias().stream().anyMatch(a -> a.contains("preferido") && a.contains("No se ha podido incluir")));
+
+        var visitas = plan.dias().stream()
+                .flatMap(dia -> dia.bloques().stream())
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .toList();
+
+        assertEquals(1, visitas.size());
+        assertEquals(
+                "obligatorio",
+                visitas.getFirst().candidato().lugar().id());
+
+        assertTrue(plan.advertencias().stream().anyMatch(
+                aviso -> aviso.contains("preferido")
+                        && aviso.contains("No se ha podido incluir")));
     }
 
     @Test
@@ -118,7 +160,9 @@ class GeneracionItinerarioServiceTest {
         var config = conSelecciones(config(fecha, fecha.plusHours(2), NivelGasto.MODERADO, 3),
                 new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO));
         evaluar(config, List.of(candidato("automatico", 100, CostLevel.UNKNOWN, 1.0), obligatorio));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "obligatorio", "automatico"));
         var plan = servicio.generar(config);
         var visitas = plan.dias().getFirst().bloques().stream().filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).toList();
         assertEquals(1, visitas.size());
@@ -129,7 +173,7 @@ class GeneracionItinerarioServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void obligatorioSeConservaAntesDelLimiteDeCincuentaPuntosYEvitadoNoEntra() {
+    void obligatorioSeConservaEntreCincuentaLugaresMasElOrigenYEvitadoNoEntra() {
         var obligatorio = candidato("imprescindible", 1, CostLevel.UNKNOWN, 1.0);
         var evitado = candidato("evitado", 100, CostLevel.UNKNOWN, 1.0);
         var config = conSelecciones(config(1), new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO),
@@ -138,30 +182,54 @@ class GeneracionItinerarioServiceTest {
         for (int i = 0; i < 60; i++) candidatos.add(candidato("a" + i, 90, CostLevel.UNKNOWN, 1.0));
         candidatos.addAll(List.of(obligatorio, evitado));
         evaluar(config, candidatos);
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "imprescindible"));
         servicio.generar(config);
         ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
         verify(desplazamientos).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         assertTrue(captor.getValue().stream().anyMatch(p -> p.id().equals("imprescindible")));
         assertTrue(captor.getValue().stream().noneMatch(p -> p.id().equals("evitado")));
     }
 
     @Test
     void priorizaUnReferenteAunqueSuIdSeaPosteriorYNoPermiteSolapes() {
-        var config = config(LocalDateTime.of(2026, 5, 1, 11, 0),
-                LocalDateTime.of(2026, 5, 1, 12, 0), NivelGasto.MODERADO, 5);
-        evaluar(config, List.of(candidato("a-secundario", 80, CostLevel.UNKNOWN, 1.0, 20),
+        var llegada = LocalDateTime.of(2026, 5, 1, 11, 0);
+
+        var config = config(
+                llegada,
+                llegada.plusMinutes(70),
+                NivelGasto.MODERADO,
+                5);
+
+        evaluar(config, List.of(
+                candidato("a-secundario", 80, CostLevel.UNKNOWN, 1.0, 20),
                 candidato("z-referente", 80, CostLevel.UNKNOWN, 1.0, 95)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(),
+                        "a-secundario",
+                        "z-referente"));
+
         var plan = servicio.generar(config);
+
         var visitas = plan.dias().getFirst().bloques().stream()
-                .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).toList();
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .toList();
+
         assertEquals(1, visitas.size());
         assertEquals("z-referente", visitas.getFirst().candidato().lugar().id());
-        assertEquals(config.disponibilidad().salida(), visitas.getFirst().fin());
-    }
 
+        assertEquals(
+                llegada.plusMinutes(config.ritmo().margenMinutos()),
+                visitas.getFirst().inicio());
+
+        assertEquals(
+                config.disponibilidad().salida(),
+                visitas.getFirst().fin());
+        }
     @Test
     @SuppressWarnings("unchecked")
     void unReferenteNoSePierdeAntesDeCalcularLaMatrizDeRutas() {
@@ -170,11 +238,13 @@ class GeneracionItinerarioServiceTest {
         for (int i = 0; i < 60; i++) candidatos.add(candidato("a" + i, 80, CostLevel.UNKNOWN, 1.0, 20));
         candidatos.add(candidato("z-referente", 80, CostLevel.UNKNOWN, 1.0, 95));
         evaluar(config, candidatos);
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "obligatorio", "automatico"));
         servicio.generar(config);
         ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
         verify(desplazamientos).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         assertTrue(captor.getValue().stream().anyMatch(p -> p.id().equals("z-referente")));
     }
 
@@ -184,6 +254,23 @@ class GeneracionItinerarioServiceTest {
         when(evaluacion.evaluar(config)).thenReturn(
                 new EvaluacionCandidatosDto(
                         candidatos, false, List.of("Aviso previo"), 0, 0));
+    }
+
+    private List<DesplazamientoDto> conRutasDesdeInicio(
+            List<DesplazamientoDto> rutas,
+            String... destinos) {
+
+        var resultado = new ArrayList<>(rutas);
+
+        for (String destino : destinos) {
+            resultado.add(ruta(
+                    "referencia:inicio",
+                    destino,
+                    0,
+                    0));
+        }
+
+        return List.copyOf(resultado);
     }
 
     private DesplazamientoDto ruta(
@@ -227,90 +314,196 @@ class GeneracionItinerarioServiceTest {
 
     @Test
     void descansoSeInsertaTrasActividadSinCortarVisitas() {
-        var config = config(1);
-        evaluar(config, List.of(candidato("a", 90, CostLevel.FREE, 1.0),
-                candidato("b", 89, CostLevel.FREE, 1.0), candidato("c", 88, CostLevel.FREE, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
-                ruta("a", "b", 100, 60), ruta("a", "c", 100, 60),
-                ruta("b", "c", 100, 60), ruta("b", "a", 100, 60),
-                ruta("c", "a", 100, 60), ruta("c", "b", 100, 60)));
-        var bloques = servicio.generar(config).dias().getFirst().bloques();
-        assertTrue(bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.VISITA)
-                .allMatch(b -> Duration.between(b.inicio(), b.fin()).toMinutes() == 60));
-        assertEquals(1, bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.COMIDA).count());
-        assertEquals(bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.TRASLADO).count(),
-                bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.MARGEN).count());
-    }
+        var llegada = LocalDateTime.of(2026, 5, 1, 10, 0);
 
+        var config = config(
+                llegada,
+                llegada.withHour(18),
+                NivelGasto.ECONOMICO,
+                5);
+
+        evaluar(config, List.of(
+                candidato("a", 90, CostLevel.FREE, 1.0),
+                candidato("b", 89, CostLevel.FREE, 1.0),
+                candidato("c", 88, CostLevel.FREE, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(
+                                ruta("a", "b", 100, 60),
+                                ruta("a", "c", 100, 60),
+                                ruta("b", "c", 100, 60),
+                                ruta("b", "a", 100, 60),
+                                ruta("c", "a", 100, 60),
+                                ruta("c", "b", 100, 60)),
+                        "a",
+                        "b",
+                        "c"));
+
+        var bloques = servicio.generar(config).dias().getFirst().bloques();
+
+        var visitas = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .toList();
+
+        assertEquals(3, visitas.size());
+
+        assertTrue(visitas.stream().allMatch(visita ->
+                Duration.between(visita.inicio(), visita.fin()).toMinutes() == 60));
+
+        var descansos = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.DESCANSO)
+                .toList();
+
+        assertEquals(1, descansos.size());
+
+        assertEquals(
+                15,
+                Duration.between(
+                        descansos.getFirst().inicio(),
+                        descansos.getFirst().fin()).toMinutes());
+
+        assertEquals(
+                1,
+                bloques.stream()
+                        .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.COMIDA)
+                        .count());
+
+        long numeroTraslados = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.TRASLADO)
+                .count();
+
+        long numeroMargenes = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.MARGEN)
+                .count();
+
+        assertEquals(numeroTraslados + 1, numeroMargenes);
+}
     @Test
     void construyeVisitasYTrasladoDirigidoSinSolapes() {
         var config = config(1);
+
         evaluar(config, List.of(
                 candidato("a", 90, CostLevel.FREE, 1.0),
                 candidato("b", 89, CostLevel.LOW, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
-                ruta("a", "b", 100, 61), ruta("b", "a", 110, 65)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(
+                                ruta("a", "b", 100, 61),
+                                ruta("b", "a", 110, 65)),
+                        "a",
+                        "b"));
 
         var plan = servicio.generar(config);
-        var dia = plan.dias().get(0);
+        var dia = plan.dias().getFirst();
         var bloques = dia.bloques();
 
-        assertEquals(List.of(
-                TipoBloqueItinerario.VISITA,
-                TipoBloqueItinerario.TIEMPO_LIBRE,
-                TipoBloqueItinerario.COMIDA,
-                TipoBloqueItinerario.TRASLADO,
-                TipoBloqueItinerario.MARGEN,
-                TipoBloqueItinerario.VISITA,
-                TipoBloqueItinerario.TIEMPO_LIBRE),
+        assertEquals(
+                List.of(
+                        TipoBloqueItinerario.MARGEN,
+                        TipoBloqueItinerario.VISITA,
+                        TipoBloqueItinerario.TIEMPO_LIBRE,
+                        TipoBloqueItinerario.COMIDA,
+                        TipoBloqueItinerario.TRASLADO,
+                        TipoBloqueItinerario.MARGEN,
+                        TipoBloqueItinerario.VISITA,
+                        TipoBloqueItinerario.TIEMPO_LIBRE),
                 bloques.stream().map(BloqueItinerarioDto::tipo).toList());
-        assertEquals(2, Duration.between(
-                bloques.get(3).inicio(), bloques.get(3).fin()).toMinutes());
-        assertEquals("a", bloques.get(3).origenId());
-        assertEquals("b", bloques.get(3).destinoId());
-        assertEquals("openrouteservice", bloques.get(3).fuente());
-        assertTrue(bloques.get(0).condicionada());
-        assertEquals(dia.inicioDisponible(), bloques.get(0).inicio());
+
+        var traslado = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.TRASLADO)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(
+                2,
+                Duration.between(traslado.inicio(), traslado.fin()).toMinutes());
+
+        assertEquals("a", traslado.origenId());
+        assertEquals("b", traslado.destinoId());
+        assertEquals("openrouteservice", traslado.fuente());
+
+        var primeraVisita = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(primeraVisita.condicionada());
+
+        assertEquals(
+                dia.inicioDisponible().plusMinutes(config.ritmo().margenMinutos()),
+                primeraVisita.inicio());
+
+        assertEquals(dia.inicioDisponible(), bloques.getFirst().inicio());
         assertEquals(dia.finDisponible(), bloques.getLast().fin());
+
         for (int i = 1; i < bloques.size(); i++) {
-            assertEquals(bloques.get(i - 1).fin(), bloques.get(i).inicio());
+                assertEquals(bloques.get(i - 1).fin(), bloques.get(i).inicio());
         }
+
         assertTrue(plan.advertencias().contains("Aviso previo"));
+
         verify(evaluacion).evaluar(config);
         verify(desplazamientos).calcular(anyList());
-    }
+}
 
     @Test
-    void rutasAusentesProducenPlanParcialDuranteDiezDias() {
+     void rutasAusentesProducenPlanParcialDuranteDiezDias() {
         var config = config(10);
+
         evaluar(config, List.of(
                 candidato("a", 90, CostLevel.FREE, 1.0),
                 candidato("b", 89, CostLevel.LOW, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
-                new DesplazamientoDto(
-                        "a", "b", null, null,
-                        EstadoDesplazamiento.RUTA_NO_DISPONIBLE, "openrouteservice"),
-                new DesplazamientoDto(
-                        "b", "a", null, null,
-                        EstadoDesplazamiento.RUTA_NO_DISPONIBLE, "openrouteservice")));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(
+                                new DesplazamientoDto(
+                                        "a", "b", null, null,
+                                        EstadoDesplazamiento.RUTA_NO_DISPONIBLE,
+                                        "openrouteservice"),
+                                new DesplazamientoDto(
+                                        "b", "a", null, null,
+                                        EstadoDesplazamiento.RUTA_NO_DISPONIBLE,
+                                        "openrouteservice")),
+                        "a",
+                        "b"));
 
         var plan = servicio.generar(config);
+
         assertEquals(10, plan.dias().size());
-        assertEquals(2, plan.dias().stream()
-                .flatMap(d -> d.bloques().stream())
-                .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA)
-                .count());
+
+        assertEquals(
+                2,
+                plan.dias().stream()
+                        .flatMap(dia -> dia.bloques().stream())
+                        .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                        .count());
+
+        for (int i = 0; i < 2; i++) {
+                assertEquals(
+                        1,
+                        plan.dias().get(i).bloques().stream()
+                                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                                .count());
+        }
+
         assertTrue(plan.dias().stream()
-                .flatMap(d -> d.bloques().stream())
-                .noneMatch(b -> b.tipo() == TipoBloqueItinerario.TRASLADO));
+                .flatMap(dia -> dia.bloques().stream())
+                .noneMatch(bloque -> bloque.tipo() == TipoBloqueItinerario.TRASLADO));
+
         assertTrue(plan.parcial());
+
         assertTrue(plan.advertencias().stream()
-                .anyMatch(a -> a.contains("No hemos podido calcular algunos caminos a pie")));
+                .anyMatch(aviso -> aviso.contains(
+                        "No hemos podido calcular algunos caminos a pie")));
+
         assertEquals(plan, servicio.generar(config));
-    }
+}
 
     @Test
-    void limitaLaMatrizACincuentaYOmiteLugaresSinCoordenadas() {
+    void limitaACincuentaLugaresMasElOrigenYOmiteLugaresSinCoordenadas() {
         var config = config(1);
         var candidatos = new ArrayList<CandidatoEvaluadoDto>();
         for (int i = 0; i < 55; i++) {
@@ -325,10 +518,12 @@ class GeneracionItinerarioServiceTest {
         ArgumentCaptor<List<PuntoRutaDto>> captor =
                 ArgumentCaptor.forClass((Class) List.class);
         verify(desplazamientos).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         assertTrue(captor.getValue().stream().noneMatch(p -> p.id().equals("sin")));
         assertEquals(56, plan.candidatosEvaluados());
         assertEquals(50, plan.candidatosEnMatriz());
+        assertTrue(captor.getValue().stream()
+                .anyMatch(punto -> punto.id().equals("referencia:inicio")));
         assertTrue(plan.advertencias().stream()
                 .anyMatch(a -> a.contains("no conocemos su ubicación exacta")));
         assertTrue(plan.advertencias().stream()
@@ -366,27 +561,43 @@ class GeneracionItinerarioServiceTest {
     @Test
     void gastoEconomicoAjustaUnaAfinidadParecida() {
         var config = config(1);
+
         evaluar(config, List.of(
                 candidato("caro", 90, CostLevel.HIGH, 1.0),
                 candidato("gratis", 89, CostLevel.FREE, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(List.of(), "caro", "gratis"));
 
         var plan = servicio.generar(config);
-        assertEquals("gratis", plan.dias().get(0).bloques().get(0)
-                .candidato().lugar().id());
+
+        var primeraVisita = plan.dias().getFirst().bloques().stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("gratis", primeraVisita.candidato().lugar().id());
     }
 
     @Test
     void diferenciaDeAfinidadMayorQueCincoTienePrioridadSobreGasto() {
         var config = config(1);
+
         evaluar(config, List.of(
                 candidato("caro", 100, CostLevel.HIGH, 1.0),
                 candidato("gratis", 90, CostLevel.FREE, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(List.of(), "caro", "gratis"));
 
         var plan = servicio.generar(config);
-        assertEquals("caro", plan.dias().get(0).bloques().get(0)
-                .candidato().lugar().id());
+
+        var primeraVisita = plan.dias().getFirst().bloques().stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("caro", primeraVisita.candidato().lugar().id());
     }
 
     @Test
@@ -397,11 +608,16 @@ class GeneracionItinerarioServiceTest {
                 candidato("primero", 100, CostLevel.FREE, 1.0),
                 candidato("cerca", 95, CostLevel.FREE, 1.0),
                 candidato("lejos", 95, CostLevel.FREE, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
-                ruta("primero", "cerca", 2000, 1200),
-                ruta("primero", "lejos", 4000, 600),
-                ruta("cerca", "primero", 2000, 1200),
-                ruta("lejos", "primero", 4000, 600)));
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(
+                                ruta("primero", "cerca", 2000, 1200),
+                                ruta("primero", "lejos", 4000, 600),
+                                ruta("cerca", "primero", 2000, 1200),
+                                ruta("lejos", "primero", 4000, 600)),
+                        "primero",
+                        "cerca",
+                        "lejos"));
 
         var plan = servicio.generar(config);
         var visitas = plan.dias().get(0).bloques().stream()
@@ -418,10 +634,14 @@ class GeneracionItinerarioServiceTest {
                 candidato("primero", 100, CostLevel.FREE, 1.0),
                 candidato("rapido", 95, CostLevel.HIGH, 1.0),
                 candidato("barato", 95, CostLevel.FREE, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
-                ruta("primero", "rapido", 100, 1),
-                ruta("primero", "barato", 100, 59)));
-
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(
+                                ruta("primero", "rapido", 100, 1),
+                                ruta("primero", "barato", 100, 59)),
+                        "primero",
+                        "rapido",
+                        "barato"));
         var plan = servicio.generar(config);
         var visitas = plan.dias().get(0).bloques().stream()
                 .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA)
@@ -449,21 +669,43 @@ class GeneracionItinerarioServiceTest {
     }
 
     @Test
-    void visitaPuedeOcuparExactamenteTodaLaDisponibilidad() {
+    void visitaYMargenPuedenOcuparExactamenteTodaLaDisponibilidad() {
         var llegada = LocalDateTime.of(2026, 5, 1, 10, 30);
-        var config = config(llegada, llegada.plusHours(1), NivelGasto.MODERADO, 3);
-        evaluar(config, List.of(candidato("unico", 80, CostLevel.UNKNOWN, 1.0)));
+
+        var config = config(
+                llegada,
+                llegada.plusMinutes(70),
+                NivelGasto.MODERADO,
+                3);
+
+        evaluar(config, List.of(
+                candidato("unico", 80, CostLevel.UNKNOWN, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(List.of(), "unico"));
 
         var plan = servicio.generar(config);
-        var dia = plan.dias().get(0);
+        var dia = plan.dias().getFirst();
+        var bloques = dia.bloques();
+
         assertEquals(llegada, dia.inicioDisponible());
-        assertEquals(llegada.plusHours(1), dia.finDisponible());
-        assertEquals(1, dia.bloques().size());
-        assertEquals(TipoBloqueItinerario.VISITA, dia.bloques().get(0).tipo());
-        assertEquals(dia.finDisponible(), dia.bloques().get(0).fin());
+        assertEquals(llegada.plusMinutes(70), dia.finDisponible());
+
+        assertEquals(
+                List.of(
+                        TipoBloqueItinerario.MARGEN,
+                        TipoBloqueItinerario.VISITA),
+                bloques.stream().map(BloqueItinerarioDto::tipo).toList());
+
+        assertEquals(dia.inicioDisponible(), bloques.getFirst().inicio());
+        assertEquals(bloques.getFirst().fin(), bloques.getLast().inicio());
+        assertEquals(dia.finDisponible(), bloques.getLast().fin());
+
         assertFalse(plan.parcial());
-        verifyNoInteractions(desplazamientos);
-    }
+
+        verify(desplazamientos).calcular(anyList());
+        }
+
 
     @Test
     void trasladoDeCeroSegundosNoCreaBloqueVacio() {
@@ -471,9 +713,13 @@ class GeneracionItinerarioServiceTest {
         evaluar(config, List.of(
                 candidato("a", 90, CostLevel.FREE, 1.0),
                 candidato("b", 89, CostLevel.LOW, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
-                ruta("a", "b", 0, 0), ruta("b", "a", 0, 0)));
-
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(
+                                ruta("a", "b", 0, 0),
+                                ruta("b", "a", 0, 0)),
+                        "a",
+                        "b"));
         var plan = servicio.generar(config);
         assertEquals(2, plan.dias().get(0).bloques().stream()
                 .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA)
@@ -485,14 +731,205 @@ class GeneracionItinerarioServiceTest {
     @Test
     void gastoModeradoNoTrataDesconocidoComoCosteAltoConfirmado() {
         var llegada = LocalDateTime.of(2026, 5, 1, 11, 0);
-        var config = config(llegada, llegada.plusHours(6), NivelGasto.MODERADO, 5);
+
+        var config = config(
+                llegada,
+                llegada.plusHours(6),
+                NivelGasto.MODERADO,
+                5);
+
         evaluar(config, List.of(
                 candidato("alto", 90, CostLevel.HIGH, 1.0),
                 candidato("desconocido", 89, CostLevel.UNKNOWN, 1.0)));
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(List.of(), "alto", "desconocido"));
 
         var plan = servicio.generar(config);
-        assertEquals("desconocido", plan.dias().get(0).bloques().get(0)
-                .candidato().lugar().id());
+
+        var primeraVisita = plan.dias().getFirst().bloques().stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(
+                "desconocido",
+                primeraVisita.candidato().lugar().id());
+    }
+
+    private ConfiguracionItinerarioDto configConAlojamiento(
+            AlojamientoDto alojamiento) {
+
+        var base = config(1);
+
+        var destino = new DestinoDto(
+                "madrid",
+                "Madrid",
+                "Comunidad de Madrid",
+                "España",
+                40.4168,
+                -3.7038);
+
+        var entrada = new ConfiguracionItinerarioDto(
+                destino,
+                base.disponibilidad(),
+                alojamiento == null ? "" : alojamiento.nombre(),
+                base.preferencias(),
+                base.ritmo(),
+                alojamiento);
+
+        when(configuraciones.validar(entrada)).thenReturn(entrada);
+
+        return entrada;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void incluyeElAlojamientoEnLosPuntosDelCalculoDeRutas() {
+        var hotel = new AlojamientoDto(
+                "hotel-prueba",
+                "Hotel Centro",
+                "Calle de Prueba 10",
+                40.4,
+                -3.7);
+
+        var entrada = configConAlojamiento(hotel);
+
+        evaluar(entrada, List.of(
+                candidato("museo", 90, CostLevel.FREE, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        servicio.generar(entrada);
+
+        ArgumentCaptor<List<PuntoRutaDto>> captor =
+                ArgumentCaptor.forClass(List.class);
+
+        verify(desplazamientos).calcular(captor.capture());
+
+        var puntos = captor.getValue();
+
+        assertEquals(2, puntos.size());
+        assertTrue(puntos.contains(new PuntoRutaDto("museo", 1.0, 0.0)));
+
+        var origen = puntos.stream()
+                .filter(punto -> !punto.id().equals("museo"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(hotel.latitud(), origen.latitud());
+        assertEquals(hotel.longitud(), origen.longitud());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void usaLaReferenciaDelDestinoCuandoNoHayAlojamiento() {
+        var entrada = configConAlojamiento(null);
+
+        evaluar(entrada, List.of(
+                candidato("museo", 90, CostLevel.FREE, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        servicio.generar(entrada);
+
+        ArgumentCaptor<List<PuntoRutaDto>> captor =
+                ArgumentCaptor.forClass(List.class);
+
+        verify(desplazamientos).calcular(captor.capture());
+
+        var puntos = captor.getValue();
+
+        assertEquals(2, puntos.size());
+        assertTrue(puntos.contains(new PuntoRutaDto("museo", 1.0, 0.0)));
+
+        var origen = puntos.stream()
+                .filter(punto -> !punto.id().equals("museo"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(entrada.destino().latitud(), origen.latitud());
+        assertEquals(entrada.destino().longitud(), origen.longitud());
+    }
+
+    @Test
+    void cuentaElPrimerTrasladoYElMargenAntesDeLaVisita() {
+        var hotel = new AlojamientoDto(
+                "hotel-prueba",
+                "Hotel Centro",
+                "Calle de Prueba 10",
+                40.4,
+                -3.7);
+
+        var entrada = configConAlojamiento(hotel);
+
+        evaluar(entrada, List.of(
+                candidato("museo", 90, CostLevel.FREE, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
+                ruta("referencia:inicio", "museo", 1200, 900)));
+
+        var plan = servicio.generar(entrada);
+        var bloques = plan.dias().getFirst().bloques();
+        var traslado = bloques.getFirst();
+
+        assertEquals(TipoBloqueItinerario.TRASLADO, traslado.tipo());
+        assertEquals("referencia:inicio", traslado.origenId());
+        assertEquals("museo", traslado.destinoId());
+        assertEquals(entrada.disponibilidad().llegada(), traslado.inicio());
+        assertEquals(traslado.inicio().plusMinutes(15), traslado.fin());
+
+        var visita = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(
+                traslado.fin().plusMinutes(entrada.ritmo().margenMinutos()),
+                visita.inicio());
+    }
+
+    @Test
+    void noIncluyeUnaVisitaSiElPrimerTrasladoHaceQueNoQuepa() {
+        var llegada = LocalDateTime.of(2026, 5, 1, 11, 0);
+
+        var entrada = config(
+                llegada,
+                llegada.plusHours(1),
+                NivelGasto.MODERADO,
+                5);
+
+        evaluar(entrada, List.of(
+                candidato("museo", 90, CostLevel.FREE, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of(
+                ruta("referencia:inicio", "museo", 1200, 900)));
+
+        var plan = servicio.generar(entrada);
+
+        assertTrue(plan.dias().stream()
+                .flatMap(dia -> dia.bloques().stream())
+                .noneMatch(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA));
+
+        assertTrue(plan.parcial());
+    }
+
+    @Test
+    void noInventaUnDesplazamientoCuandoNoHayRutaDesdeElInicio() {
+        var entrada = configConAlojamiento(null);
+
+        evaluar(entrada, List.of(
+                candidato("museo", 90, CostLevel.FREE, 1.0)));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+
+        var plan = servicio.generar(entrada);
+
+        assertTrue(plan.dias().stream()
+                .flatMap(dia -> dia.bloques().stream())
+                .noneMatch(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA));
+
+        assertTrue(plan.advertencias().stream()
+                .anyMatch(aviso -> aviso.contains("caminos a pie")));
     }
 }

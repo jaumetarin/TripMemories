@@ -15,3 +15,29 @@
 .mapa-estado-vacio p { max-width: 340px; font-size: .85rem; color: var(--secundario); }
 .mapa-aviso { margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: #fff8e6; color: #674c11; font-size: .78rem; line-height: 1.5; }
 @media (max-width: 800px) { .mapa-itinerario-lienzo { height: 58svh; min-height: 340px; max-height: 620px; } }
+.inicio-marcador {
+  display: grid;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 8px;
+  background: #24457a;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 3px 12px #132c3440;
+}
+
+.inicio-marcador::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  height: 16px;
+  border-left: 2px solid #24457a;
+  pointer-events: none;
+}
+
+.mapa-itinerario-lienzo .inicio-marcador:focus-visible {
+  outline: 3px solid #1d1d1f;
+  outline-offset: 4px;
+}

@@ -14,11 +14,12 @@ import es.upv.pin.backend.dto.DesplazamientoDto;
 import es.upv.pin.backend.dto.PuntoRutaDto;
 import es.upv.pin.backend.dto.RespuestaMatrizOrsDto;
 import es.upv.pin.backend.model.EstadoDesplazamiento;
+import es.upv.pin.backend.model.LimitesItinerario;
 
 @Service
 public class DesplazamientoService {
 
-    private static final int MAXIMO_PUNTOS = 50;
+    private static final int MAXIMO_PUNTOS = LimitesItinerario.MAXIMO_PUNTOS_RUTA;
     private static final String FUENTE = "openrouteservice";
 
     private final OpenRouteServiceClient cliente;
@@ -102,7 +103,7 @@ public class DesplazamientoService {
     private static void validarPuntos(List<PuntoRutaDto> puntos) {
         if (puntos == null || puntos.size() > MAXIMO_PUNTOS) {
             throw new IllegalArgumentException(
-                    "Debes indicar una lista de hasta 50 puntos.");
+                    "Debes indicar una lista de hasta " + MAXIMO_PUNTOS + " puntos.");
         }
 
         Set<String> identificadores = new HashSet<>();

@@ -1,7 +1,11 @@
 package es.upv.pin.backend.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import org.mockito.ArgumentCaptor;
 
 import es.upv.pin.backend.client.AiProvider;
 import es.upv.pin.backend.client.ResearchProvider;
@@ -13,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.*;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class EvaluacionCandidatosServiceTests {
     private final ConfiguracionItinerarioService config =
@@ -363,4 +370,160 @@ class EvaluacionCandidatosServiceTests {
                                 LocalDateTime.parse("2026-01-10T16:00"),
                                 10)));
     }
+    @Test
+    void conservaElCierreSemanalAunqueTavilyDevuelvaUnHorarioIncompleto() {
+        String horarioSemanal = "Mo off; Tu-Su 09:00-18:00";
+
+        LugarDto museo = new LugarDto(
+                "museo",
+                "Museo Azul",
+                "Calle 1",
+                40.4,
+                -3.7,
+                List.of(CategoriaTuristica.ARTE_MUSEOS),
+                List.of(),
+                horarioSemanal);
+
+        LocalDateTime lunes = LocalDateTime.of(2026, 11, 23, 10, 0);
+
+        ConfiguracionItinerarioDto viajeLunes =
+                new ConfiguracionItinerarioDto(
+                        viaje.destino(),
+                        new FechaHoraDto(lunes, lunes.plusHours(8), 1),
+                        viaje.alojamiento(),
+                        viaje.preferencias());
+
+        when(config.validar(viajeLunes)).thenReturn(viajeLunes);
+        when(prep.preparar(viajeLunes)).thenReturn(List.of(museo));
+
+        when(ai.evaluar(anyList(), anyList(), anyString()))
+                .thenReturn(Map.of(
+                        "museo",
+                        new ValoracionGemini(
+                                80, null, 60, "Museo", "Interés artístico")));
+
+        String fuente = "https://museo.example/horarios";
+
+        HallazgoGemini horarioExterno = new HallazgoGemini(
+                null,
+                List.of(fuente),
+                null,
+                null,
+                null,
+                "Horario 09:00 - 18:00",
+                null,
+                null,
+                fuente,
+                null,
+                null,
+                null);
+
+        when(research.investigar(anyList(), anyString()))
+                .thenReturn(Map.of("museo", horarioExterno));
+
+        CandidatoEvaluadoDto candidato =
+                service.evaluar(viajeLunes).candidatos().getFirst();
+
+        assertEquals(horarioSemanal, candidato.horario());
+        assertEquals("Geoapify (sin verificar)", candidato.horarioFuente());
+        assertEquals(ScheduleStatus.UNVERIFIED, candidato.estadoHorario());
+
+        EstadoHorarioVisita estado = new EvaluadorHorarioService()
+                .evaluar(candidato, lunes, lunes.plusHours(1));
+
+        assertEquals(
+                EstadoHorarioVisita.CONFLICTO_SEGUN_FUENTE,
+                estado);
+    }
+    @Test
+    void usaElHorarioExternoCuandoGeoapifyNoAportaHorario() {
+        preparar(List.of(lugar(1)));
+
+        when(ai.evaluar(anyList(), anyList(), anyString()))
+                .thenReturn(Map.of(
+                        "id1",
+                        new ValoracionGemini(
+                                80, null, 60, "Museo", "Interés artístico")));
+
+        String fuente = "https://museo.example/horarios";
+
+        HallazgoGemini hallazgo = new HallazgoGemini(
+                null,
+                List.of(fuente),
+                null,
+                null,
+                null,
+                "Horario 09:00 - 18:00",
+                null,
+                null,
+                fuente,
+                null,
+                null,
+                null);
+
+        when(research.investigar(anyList(), anyString()))
+                .thenReturn(Map.of("id1", hallazgo));
+
+        CandidatoEvaluadoDto candidato =
+                service.evaluar(viaje).candidatos().getFirst();
+
+        assertEquals("Horario 09:00 - 18:00", candidato.horario());
+        assertEquals("Fuentes externas", candidato.horarioFuente());
+        assertEquals(ScheduleStatus.PARTIAL, candidato.estadoHorario());
+        assertTrue(candidato.fuentes().contains(fuente));
+    }
+    @ParameterizedTest
+    @CsvSource({
+        "id1,Lugar compartido,Otra dirección",
+        "alias,HOTEL MUSEO,Otra dirección",
+        "alias,Lugar compartido,CALLE DE PRUEBA 123"
+    })
+    @SuppressWarnings("unchecked")
+    void noEnviaElAlojamientoAGeminiSiCoincideConUnCandidato(
+        String identificador,
+        String nombre,
+        String direccion) {
+
+        var alojamiento = new AlojamientoDto(
+                "id1", "Hotel Museo", "Calle de Prueba 123", 1.0, 1.0);
+
+        var entrada = new ConfiguracionItinerarioDto(
+                viaje.destino(),
+                viaje.disponibilidad(),
+                alojamiento.nombre(),
+                viaje.preferencias(),
+                viaje.ritmo(),
+                alojamiento);
+
+        var compartido = new LugarDto(
+                identificador, nombre, direccion, 1.0, 1.0,
+                List.of(CategoriaTuristica.ARTE_MUSEOS), List.of(), null);
+
+        var otro = new LugarDto(
+                "id2", "Otro museo", "Avenida de Prueba 20", 1.1, 1.1,
+                List.of(CategoriaTuristica.ARTE_MUSEOS), List.of(), null);
+
+        when(config.validar(entrada)).thenReturn(entrada);
+        when(prep.preparar(entrada)).thenReturn(List.of(compartido, otro));
+        when(research.disponible()).thenReturn(false);
+
+        when(ai.evaluar(anyList(), anyList(), anyString())).thenReturn(
+                Map.of(
+                        "id2", new ValoracionGemini(
+                                80, null, 60, "Museo", "Interés cultural")));
+
+        var resultado = service.evaluar(entrada);
+
+        ArgumentCaptor<List<LugarDto>> captor =
+                ArgumentCaptor.forClass(List.class);
+
+        verify(ai).evaluar(
+                captor.capture(),
+                eq(entrada.preferencias().intereses()),
+                eq(entrada.destino().nombre()));
+
+        assertEquals(List.of(otro), captor.getValue());
+        assertEquals(2, resultado.candidatos().size());
+        assertFalse(resultado.fallback());
+   }
 }

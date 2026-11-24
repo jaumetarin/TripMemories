@@ -12,6 +12,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 
 import java.util.List;
+import java.util.stream.IntStream;
+import tools.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -29,6 +31,42 @@ import es.upv.pin.backend.dto.PuntoRutaDto;
 import es.upv.pin.backend.dto.RespuestaMatrizOrsDto;
 
 class OpenRouteServiceClientTest {
+
+    @Test
+    void admiteCincuentaLugaresMasElOrigen() {
+        var constructor = RestClient.builder().baseUrl("https://api.heigit.org/openrouteservice");
+        var servidor = MockRestServiceServer.bindTo(constructor).build();
+        var cliente = new OpenRouteServiceClient(constructor.build(), "clave-de-prueba");
+        var puntos = IntStream.range(0, 51)
+                .mapToObj(i -> new PuntoRutaDto("punto-" + i, 40.4 + i * .001, -3.7)).toList();
+        var matriz = IntStream.range(0, 51).mapToObj(i -> IntStream.range(0, 51)
+                .mapToObj(j -> i == j ? 0.0 : 10.0).toList()).toList();
+        var json = new ObjectMapper();
+        servidor.expect(requestTo("https://api.heigit.org/openrouteservice/v2/matrix/foot-walking"))
+                .andExpect(content().json(json.writeValueAsString(java.util.Map.of(
+                        "locations", puntos.stream().map(p -> List.of(p.longitud(), p.latitud())).toList(),
+                        "metrics", List.of("distance", "duration"), "units", "m")), JsonCompareMode.STRICT))
+                .andRespond(withSuccess(json.writeValueAsString(new RespuestaMatrizOrsDto(matriz, matriz)),
+                        MediaType.APPLICATION_JSON));
+
+        var respuesta = cliente.calcularMatriz(puntos);
+
+        assertEquals(51, respuesta.distances().size());
+        assertEquals(51, respuesta.durations().getFirst().size());
+        servidor.verify();
+    }
+
+    @Test
+    void rechazaCincuentaYDosPuntosSinConsultarAlProveedor() {
+        var constructor = RestClient.builder().baseUrl("https://api.heigit.org/openrouteservice");
+        var servidor = MockRestServiceServer.bindTo(constructor).build();
+        var cliente = new OpenRouteServiceClient(constructor.build(), "clave-de-prueba");
+        var puntos = IntStream.range(0, 52)
+                .mapToObj(i -> new PuntoRutaDto("punto-" + i, 40.4, -3.7)).toList();
+
+        assertThrows(IllegalArgumentException.class, () -> cliente.calcularMatriz(puntos));
+        servidor.verify();
+    }
 
     @Test
     void enviaCoordenadasLonLatYRecuperaLaMatriz() {

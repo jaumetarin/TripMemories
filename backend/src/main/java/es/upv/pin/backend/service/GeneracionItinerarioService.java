@@ -20,6 +20,7 @@ import es.upv.pin.backend.model.NivelGasto;
 import es.upv.pin.backend.model.ScheduleStatus;
 import es.upv.pin.backend.model.TipoBloqueItinerario;
 import es.upv.pin.backend.model.EstadoLugar;
+import es.upv.pin.backend.model.LimitesItinerario;
 import es.upv.pin.backend.dto.LugarDto;
 import es.upv.pin.backend.exception.ObligatoriosPendientesException;
 import java.time.Duration;
@@ -37,7 +38,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class GeneracionItinerarioService {
-    private static final int MAXIMO_PUNTOS = 50;
+    private static final int MAXIMO_LUGARES = LimitesItinerario.MAXIMO_LUGARES;
+    private static final int MAXIMO_PUNTOS_RUTA = LimitesItinerario.MAXIMO_PUNTOS_RUTA;
+    private static final String ID_PUNTO_INICIO = "referencia:inicio";
     private static final int BANDA_PRIORIDAD = 5;
     private static final int HUECO_PARCIAL_MINUTOS = 15;
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(GeneracionItinerarioService.class);
@@ -77,6 +80,7 @@ public class GeneracionItinerarioService {
 
     public ItinerarioGeneradoDto generar(ConfiguracionItinerarioDto entrada) {
         ConfiguracionItinerarioDto config = configuraciones.validar(entrada);
+        PuntoRutaDto inicio = puntoInicio(config);
         List<Ventana> ventanas = ventanas(config.disponibilidad());
         List<String> advertencias = new ArrayList<>();
 
@@ -103,7 +107,8 @@ public class GeneracionItinerarioService {
                     seleccionados.stream().map(CandidatoEvaluadoDto::lugar).toList());
             // Una sugerencia de comida nunca desplaza un lugar elegido por el usuario.
             restaurantes = comidas.opciones().stream().filter(r -> !reservado(r, config))
-                    .limit(MAXIMO_PUNTOS - prioritarios).toList();
+                    .limit(Math.max(0, MAXIMO_PUNTOS_RUTA - prioritarios - 1))
+                    .toList();
             advertencias.addAll(comidas.advertencias());
         }
         Set<String> idsRestaurantes = new HashSet<>();
@@ -112,10 +117,23 @@ public class GeneracionItinerarioService {
                 .filter(c -> !idsRestaurantes.contains(c.lugar().id()))
                 .toList();
         List<CandidatoEvaluadoDto> pendientes = seleccionados.stream()
-                .limit(MAXIMO_PUNTOS - restaurantes.size()).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-        List<PuntoRutaDto> puntos = new ArrayList<>(pendientes.stream()
-                .map(c -> new PuntoRutaDto(c.lugar().id(), c.lugar().latitud(), c.lugar().longitud())).toList());
-        restaurantes.forEach(r -> puntos.add(new PuntoRutaDto(r.id(), r.latitud(), r.longitud())));
+                .limit(MAXIMO_PUNTOS_RUTA - restaurantes.size() - 1)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+
+        int candidatosEnMatriz = pendientes.size();
+
+        List<PuntoRutaDto> puntos = new ArrayList<>();
+        puntos.add(inicio);
+
+        pendientes.forEach(c -> puntos.add(new PuntoRutaDto(
+                c.lugar().id(),
+                c.lugar().latitud(),
+                c.lugar().longitud())));
+
+        restaurantes.forEach(r -> puntos.add(new PuntoRutaDto(
+                r.id(),
+                r.latitud(),
+                r.longitud())));
         Set<String> idsEnMatriz = new HashSet<>();
         puntos.forEach(p -> idsEnMatriz.add(p.id()));
         candidatos.stream().filter(c -> !idsEnMatriz.contains(c.lugar().id())).forEach(c ->
@@ -142,7 +160,7 @@ public class GeneracionItinerarioService {
         if (conCoordenadas < candidatos.size()) {
             advertencias.add("Algunos lugares han quedado fuera porque no conocemos su ubicación exacta.");
         }
-        if (conCoordenadas > MAXIMO_PUNTOS || seleccionados.size() > pendientes.size()) {
+        if (conCoordenadas > MAXIMO_LUGARES || seleccionados.size() > pendientes.size()) {
             advertencias.add("Hemos limitado los lugares que se comparan para calcular los desplazamientos; algunas opciones han quedado fuera.");
         }
         if (tramos.size() < puntos.size() * (puntos.size() - 1)
@@ -173,7 +191,7 @@ public class GeneracionItinerarioService {
             Map<CategoriaTuristica, Integer> categoriasDelDia =
                     new EnumMap<>(CategoriaTuristica.class);
             LocalDateTime cursor = ventana.inicio();
-            String anterior = null;
+            String anterior = inicio.id();
             LocalDateTime comidaInicio = ventana.fecha().atTime(config.ritmo().comidaInicio());
             LocalDateTime comidaFin = ventana.fecha().atTime(config.ritmo().comidaFin());
             boolean comidaCompleta = !comidaInicio.isBefore(ventana.inicio()) && !comidaFin.isAfter(ventana.fin());
@@ -258,9 +276,20 @@ public class GeneracionItinerarioService {
                             || CriteriosItinerario.repeticion(c.lugar(), categoriasActivas, categoriasAutomaticas) == turno).toList();
                 }
                 if (factibles.isEmpty()) {
-                    LocalDateTime siguiente = anterior != null && !comidaDesdeAqui.isEmpty() ? null : siguienteInicioConVisita(
-                            paraSiguienteHueco, anterior, rutas, cursor, limite,
-                            config.ritmo().margenMinutos(), conflictosHorario);
+                    boolean priorizarComida = anterior != null
+                            && !anterior.equals(inicio.id())
+                            && !comidaDesdeAqui.isEmpty();
+
+                    LocalDateTime siguiente = priorizarComida
+                            ? null
+                            : siguienteInicioConVisita(
+                                    paraSiguienteHueco,
+                                    anterior,
+                                    rutas,
+                                    cursor,
+                                    limite,
+                                    config.ritmo().margenMinutos(),
+                                    conflictosHorario);
                     if (siguiente != null) {
                         bloques.add(bloqueSimple(TipoBloqueItinerario.TIEMPO_LIBRE,
                                 cursor, siguiente, "Espera hasta el horario de una visita"));
@@ -414,10 +443,12 @@ public class GeneracionItinerarioService {
         if (hayCondicionadas) {
             advertencias.add("Confirma los horarios y precios antes de ir: no hemos podido comprobar toda la información.");
         }
+
         if (hayVisitas) {
-            advertencias.add("Los trayectos del plan no incluyen la ida y vuelta a tu alojamiento. Reserva tiempo para esos desplazamientos.");
-        }
+        advertencias.add(
+                "El recorrido no incluye la vuelta al punto de inicio. Reserva tiempo para ese desplazamiento.");        }
         if (hayComidaGenerica) {
+
             advertencias.add("Puedes elegir dónde comer durante la pausa. El tiempo para llegar al restaurante no está calculado.");
         }
         comprobarSelecciones(config, dias, idsEnMatriz, conflictosHorario, advertencias);
@@ -429,8 +460,8 @@ public class GeneracionItinerarioService {
                 + String.join("; ", validacion.incidencias()));
         return new ItinerarioGeneradoDto(
                 List.copyOf(dias), advertencias.stream().distinct().toList(), parcial || validacion.parcial(),
-                candidatos.size(), puntos.size(), List.copyOf(candidatos), resultado.fallback());
-    }
+                candidatos.size(), candidatosEnMatriz, List.copyOf(candidatos), resultado.fallback());
+            }
 
     /** Se priorizan los obligatorios cuya última oportunidad compatible termina antes. */
     private LocalDateTime ultimoInicio(CandidatoEvaluadoDto candidato, List<Ventana> ventanas,
@@ -503,6 +534,26 @@ public class GeneracionItinerarioService {
         return new BloqueItinerarioDto(tipo, inicio, fin, null,
                 null, null, null, null, null, false, etiqueta);
     }
+    
+    private static PuntoRutaDto puntoInicio(
+        ConfiguracionItinerarioDto configuracion) {
+
+    var alojamiento = configuracion.alojamientoLocalizado();
+
+    if (alojamiento != null) {
+        return new PuntoRutaDto(
+                ID_PUNTO_INICIO,
+                alojamiento.latitud(),
+                alojamiento.longitud());
+    }
+
+    var destino = configuracion.destino();
+
+    return new PuntoRutaDto(
+            ID_PUNTO_INICIO,
+            destino.latitud(),
+            destino.longitud());
+}
 
     private static List<Ventana> ventanas(FechaHoraDto fechas) {
         List<Ventana> resultado = new ArrayList<>();
@@ -685,7 +736,7 @@ public class GeneracionItinerarioService {
                 new EnumMap<>(CategoriaTuristica.class);
         var activas = CriteriosItinerario.categorias(config);
 
-        while (!restantes.isEmpty() && elegidos.size() < MAXIMO_PUNTOS) {
+        while (!restantes.isEmpty() && elegidos.size() < MAXIMO_LUGARES) {
             int grupo = ReglasSeleccionLugares.orden(restantes.getFirst().lugar(), config);
             var opciones = restantes.stream().filter(c -> ReglasSeleccionLugares.orden(c.lugar(), config) == grupo).toList();
             if (grupo == 2) {

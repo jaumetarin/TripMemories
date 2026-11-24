@@ -185,8 +185,17 @@ Los campos incompletos, las ventanas vacías o invertidas y los intervalos de m�
 de diez días bloquean el avance con un mensaje que permite corregirlos. Al
 continuar se abre **Preferencias y gasto**, con un resumen lateral de los datos
 validados. **Atrás** regresa al formulario conservando sus valores y el destino.
-El alojamiento es texto libre opcional de hasta 250 caracteres, mantenido solo
-en el frontend. Cambiar de sección o recargar abandona el borrador sin guardar.
+El alojamiento es opcional. Se busca por nombre o dirección dentro del destino
+seleccionado y debe elegirse una sugerencia con coordenadas válidas. Si se escribe
+texto sin seleccionar una ubicación, se impide continuar hasta seleccionar una
+sugerencia o vaciar el campo. El borrador se conserva durante los pasos del
+formulario y se pierde al recargar o abandonar la creación.
+
+La llegada debe ser hoy o un día posterior. El calendario de salida permite
+seleccionar desde el día de llegada; el backend comprueba que la salida sea
+posterior considerando fecha y hora. Las fechas concretas de los ejemplos son
+ilustrativas: para probar los endpoints deben actualizarse a fechas válidas.
+Las pruebas automatizadas utilizan un reloj fijo.
 
 | Llegada | Salida | Resultado esperado al continuar |
 | --- | --- | --- |
@@ -362,7 +371,8 @@ El paso de la PA que pide generar el itinerario queda pendiente del generador.
     "salida": "2026-11-12T18:00",
     "duracionDias": 3
   },
-  "alojamiento": "Hotel Madrid",
+  "alojamiento": "",
+  "alojamientoLocalizado": null,
   "preferencias": {
     "intereses": ["GASTRONOMIA"],
     "categoriasExcluidas": ["ARTE_MUSEOS"],
@@ -376,9 +386,11 @@ El paso de la PA que pide generar el itinerario queda pendiente del generador.
 `ConfiguracionItinerarioService.validar` comprueba destino y coordenadas,
 reutiliza `FechaHoraService` y `PreferenciasService`, recalcula la duración
 ignorando la enviada por el cliente y devuelve listas sin duplicados y sin
-referencias mutables a las listas de entrada. El alojamiento es opcional,
-se recortan los espacios exteriores y su máximo es 250 caracteres.
-
+referencias mutables a las listas de entrada. 
+El alojamiento es opcional. Su texto admite hasta 250 caracteres y se recortan
+los espacios exteriores. Si se indica, debe incluir `alojamientoLocalizado`
+con identificador, nombre, dirección y coordenadas válidas. El texto debe
+coincidir con el nombre o la dirección de la selección.
 El destino se comprueba estructuralmente (identificador y nombre presentes,
 coordenadas finitas y dentro de rango); esta operación no consulta Geoapify
 ni acredita por sí sola la identidad de un lugar. Los `Double` de `DestinoDto`
@@ -712,7 +724,7 @@ application.properties contiene únicamente la referencia a esa variable.
 POST /api/desplazamientos/calcular
 
 Recibe una lista de puntos con `id`, `latitud` y `longitud`.
-Admite hasta 50 puntos por cálculo, con identificadores únicos.
+Admite hasta 51 puntos por cálculo, con identificadores únicos: hasta 50 lugares y un origen.
 
 Devuelve los desplazamientos entre lugares distintos, con distancia en metros,
 duración en segundos, identificadores de origen y destino, estado y fuente.
@@ -738,8 +750,8 @@ recorridos no disponibles; los avisos de un plan generado se presentan en su API
 ## UT12: generación del plan diario
 
 `POST /api/itinerarios/generar` recibe como JSON la misma configuración de
-`/api/itinerarios/confirmar-configuracion`: `destino`, `disponibilidad`,
-`alojamiento` y `preferencias`. El servicio valida la configuración y genera
+`/api/itinerarios/confirmar-configuracion`: `destino`, `disponibilidad`, `alojamiento`, `alojamientoLocalizado`,
+`preferencias` y `ritmo`.. El servicio valida la configuración y genera
 el itinerario a partir de los candidatos evaluados y sus desplazamientos a pie.
 La respuesta tiene `Cache-Control: no-store` y contiene:
 
@@ -751,7 +763,8 @@ La respuesta tiene `Cache-Control: no-store` y contiene:
 - `parcial`: indica que hay un día sin visitas o sin ventana útil, un hueco
   de tiempo libre de al menos 15 minutos o lugares que no se han programado.
 - `candidatosEvaluados` y `candidatosEnMatriz`: contadores de lugares evaluados
-  y puntos considerados en la matriz de recorridos.
+  y candidatos turísticos incluidos en la matriz de recorridos.
+El origen y los restaurantes no se cuentan en `candidatosEnMatriz`.
 
 La heurística distribuye visitas y traslados dentro de la ventana diaria de
 10:00 a 18:00, recortada por la llegada y la salida, sin solapamientos ni
@@ -761,7 +774,7 @@ se presentan como propuestas condicionadas: el texto disponible no confirma
 que el lugar está abierto en la fecha y hora elegidas.
 La prioridad combina afinidad y relevancia estimada: `(2 × afinidad + relevancia) / 3`.
 Sin estimación de relevancia se utiliza la afinidad. Las selecciones manuales se
-protegen antes de recortar la muestra de IA (120) y la matriz (50).
+protegen antes de recortar la muestra de IA (120) y los lugares para rutas (50, más el origen).
 Las visitas automáticas se reparten por interés antes de comparar prioridades, tanto
 en esos recortes como en el plan final. Dentro del turno de una categoría se admite
 una banda de cinco puntos de prioridad; las referencias publicadas del lugar y sus
@@ -769,12 +782,21 @@ nombres internacionales ayudan a priorizar referentes. Después se considera un 
 dentro de la distancia deseada, menor tiempo a pie y gasto acorde.
 La distancia deseada es flexible y un coste desconocido no se considera gratis.
 
-La matriz de OpenRouteService admite hasta 50 puntos con coordenadas
-válidas, incluyendo restaurantes si se proponen; si hay más, se limita la selección y se añade un aviso. Una ruta
+La aplicación admite matrices de hasta 51 puntos con coordenadas
+válidas: un origen y hasta 50 lugares entre visitas y restaurantes. Los restaurantes
+solo ocupan puestos libres después de reservar los lugares seleccionados. Si hay más
+candidatos, se limita la muestra y se añade un aviso. Una ruta
 concreta no disponible puede causar un plan parcial con advertencia, sin
 inventar tiempos. Si falla el proveedor en conjunto, la respuesta es HTTP 503.
 Con menos de dos puntos geolocalizados no se consulta ORS. Si ninguna fecha
 tiene tiempo disponible, no se consulta ningún proveedor.
+
+Los límites se definen en `LimitesItinerario`: 50 lugares y 51 puntos de ruta,
+contando el origen. El cliente y el servicio de desplazamientos rechazan 52 puntos.
+La comprobación real del 24/11/2026 recibió matrices de distancia y duración de
+51 × 51 de OpenRouteService. Las pruebas simuladas comprueban además que 50
+obligatorios con tiempo y rutas suficientes se conservan, con y sin alojamiento,
+y que un restaurante sugerido no desplaza selecciones manuales.
 El JSON mal formado o una configuración inválida reciben HTTP 400. Ambos
 errores incluyen un objeto JSON con `mensaje`.
 
@@ -829,7 +851,7 @@ horario de fuente no se propone.
 Si no hay restaurante viable, la tarjeta dice «Pausa para comer. Puedes elegir
 un restaurante por la zona», sin un aviso de disponibilidad o reserva para un
 local inexistente. El aviso general recuerda que ese desplazamiento no está
-calculado. Las visitas y restaurantes comparten el límite de 50 puntos de ORS.
+calculado. El origen, las visitas y los restaurantes comparten el límite interno de 51 puntos de rutas.
 
 La validación final comprueba ventanas, orden, solapes, duraciones,
 desplazamientos, duplicados y exclusiones. Las visitas incompatibles con un
@@ -1101,6 +1123,53 @@ de ocio siguen disponibles. La muestra de Gemini continúa limitada a 120 candid
 Al probar cambios de catálogo o de selección, reinicia el backend y recarga la web
 para preparar una configuración nueva, sin conservar un resultado anterior en pantalla.
 
+## UT18: alojamiento opcional y origen del recorrido
+
+El alojamiento se busca mediante
+`GET /api/alojamientos?texto=...&destinoId=...`.
+
+El frontend espera una pausa de 350 ms y al menos tres caracteres antes de
+consultar. El backend devuelve hasta cinco sugerencias válidas, sin duplicados.
+Una búsqueda sin coincidencias devuelve una lista vacía; un fallo del proveedor
+se comunica como error, sin inventar ubicaciones.
+
+La configuración conserva:
+- `alojamiento`: texto del campo.
+- `alojamientoLocalizado`: selección con `id`, `nombre`, `direccion`,
+  `latitud` y `longitud`, o `null` si no se indica alojamiento.
+
+Editar el texto invalida la selección. Cambiar de destino borra el alojamiento.
+Las consultas inválidas reciben HTTP 400 y la falta de clave o un fallo de
+Geoapify reciben HTTP 503, con un campo `mensaje`.
+
+Cada día comienza en las coordenadas del alojamiento seleccionado. Si no hay
+alojamiento, se utiliza la referencia geográfica del destino. El origen ocupa
+un puesto adicional a los 50 lugares, dentro del límite interno de 51 puntos de rutas.
+
+El primer trayecto y su margen cuentan dentro de la disponibilidad diaria.
+Si no existe una ruta válida, no se supone un desplazamiento de cero minutos.
+El recorrido no incluye el regreso al punto de inicio.
+
+La revisión muestra la ubicación elegida. El resultado identifica el origen
+en los desplazamientos y lo representa mediante el marcador «Inicio» del mapa.
+
+Antes de enviar candidatos a Gemini, se excluyen los que coincidan con el
+alojamiento por identificador, nombre o dirección normalizados. Estos lugares
+se conservan en el backend con su evaluación local.
+
+Las claves `GEOAPIFY_API_KEY` y `ORS_API_KEY` se configuran en el entorno del
+backend. Nunca deben incluirse en el repositorio ni en variables `VITE_*`.
+
+Se han comprobado los recorridos con alojamiento y sin él, la selección y
+borrado de sugerencias, el cambio de destino, los primeros desplazamientos
+y la representación del origen.
+
+Para ejecutar las pruebas del backend, desde `backend`:
+
+```powershell
+.\mvnw.cmd '-Dspring.flyway.enabled=false' test
+```
+
 ### UT19: seleccionar lugares y prioridades
 
 Tras las preferencias aparece el paso opcional **Elegir lugares**. La lista y el mapa
@@ -1141,7 +1210,7 @@ búsquedas equivalentes; se conserva la metadata seleccionada al recortar el cat
 La sesión sigue caducando a las dos horas de inactividad. Tras reiniciar el servidor o
 perder la sesión hay que revisar los lugares antes de confirmar. No se añaden claves API.
 
-Se admiten hasta 50 selecciones, en línea con el máximo de puntos de rutas. Los elegidos
+Se admiten hasta 50 selecciones y se reserva un punto adicional para el origen. Los elegidos
 se conservan antes del recorte de IA y de rutas. Aunque se reduzca `ITINERARIOS_MAX_CANDIDATOS`,
 la muestra incluye las selecciones manuales (como máximo 120 candidatos y tres lotes de IA).
 Un itinerario aceptado debe incluir todos los obligatorios. Se programan primero,

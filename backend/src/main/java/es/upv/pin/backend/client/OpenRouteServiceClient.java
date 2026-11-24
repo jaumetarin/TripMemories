@@ -17,6 +17,7 @@ import java.util.Map;
 
 import es.upv.pin.backend.dto.PuntoRutaDto;
 import es.upv.pin.backend.dto.RespuestaMatrizOrsDto;
+import es.upv.pin.backend.model.LimitesItinerario;
 
 @Component
 public class OpenRouteServiceClient {
@@ -35,9 +36,11 @@ public class OpenRouteServiceClient {
         this.apiKey = apiKey;
     }
     public RespuestaMatrizOrsDto calcularMatriz(List<PuntoRutaDto> puntos) {
-        if (puntos == null || puntos.size() < 2 || puntos.size() > 50) {
+        if (puntos == null || puntos.size() < 2
+                || puntos.size() > LimitesItinerario.MAXIMO_PUNTOS_RUTA) {
             throw new IllegalArgumentException(
-                    "Debes indicar entre 2 y 50 puntos para calcular desplazamientos.");
+                    "Debes indicar entre 2 y " + LimitesItinerario.MAXIMO_PUNTOS_RUTA
+                            + " puntos para calcular desplazamientos.");
         }
 
         List<List<Double>> coordenadas = new ArrayList<>();

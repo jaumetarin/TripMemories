@@ -7,6 +7,14 @@ export interface Destino {
   longitud: number
 }
 
+export interface Alojamiento {
+  id: string
+  nombre: string
+  direccion: string
+  latitud: number
+  longitud: number
+}
+
 export interface FechaHora {
   llegada: string
   salida: string
@@ -17,6 +25,7 @@ export interface ConfiguracionItinerario {
   destino: Destino
   disponibilidad: FechaHora
   alojamiento: string
+  alojamientoLocalizado: Alojamiento | null
   preferencias: Preferencias
   ritmo: RitmoDiario
   selecciones: SeleccionLugar[]
@@ -207,7 +216,10 @@ function esConfiguracionItinerario(valor: unknown): valor is ConfiguracionItiner
     && formatoFechaHora.test(valor.disponibilidad.salida)
     && typeof valor.disponibilidad.duracionDias === 'number'
     && Number.isInteger(valor.disponibilidad.duracionDias)
-    && typeof valor.alojamiento === 'string' && esPreferencias(valor.preferencias)
+    && typeof valor.alojamiento === 'string'
+    && (valor.alojamientoLocalizado === null
+      || esAlojamiento(valor.alojamientoLocalizado))
+    && esPreferencias(valor.preferencias)
     && esRitmoDiario(valor.ritmo)
     && Array.isArray(valor.selecciones) && valor.selecciones.every(esSeleccionLugar)
 }
@@ -309,6 +321,56 @@ export async function prepararCandidatos(
   if (!Array.isArray(datos) || !datos.every(esLugar)) {
     throw new Error('El servidor ha devuelto una lista de lugares no válida.')
   }
+  return datos
+}
+function esAlojamiento(valor: unknown): valor is Alojamiento {
+  return esObjeto(valor)
+    && typeof valor.id === 'string' && valor.id.trim().length > 0
+    && typeof valor.nombre === 'string' && valor.nombre.trim().length > 0
+    && typeof valor.direccion === 'string' && valor.direccion.trim().length > 0
+    && typeof valor.latitud === 'number' && Number.isFinite(valor.latitud)
+    && valor.latitud >= -90 && valor.latitud <= 90
+    && typeof valor.longitud === 'number' && Number.isFinite(valor.longitud)
+    && valor.longitud >= -180 && valor.longitud <= 180
+}
+export async function buscarAlojamientos(
+  texto: string,
+  destinoId: string,
+  signal: AbortSignal
+): Promise<Alojamiento[]> {
+  const consulta = texto.trim()
+
+  if (consulta.length < 3) return []
+
+  const parametros = new URLSearchParams({
+    texto: consulta,
+    destinoId,
+  })
+
+  const respuesta = await fetch(`/api/alojamientos?${parametros}`, {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  })
+
+  const datos: unknown = await respuesta.json().catch(() => null)
+
+  if (!respuesta.ok) {
+    throw new Error(
+      esObjeto(datos) && typeof datos.mensaje === 'string'
+        ? datos.mensaje
+        : 'No se han podido buscar los alojamientos.'
+    )
+  }
+
+  if (!Array.isArray(datos)
+    || datos.length > 5
+    || !datos.every(esAlojamiento)) {
+    throw new Error(
+      'El servidor ha devuelto una lista de alojamientos no válida.'
+    )
+  }
+
   return datos
 }
 

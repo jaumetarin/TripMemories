@@ -43,7 +43,7 @@ public class TavilyResearchClient implements ResearchProvider {
             "(?iu)\\b(?:es|son|fue|alberga|ofrece|cuenta con|se encuentra|se dedica|"
                     + "is|are|was|houses|features|offers|located)\\b");
     // Evita interpretar como general una gratuidad negada o condicionada.
-    private static final Pattern GRATUIDAD_DUDOSA = Pattern.compile(
+    private static final Pattern TARIFA_CONDICIONADA = Pattern.compile(
             "(?iu)\\b(?:"
                     + "no|not|never|nunca"
                     + "|a\\s+partir|desde|hasta|antes|despu[eé]s"
@@ -51,9 +51,18 @@ public class TavilyResearchClient implements ResearchProvider {
                     + "|para|for|si|if|cuando|when"
                     + "|donaci[oó]n|donativo|donation|donations"
                     + "|solo|s[oó]lo|only|menores|niñ[oa]s?|children"
-                    + "|domingos?|sundays?|excepto|except"
+                    + "|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bados?|domingos?"
+                    + "|mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?"
+                    + "|estudiantes?|students?|jubilad[oa]s?|pensionistas?|seniors?"
+                    + "|residentes?|residents?|miembros?|members?"
+                    + "|reducid[oa]s?|reduced|excepto|except"
                     + "|condiciones|conditions|ciertos|certain|d[ií]as|days"
-                    + ")\\b");
+                    + ")\\b|\\b\\d{1,2}:\\d{2}\\b");
+
+    private static final Pattern RANGO_O_GRATUIDAD = Pattern.compile(
+            "(?iu)\\b(?:gratis|gratuit[ao]s?|free)\\b"
+                    + "|\\d\\s*(?:[-–]|a|to)\\s*\\d");
+
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http;
     private final String key;
@@ -110,25 +119,24 @@ public class TavilyResearchClient implements ResearchProvider {
                 }
                 Matcher precio = PRECIO.matcher(texto), horario = HORA.matcher(texto);
                 if (cantidad == null && precio.find()) {
-                    String importe = precio.group(1) != null ? precio.group(1) : precio.group(2);
+                    String importe = precio.group(1) != null
+                            ? precio.group(1)
+                            : precio.group(2);
+
                     String extracto = precio.group();
-                    // Evita rangos, precios con condiciones y tarifas específicas.
-                    String contexto =
-                            texto.substring(
-                                    Math.max(0, precio.start() - 60),
-                                    Math.min(texto.length(), precio.end() + 60));
-                    String contextoSinHoras =
-                            contexto.replaceAll(
-                                    "\\d{1,2}[:.]\\d{2}\\s*[-–]\\s*\\d{1,2}[:.]\\d{2}", "");
-                    if (!Pattern.compile(
-                                    "(?iu)\\b(desde|from|niñ[oa]s?|children|reducid[oa]|reduced|hasta|to|gratis|free)\\b|\\d\\s*[-–]\\s*\\d")
-                            .matcher(contextoSinHoras)
-                            .find()) {
+
+                    String contexto = contextoFrase(
+                            texto, precio.start(), precio.end());
+
+                    if (!TARIFA_CONDICIONADA.matcher(contexto).find()
+                            && !RANGO_O_GRATUIDAD.matcher(contexto).find()) {
                         cantidad = Double.valueOf(importe.replace(',', '.'));
-                        moneda =
-                                precio.group(3) == null || "€".equals(precio.group(3))
+
+                        moneda = precio.group(3) == null
+                                || "€".equals(precio.group(3))
                                         ? "EUR"
                                         : precio.group(3).toUpperCase(Locale.ROOT);
+
                         fuentePrecio = url;
                         hechos.add(extracto);
                     }
@@ -141,7 +149,7 @@ public class TavilyResearchClient implements ResearchProvider {
                                 texto, gratis.start(), gratis.end());
 
                         // Solo asignamos cero si no detectamos negaciones ni restricciones.
-                        if (!GRATUIDAD_DUDOSA.matcher(contexto).find()) {
+                        if (!TARIFA_CONDICIONADA.matcher(contexto).find()) {
                             cantidad = 0.0;
                             moneda = "EUR";
                             fuentePrecio = url;

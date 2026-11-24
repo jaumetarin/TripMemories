@@ -29,13 +29,20 @@ class PreparacionCandidatosServiceTests {
         var constructor = RestClient.builder().baseUrl("https://api.geoapify.com");
         proveedor = MockRestServiceServer.bindTo(constructor).ignoreExpectOrder(true).build();
         servicio = new PreparacionCandidatosService(new GeoapifyClient(constructor.build(), "clave-de-prueba"),
-                new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()), clasificacion);
+                new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService()), clasificacion);
     }
 
     private ConfiguracionItinerarioDto configuracion(String intereses, String exclusiones) {
         return JsonMapper.builder().build().readValue("""
                 {"destino":{"id":"madrid","nombre":"Madrid","region":"Madrid","pais":"España","latitud":40.4,"longitud":-3.7},
                  "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-12T18:00"},"alojamiento":"Hotel",
+                "alojamientoLocalizado":{
+                "id":"hotel-prueba",
+                "nombre":"Hotel",
+                "direccion":"Calle de Prueba 10",
+                "latitud":40.4168,
+                "longitud":-3.7038
+                },
                  "preferencias":{"intereses":[%s],"categoriasExcluidas":[],"subcategoriasExcluidas":[%s],
                   "nivelGasto":"ECONOMICO","distanciaKm":3}}
                 """.formatted(intereses, exclusiones), ConfiguracionItinerarioDto.class);

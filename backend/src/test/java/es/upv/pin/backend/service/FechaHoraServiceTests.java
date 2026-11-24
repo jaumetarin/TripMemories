@@ -11,7 +11,7 @@ import es.upv.pin.backend.dto.FechaHoraDto;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FechaHoraServiceTests {
-    private final FechaHoraService servicio = new FechaHoraService();
+    private final FechaHoraService servicio = new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC));
 
     @ParameterizedTest
     @CsvSource({
@@ -105,4 +105,43 @@ class FechaHoraServiceTests {
     private FechaHoraDto intervalo(String llegada, String salida) {
         return new FechaHoraDto(LocalDateTime.parse(llegada), LocalDateTime.parse(salida), null);
     }
+    @Test
+void rechazaUnaLlegadaAnteriorAlDiaActual() {
+    var entrada = intervalo(
+            "2025-12-31T10:00",
+            "2026-01-01T18:00");
+
+    var error = assertThrows(
+            IllegalArgumentException.class,
+            () -> servicio.validar(entrada));
+
+    assertEquals(
+            "La fecha de llegada debe ser hoy o un día posterior.",
+            error.getMessage());
+}
+
+    @Test
+    void permiteLlegarHoyAunqueLaHoraYaHayaPasado() {
+        var entrada = intervalo(
+                "2026-01-01T10:00",
+                "2026-01-01T18:00");
+
+        var resultado = servicio.validar(entrada);
+
+        assertEquals(entrada.llegada(), resultado.llegada());
+        assertEquals(1, resultado.duracionDias());
+    }
+
+    @Test
+    void permiteUnaLlegadaPosteriorAlDiaActual() {
+        var entrada = intervalo(
+                "2026-01-02T10:00",
+                "2026-01-02T18:00");
+
+        var resultado = servicio.validar(entrada);
+
+        assertEquals(entrada.llegada(), resultado.llegada());
+        assertEquals(1, resultado.duracionDias());
+    }
+
 }

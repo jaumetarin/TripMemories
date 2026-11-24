@@ -244,8 +244,8 @@ class DesplazamientoServiceTest {
         verifyNoInteractions(cliente);
     }
     @Test
-    void rechazaMasDeCincuentaPuntosSinConsultarAlProveedor() {
-        List<PuntoRutaDto> puntos = IntStream.range(0, 51)
+    void rechazaMasDeCincuentaYUnPuntosSinConsultarAlProveedor() {
+        List<PuntoRutaDto> puntos = IntStream.range(0, 52)
                 .mapToObj(i -> new PuntoRutaDto(
                         "punto-" + i,
                         40.4,
@@ -258,6 +258,22 @@ class DesplazamientoServiceTest {
 
         verifyNoInteractions(cliente);
     }
+    @Test
+    void admiteCincuentaLugaresMasElOrigen() {
+        var puntos = IntStream.range(0, 51)
+                .mapToObj(i -> new PuntoRutaDto("punto-" + i, 40.4 + i * .001, -3.7)).toList();
+        var matrizCompleta = IntStream.range(0, 51).mapToObj(i -> IntStream.range(0, 51)
+                .mapToObj(j -> i == j ? 0.0 : 10.0).toList()).toList();
+        when(cliente.calcularMatriz(puntos)).thenReturn(new RespuestaMatrizOrsDto(matrizCompleta, matrizCompleta));
+
+        var resultado = servicio.calcular(puntos);
+
+        assertEquals(51 * 50, resultado.size());
+        assertTrue(resultado.stream().allMatch(r -> r.estado() == EstadoDesplazamiento.DISPONIBLE));
+        assertTrue(resultado.stream().anyMatch(r -> r.origenId().equals("punto-50") && r.destinoId().equals("punto-0")));
+        verify(cliente).calcularMatriz(puntos);
+    }
+
     @Test
     void devuelveUnaListaVaciaSiNoHayParejasDeLugares() {
         assertTrue(servicio.calcular(List.of()).isEmpty());

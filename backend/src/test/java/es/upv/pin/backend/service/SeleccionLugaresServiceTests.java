@@ -50,7 +50,14 @@ class SeleccionLugaresServiceTests {
         cargar();
         var config = viaje(List.of(new SeleccionLugarDto(museo, EstadoLugar.PREFERIDO), new SeleccionLugarDto(parque, EstadoLugar.OBLIGATORIO)));
         var nuevas = new PreferenciasDto(List.of(CategoriaTuristica.NATURALEZA_PARQUES), List.of(), List.of(), NivelGasto.MODERADO, 3.0);
-        var cambiada = new ConfiguracionItinerarioDto(config.destino(), config.disponibilidad(), "Hotel", nuevas, null, config.selecciones());
+        var cambiada = new ConfiguracionItinerarioDto(
+                config.destino(),
+                config.disponibilidad(),
+                config.alojamiento(),
+                nuevas,
+                config.ritmo(),
+                config.alojamientoLocalizado(),
+                config.selecciones());
         var respuesta = servicio.revisar(cambiada, sesion);
         assertEquals(List.of(new SeleccionLugarDto(parque, EstadoLugar.OBLIGATORIO)), respuesta.selecciones());
         assertTrue(respuesta.avisos().getFirst().contains(museo.nombre()));
