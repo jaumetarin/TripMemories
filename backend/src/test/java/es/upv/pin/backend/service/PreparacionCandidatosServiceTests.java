@@ -45,17 +45,21 @@ class PreparacionCandidatosServiceTests {
         var principal = proveedor.expect(requestTo(url(categoria)));
         List<String> consultas = clasificacion.consultasPorInteres(categoria);
         for (String consulta : consultas.subList(1, consultas.size())) {
-            proveedor.expect(org.springframework.test.web.client.ExpectedCount.between(0, 1), requestTo(
-                    "https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
-                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+            proveedor.expect(org.springframework.test.web.client.ExpectedCount.between(0, 1), requestTo(urlConsulta(consulta)))
                     .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
         }
         return principal;
     }
 
     private String url(CategoriaTuristica categoria) {
-        return "https://api.geoapify.com/v2/places?categories=" + clasificacion.consultasPorInteres(categoria).getFirst().replace(",", "%2C")
-                + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba";
+        return urlConsulta(clasificacion.consultasPorInteres(categoria).getFirst());
+    }
+
+    private String urlConsulta(String consulta) {
+        boolean historicaEspecifica = clasificacion.consultasPorInteres(HISTORIA_ARQUITECTURA).subList(0, 2).contains(consulta);
+        return "https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
+                + "&filter=place:madrid&limit=100&lang=es"
+                + (historicaEspecifica ? "" : "&bias=proximity:-3.7,40.4") + "&apiKey=clave-de-prueba";
     }
 
     private String lugares(String categoria) {
@@ -65,12 +69,78 @@ class PreparacionCandidatosServiceTests {
                 """.formatted(categoria);
     }
 
+    @Test
+    void laMuestraInicialConsultaTiposVariadosSinPaginarNiBuscarCalles() {
+        var iniciales = new java.util.LinkedHashMap<String, CategoriaTuristica>();
+        for (var interes : List.of(HISTORIA_ARQUITECTURA, CULTURA_LOCAL, OCIO_ENTRETENIMIENTO, NATURALEZA_PARQUES)) {
+            clasificacion.consultasIniciales(interes).forEach(c -> iniciales.putIfAbsent(c, interes));
+        }
+        for (var entrada : iniciales.entrySet()) {
+            var interes = entrada.getValue();
+            String consulta = entrada.getKey();
+            String tipo = consulta.split(",")[0];
+            proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
+                    + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba"))
+                    .andRespond(withSuccess("""
+                        {"features":[{"properties":{"place_id":"%s","name":"Lugar %s","lat":40.4,"lon":-3.7,"categories":["%s"]}}]}
+                        """.formatted(interes.name(), interes.name(), tipo), MediaType.APPLICATION_JSON));
+        }
+        var resultado = servicio.muestraInicial(configuracion("\"HISTORIA_ARQUITECTURA\",\"CULTURA_LOCAL\",\"OCIO_ENTRETENIMIENTO\",\"NATURALEZA_PARQUES\"", ""));
+        assertEquals(4, resultado.size());
+        proveedor.verify();
+    }
+
+    @Test
+    void completarLaBusquedaReutilizaLaPaginaInicialSinPerderLasConsultasEspecificas() {
+        proveedor.expect(requestTo(url(ARTE_MUSEOS)))
+                .andRespond(withSuccess(lugares("entertainment.museum"), MediaType.APPLICATION_JSON));
+        for (var consulta : List.of("entertainment.culture.gallery", "tourism.attraction.artwork")) proveedor.expect(requestTo(
+                "https://api.geoapify.com/v2/places?categories=" + consulta
+                        + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba"))
+                .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        var config = configuracion("\"ARTE_MUSEOS\"", "");
+        assertEquals(1, servicio.muestraInicial(config).size());
+        assertEquals(1, servicio.preparar(config).size());
+        proveedor.verify(); // Museo y galería se reutilizan; arte urbano se añade al completar.
+    }
+
+    @Test
+    void unaPlazaAjardinadaYUnParqueConReferenciasSeReconocenSinListasPorCiudad() {
+        esperar(NATURALEZA_PARQUES).andRespond(withSuccess("""
+            {"features":[
+              {"properties":{"place_id":"plaza","name":"Plaza de España","lat":40.4229,"lon":-3.7129,
+                "categories":["leisure.park"],"datasource":{"raw":{"leisure":"park","wikidata":"Q1326261"}}}},
+              {"properties":{"place_id":"parque","name":"Parque del Retiro","lat":40.4145,"lon":-3.6831,
+                "categories":["leisure.park"],"datasource":{"raw":{"wikipedia":"es:Parque del Retiro de Madrid"}}}},
+              {"properties":{"place_id":"comercio","name":"Plaza de compras","lat":40.4,"lon":-3.7,
+                "categories":["commercial.shopping_mall"]}}
+            ]}
+            """, MediaType.APPLICATION_JSON));
+        var respuesta = servicio.preparar(configuracion("\"NATURALEZA_PARQUES\"", ""));
+        assertEquals(2, respuesta.size());
+        var plaza = respuesta.stream().filter(l -> l.id().equals("plaza")).findFirst().orElseThrow();
+        assertTrue(plaza.categorias().containsAll(List.of(HISTORIA_ARQUITECTURA, CULTURA_LOCAL, NATURALEZA_PARQUES)));
+        assertEquals(es.upv.pin.backend.model.TipoLugar.PLAZA, plaza.tipo());
+        assertTrue(plaza.referenciaDocumentada());
+        assertTrue(respuesta.stream().filter(l -> l.id().equals("parque")).findFirst().orElseThrow().referenciaDocumentada());
+        proveedor.verify();
+    }
+
+    @Test
+    void busquedaConcretaConsultaElDestinoYRespetaLasExclusiones() {
+        var config = configuracion("\"ARTE_MUSEOS\"", "\"MUSEOS\"");
+        var categorias = String.join("%2C", clasificacion.consultasPorInteres(ARTE_MUSEOS));
+        proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + categorias
+                + "&filter=place:madrid&limit=30&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba&name=Prado"))
+                .andRespond(withSuccess(lugares("entertainment.museum"), MediaType.APPLICATION_JSON));
+        assertTrue(servicio.buscar(config, "Prado").isEmpty());
+        proveedor.verify();
+    }
+
     private void responderGrupos(CategoriaTuristica categoria, List<String> respuestas) {
         List<String> consultas = clasificacion.consultasPorInteres(categoria);
         for (int i = 0; i < consultas.size(); i++) {
-            proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories="
-                    + consultas.get(i).replace(",", "%2C")
-                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+            proveedor.expect(requestTo(urlConsulta(consultas.get(i))))
                     .andRespond(withSuccess(i < respuestas.size() ? respuestas.get(i) : "{\"features\":[]}", MediaType.APPLICATION_JSON));
         }
     }
@@ -159,7 +229,7 @@ class PreparacionCandidatosServiceTests {
         for (String consulta : clasificacion.consultasPorInteres(OCIO_ENTRETENIMIENTO)) {
             if (consulta.startsWith("commercial.")) continue;
             proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
-                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba"))
                     .andRespond(withSuccess(lugares("entertainment.zoo"), MediaType.APPLICATION_JSON));
         }
         assertEquals(1, servicio.preparar(configuracion("\"OCIO_ENTRETENIMIENTO\"", "\"COMPRAS\"")).size());
@@ -274,7 +344,7 @@ class PreparacionCandidatosServiceTests {
         responderGrupos(HISTORIA_ARQUITECTURA, List.of("{\"features\":[]}", "{\"features\":[]}", memoriales));
         String consultaGeneral = clasificacion.consultasPorInteres(HISTORIA_ARQUITECTURA).get(2);
         proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consultaGeneral.replace(",", "%2C")
-                + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba&offset=100"))
+                + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba&offset=100"))
                 .andRespond(withSuccess("""
                         {"features":[{"properties":{"place_id":"conjunto","name":"Conjunto arquitectónico",
                          "categories":["tourism.attraction"]}}]}
@@ -314,7 +384,7 @@ class PreparacionCandidatosServiceTests {
         String consulta = clasificacion.consultasPorInteres(HISTORIA_ARQUITECTURA).get(2).replace(",", "%2C");
         for (int pagina = 1; pagina < 5; pagina++) {
             proveedor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + consulta
-                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba&offset=" + pagina * 100))
+                    + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba&offset=" + pagina * 100))
                     .andRespond(withSuccess(paginas.get(pagina), MediaType.APPLICATION_JSON));
         }
         assertEquals(500, servicio.preparar(configuracion("\"HISTORIA_ARQUITECTURA\"", "")).size());
@@ -327,7 +397,7 @@ class PreparacionCandidatosServiceTests {
         esperar(NATURALEZA_PARQUES).andRespond(withSuccess(lugares("leisure.park"), MediaType.APPLICATION_JSON));
         var resultado = servicio.preparar(configuracion("\"GASTRONOMIA\",\"NATURALEZA_PARQUES\",\"GASTRONOMIA\"", ""));
         assertEquals(List.of(new LugarDto("a", "Lugar A", "Calle A, Madrid", 40.4, -3.7,
-                List.of(GASTRONOMIA, NATURALEZA_PARQUES), List.of(PARQUES_JARDINES), null)), resultado);
+                List.of(GASTRONOMIA, NATURALEZA_PARQUES), List.of(PARQUES_JARDINES), null, es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false)), resultado);
         proveedor.verify();
     }
 
@@ -340,7 +410,7 @@ class PreparacionCandidatosServiceTests {
                 ]}
                 """, MediaType.APPLICATION_JSON));
         assertEquals(List.of(new LugarDto("a", "Restaurante", null, null, null,
-                        List.of(GASTRONOMIA), List.of(), null)),
+                        List.of(GASTRONOMIA), List.of(), null, es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false)),
                 servicio.preparar(configuracion("\"GASTRONOMIA\"", "\"COMIDA_RAPIDA\"")));
         proveedor.verify();
     }
@@ -377,7 +447,7 @@ class PreparacionCandidatosServiceTests {
                         """, MediaType.APPLICATION_JSON));
         // Un mercado sin información gastronómica no se considera automáticamente gastronómico.
         assertEquals(List.of(new LugarDto("mercado-a", "Mercado de prueba", "Plaza del Mercado, Madrid", null, null,
-                        List.of(CULTURA_LOCAL), List.of(MERCADOS_TRADICIONALES), null)),
+                        List.of(CULTURA_LOCAL), List.of(MERCADOS_TRADICIONALES), null, es.upv.pin.backend.model.TipoLugar.MERCADO, false)),
                 servicio.preparar(configuracion("\"CULTURA_LOCAL\"", "\"MERCADOS_GASTRONOMICOS\"")));
         proveedor.verify();
     }
@@ -391,7 +461,7 @@ class PreparacionCandidatosServiceTests {
                 ]}
                 """, MediaType.APPLICATION_JSON));
         assertEquals(List.of(new LugarDto("taller-a", "Taller de cerámica", null, null, null,
-                        List.of(CULTURA_LOCAL), List.of(TALLERES_ARTESANALES), null)),
+                        List.of(CULTURA_LOCAL), List.of(TALLERES_ARTESANALES), null, es.upv.pin.backend.model.TipoLugar.ARTESANIA, false)),
                 servicio.preparar(configuracion("\"CULTURA_LOCAL\"", "\"MERCADOS_TRADICIONALES\"")));
         proveedor.verify();
     }
@@ -429,8 +499,8 @@ class PreparacionCandidatosServiceTests {
                 ]}
                 """, MediaType.APPLICATION_JSON));
         assertEquals(List.of(new LugarDto("j", "Restaurante con nombre", null, null, null,
-                        List.of(GASTRONOMIA), List.of(), null),
-                        new LugarDto("k", "La Desconocida", null, null, null, List.of(GASTRONOMIA), List.of(), null)),
+                        List.of(GASTRONOMIA), List.of(), null, es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false),
+                        new LugarDto("k", "La Desconocida", null, null, null, List.of(GASTRONOMIA), List.of(), null, es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false)),
                 servicio.preparar(configuracion("\"GASTRONOMIA\"", "")));
         proveedor.verify();
     }
@@ -449,10 +519,10 @@ class PreparacionCandidatosServiceTests {
                  {"properties":{"place_id":"d","name":"Otra copia","opening_hours":"24/7","categories":["catering.restaurant"]}}
                 ]}
                 """, MediaType.APPLICATION_JSON));
-        assertEquals(List.of(new LugarDto("a", "Directo", null, null, null, List.of(GASTRONOMIA), List.of(), "Mo-Fr 10:00-18:00"),
-                        new LugarDto("b", "Origen", null, null, null, List.of(GASTRONOMIA), List.of(), "Sa-Su 09:00-14:00"),
-                        new LugarDto("c", "Sin horario", null, null, null, List.of(GASTRONOMIA), List.of(), null),
-                        new LugarDto("d", "Otra copia", null, null, null, List.of(GASTRONOMIA), List.of(), "24/7")),
+        assertEquals(List.of(new LugarDto("a", "Directo", null, null, null, List.of(GASTRONOMIA), List.of(), "Mo-Fr 10:00-18:00", es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false),
+                        new LugarDto("b", "Origen", null, null, null, List.of(GASTRONOMIA), List.of(), "Sa-Su 09:00-14:00", es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false),
+                        new LugarDto("c", "Sin horario", null, null, null, List.of(GASTRONOMIA), List.of(), null, es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false),
+                        new LugarDto("d", "Otra copia", null, null, null, List.of(GASTRONOMIA), List.of(), "24/7", es.upv.pin.backend.model.TipoLugar.RESTAURANTE, false)),
                 servicio.preparar(configuracion("\"GASTRONOMIA\"", "")));
         proveedor.verify();
     }
@@ -467,7 +537,7 @@ class PreparacionCandidatosServiceTests {
                 ]}
                 """, MediaType.APPLICATION_JSON));
         assertEquals(List.of(new LugarDto("museo-a", "Museo y galería", "Calle del Museo, Madrid", 40.41, -3.69,
-                        List.of(ARTE_MUSEOS, CULTURA_LOCAL), List.of(MUSEOS, GALERIAS_ARTE), "Tu-Su 10:00-18:00")),
+                        List.of(ARTE_MUSEOS, CULTURA_LOCAL), List.of(MUSEOS, GALERIAS_ARTE), "Tu-Su 10:00-18:00", es.upv.pin.backend.model.TipoLugar.MUSEO, false)),
                 servicio.preparar(configuracion("\"ARTE_MUSEOS\"", "")));
         proveedor.verify();
     }
@@ -522,7 +592,6 @@ class PreparacionCandidatosServiceTests {
 
     @Test
     void cambiarUnaExclusionUtilizaLosValoresActuales() {
-        esperar(GASTRONOMIA).andRespond(withSuccess(lugares("catering.fast_food"), MediaType.APPLICATION_JSON));
         esperar(GASTRONOMIA).andRespond(withSuccess(lugares("catering.fast_food"), MediaType.APPLICATION_JSON));
         assertEquals(1, servicio.preparar(configuracion("\"GASTRONOMIA\"", "")).size());
         assertTrue(servicio.preparar(configuracion("\"GASTRONOMIA\"", "\"COMIDA_RAPIDA\"")).isEmpty());

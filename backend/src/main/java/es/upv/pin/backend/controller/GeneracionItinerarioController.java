@@ -3,6 +3,7 @@ package es.upv.pin.backend.controller;
 import es.upv.pin.backend.dto.ConfiguracionItinerarioDto;
 import es.upv.pin.backend.dto.ItinerarioGeneradoDto;
 import es.upv.pin.backend.service.ControlGeneracionService;
+import es.upv.pin.backend.service.CatalogoLugaresService;
 import es.upv.pin.backend.dto.ConsumoGeneracionDto;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.CacheControl;
@@ -17,15 +18,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/itinerarios")
 public class GeneracionItinerarioController {
     private final ControlGeneracionService servicio;
+    private final CatalogoLugaresService lugares;
 
-    public GeneracionItinerarioController(ControlGeneracionService servicio) {
+    public GeneracionItinerarioController(ControlGeneracionService servicio,
+            CatalogoLugaresService lugares) {
         this.servicio = servicio;
+        this.lugares = lugares;
     }
 
     @PostMapping("/generar")
     public ResponseEntity<ItinerarioGeneradoDto> generar(@RequestBody ConfiguracionItinerarioDto configuracion,
             HttpSession sesion) {
-        var resultado = servicio.generar(configuracion, sesion);
+        var resultado = servicio.generar(configuracion == null || configuracion.selecciones() == null || configuracion.selecciones().isEmpty()
+                ? configuracion : lugares.resolver(configuracion, sesion), sesion);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header("X-Itinerario-Reutilizado", Boolean.toString(resultado.reutilizado()))
                 .header("X-Itinerario-Vigente-Hasta", resultado.vigenteHasta().toString())

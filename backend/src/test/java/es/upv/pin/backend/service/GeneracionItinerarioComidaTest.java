@@ -59,6 +59,24 @@ class GeneracionItinerarioComidaTest {
     }
 
     @Test
+    void unRestauranteEvitadoTampocoSeOfreceComoAlternativaConOtroId() {
+        var base = config(LocalDateTime.of(2026, 11, 7, 10, 0), LocalDateTime.of(2026, 11, 7, 18, 0), true);
+        var evitado = new LugarDto("evitado", "Casa Pepa", "Calle Mayor 1", 40.34, -1.10,
+                List.of(CategoriaTuristica.GASTRONOMIA), List.of(), null);
+        var config = new ConfiguracionItinerarioDto(base.destino(), base.disponibilidad(), "", base.preferencias(),
+                base.ritmo(), List.of(new SeleccionLugarDto(evitado, EstadoLugar.EVITADO)));
+        when(configuraciones.validar(config)).thenReturn(config);
+        evaluar(config, lugar("a", 90, 60));
+        var alias = new OpcionComidaDto("otro-id", "Casa Pepa", 40.34, -1.10, "Calle Mayor 1");
+        when(recomendaciones.buscar(anyString(), any(), anySet(), anyList()))
+                .thenReturn(new RecomendacionComidaDto(List.of(alias), List.of()));
+        var plan = servicio.generar(config);
+        assertTrue(plan.dias().stream().flatMap(d -> d.bloques().stream()).allMatch(b ->
+                b.restaurante() == null && b.alternativasComida().isEmpty()));
+        verifyNoInteractions(desplazamientos);
+    }
+
+    @Test
     void restaurantePrincipalTieneTrayectosYAlternativaSinReserva() {
         var config = config(LocalDateTime.of(2026, 11, 7, 10, 0),
                 LocalDateTime.of(2026, 11, 7, 18, 0), true);

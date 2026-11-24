@@ -19,6 +19,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import es.upv.pin.backend.model.NivelGasto;
 import es.upv.pin.backend.model.ScheduleStatus;
 import es.upv.pin.backend.model.TipoBloqueItinerario;
+import es.upv.pin.backend.model.EstadoLugar;
+import es.upv.pin.backend.dto.LugarDto;
+import es.upv.pin.backend.exception.ObligatoriosPendientesException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -82,13 +85,15 @@ public class GeneracionItinerarioService {
             for (Ventana ventana : ventanas) {
                 advertencias.add(avisoSinVentana(ventana.fecha()));
             }
+            comprobarSelecciones(config, List.of(), Set.of(), Set.of(), advertencias);
             return new ItinerarioGeneradoDto(
                     diasSinActividad(ventanas), List.copyOf(advertencias), true, 0, 0, List.of(), false);
         }
 
         EvaluacionCandidatosDto resultado = evaluacion.evaluar(config);
         List<CandidatoEvaluadoDto> candidatos = resultado.candidatos();
-        List<CandidatoEvaluadoDto> seleccionados = seleccionar(candidatos);
+        List<CandidatoEvaluadoDto> seleccionados = seleccionar(candidatos, config);
+        int prioritarios = (int) seleccionados.stream().filter(c -> ReglasSeleccionLugares.orden(c.lugar(), config) < 2).count();
         List<OpcionComidaDto> restaurantes = List.of();
         if (recomendaciones != null
                 && ventanas.stream().anyMatch(v -> v.disponible()
@@ -96,7 +101,9 @@ public class GeneracionItinerarioService {
                     && !v.fecha().atTime(config.ritmo().comidaFin()).isAfter(v.fin()))) {
             var comidas = recomendaciones.buscar(config.destino().id(), config.preferencias(), Set.of(),
                     seleccionados.stream().map(CandidatoEvaluadoDto::lugar).toList());
-            restaurantes = comidas.opciones();
+            // Una sugerencia de comida nunca desplaza un lugar elegido por el usuario.
+            restaurantes = comidas.opciones().stream().filter(r -> !reservado(r, config))
+                    .limit(MAXIMO_PUNTOS - prioritarios).toList();
             advertencias.addAll(comidas.advertencias());
         }
         Set<String> idsRestaurantes = new HashSet<>();
@@ -114,6 +121,13 @@ public class GeneracionItinerarioService {
         candidatos.stream().filter(c -> !idsEnMatriz.contains(c.lugar().id())).forEach(c ->
                 LOG.debug("Candidato {} fuera del cálculo de rutas: sin coordenadas o por selección previa", c.lugar().id()));
         Set<String> conflictosHorario = new HashSet<>();
+        Map<String, LocalDateTime> limitesObligatorios = new HashMap<>();
+        seleccionados.stream().filter(c -> ReglasSeleccionLugares.estado(c.lugar(), config) == EstadoLugar.OBLIGATORIO)
+                .forEach(c -> limitesObligatorios.put(c.lugar().id(), ultimoInicio(c, ventanas, config)));
+        var sinHueco = seleccionados.stream().filter(c -> LocalDateTime.MIN.equals(limitesObligatorios.get(c.lugar().id())))
+                .map(c -> "«" + c.lugar().nombre() + "»: no encontramos un hueco para una visita de " + c.duracionMinutos()
+                        + " minutos respetando tu disponibilidad, las pausas y el horario publicado, cuando se conoce.").toList();
+        if (!sinHueco.isEmpty()) throw new ObligatoriosPendientesException(sinHueco);
 
         List<DesplazamientoDto> tramos = puntos.size() < 2
                 ? List.of()
@@ -142,6 +156,9 @@ public class GeneracionItinerarioService {
         boolean hayCondicionadas = false;
         boolean hayVisitas = false;
         boolean hayComidaGenerica = false;
+        var categoriasActivas = CriteriosItinerario.categorias(config);
+        Map<CategoriaTuristica, Integer> categoriasAutomaticas = new EnumMap<>(CategoriaTuristica.class);
+        boolean equilibrioLimitado = false;
 
         for (Ventana ventana : ventanas) {
             if (!ventana.disponible()) {
@@ -169,7 +186,9 @@ public class GeneracionItinerarioService {
 
             while (true) {
                 LocalDateTime limite = comidaPendiente ? comidaInicio : ventana.fin();
-                List<OpcionComidaDto> comidaDesdeAqui = comidaPendiente && comidaCompleta
+                boolean obligatoriosPendientes = pendientes.stream()
+                        .anyMatch(c -> ReglasSeleccionLugares.estado(c.lugar(), config) == EstadoLugar.OBLIGATORIO);
+                List<OpcionComidaDto> comidaDesdeAqui = comidaPendiente && comidaCompleta && !obligatoriosPendientes
                         ? opcionesComida(restaurantes, anterior, rutas, cursor, comidaInicio, comidaFin,
                                 pendientes, ventana.fin(), config.ritmo().margenMinutos())
                         : List.of();
@@ -188,7 +207,30 @@ public class GeneracionItinerarioService {
                 }
                 List<Opcion> factibles = opcionesFactibles(
                         pendientes, anterior, rutas, cursor, limite, config.ritmo().margenMinutos(), conflictosHorario);
-                if (comidaPendiente && comidaCompleta && !restaurantes.isEmpty()) {
+                if (obligatoriosPendientes) {
+                    LocalDateTime momento = cursor;
+                    factibles = factibles.stream().filter(o -> respetaObligatoriosPendientes(o, momento,
+                            pendientes, limitesObligatorios, rutas, config.ritmo().margenMinutos())).toList();
+                }
+                // No llenar un hueco con otra visita si haría perder la próxima apertura de un obligatorio.
+                if (obligatoriosPendientes && factibles.stream().noneMatch(o ->
+                        ReglasSeleccionLugares.estado(o.candidato().lugar(), config) == EstadoLugar.OBLIGATORIO)) {
+                    var obligatorios = pendientes.stream().filter(c ->
+                            ReglasSeleccionLugares.estado(c.lugar(), config) == EstadoLugar.OBLIGATORIO).toList();
+                    var ultimaOportunidad = obligatorios.stream().map(c -> limitesObligatorios.get(c.lugar().id())).min(Comparator.naturalOrder()).orElseThrow();
+                    var urgentes = obligatorios.stream().filter(c -> limitesObligatorios.get(c.lugar().id()).equals(ultimaOportunidad)).toList();
+                    var siguiente = siguienteInicioConVisita(urgentes, anterior, rutas, cursor, limite,
+                            config.ritmo().margenMinutos(), conflictosHorario);
+                    if (siguiente != null) {
+                        bloques.add(bloqueSimple(TipoBloqueItinerario.TIEMPO_LIBRE, cursor, siguiente,
+                                "Tiempo libre hasta la apertura de una visita obligatoria"));
+                        cursor = siguiente;
+                        continue;
+                    }
+                }
+                if (comidaPendiente && comidaCompleta && !restaurantes.isEmpty()
+                        && !obligatoriosPendientes
+                        && factibles.stream().noneMatch(o -> ReglasSeleccionLugares.orden(o.candidato().lugar(), config) < 2)) {
                     List<Opcion> conLlegada = new ArrayList<>();
                     for (Opcion opcion : factibles) {
                         for (OpcionComidaDto restaurante : restaurantesAlcanzables(restaurantes,
@@ -204,9 +246,20 @@ public class GeneracionItinerarioService {
                     }
                     if (!conLlegada.isEmpty() || anterior != null && !comidaDesdeAqui.isEmpty()) factibles = conLlegada;
                 }
+                List<CandidatoEvaluadoDto> paraSiguienteHueco = pendientes;
+                if (config.preferencias().intereses().size() > 1 && factibles.stream().noneMatch(o ->
+                        ReglasSeleccionLugares.orden(o.candidato().lugar(), config) < 2)) {
+                    int turno = categoriasActivas.stream().mapToInt(c -> categoriasAutomaticas.getOrDefault(c, 0)).min().orElse(0);
+                    var equilibradas = factibles.stream().filter(o -> CriteriosItinerario.repeticion(
+                            o.candidato().lugar(), categoriasActivas, categoriasAutomaticas) == turno).toList();
+                    equilibrioLimitado |= equilibradas.size() < factibles.size();
+                    factibles = equilibradas;
+                    paraSiguienteHueco = pendientes.stream().filter(c -> ReglasSeleccionLugares.orden(c.lugar(), config) < 2
+                            || CriteriosItinerario.repeticion(c.lugar(), categoriasActivas, categoriasAutomaticas) == turno).toList();
+                }
                 if (factibles.isEmpty()) {
                     LocalDateTime siguiente = anterior != null && !comidaDesdeAqui.isEmpty() ? null : siguienteInicioConVisita(
-                            pendientes, anterior, rutas, cursor, limite,
+                            paraSiguienteHueco, anterior, rutas, cursor, limite,
                             config.ritmo().margenMinutos(), conflictosHorario);
                     if (siguiente != null) {
                         bloques.add(bloqueSimple(TipoBloqueItinerario.TIEMPO_LIBRE,
@@ -264,16 +317,27 @@ public class GeneracionItinerarioService {
                     break;
                 }
 
-                int mejorPrioridad = factibles.stream()
+                int grupo = factibles.stream().mapToInt(o -> ReglasSeleccionLugares.orden(o.candidato().lugar(), config)).min().orElseThrow();
+                var opcionesPrioritarias = factibles.stream()
+                        .filter(o -> ReglasSeleccionLugares.orden(o.candidato().lugar(), config) == grupo).toList();
+                if (grupo == 2) {
+                    int menorRepeticion = opcionesPrioritarias.stream().mapToInt(o ->
+                            CriteriosItinerario.repeticion(o.candidato().lugar(), categoriasActivas, categoriasAutomaticas)).min().orElseThrow();
+                    opcionesPrioritarias = opcionesPrioritarias.stream().filter(o ->
+                            CriteriosItinerario.repeticion(o.candidato().lugar(), categoriasActivas, categoriasAutomaticas) == menorRepeticion).toList();
+                }
+                int mejorPrioridad = opcionesPrioritarias.stream()
                         .mapToInt(o -> o.candidato().prioridad())
                         .max()
                         .orElseThrow();
                 String lugarAnterior = anterior;
-                Opcion elegido = factibles.stream()
-                        .filter(o -> o.candidato().prioridad() >= mejorPrioridad - BANDA_PRIORIDAD)
-                        .min(ordenOpciones(
+                Opcion elegido = opcionesPrioritarias.stream()
+                        .filter(o -> grupo < 2 || o.candidato().prioridad() >= mejorPrioridad - BANDA_PRIORIDAD)
+                        .min(Comparator.comparing((Opcion o) -> grupo == 0
+                                ? limitesObligatorios.getOrDefault(o.candidato().lugar().id(), LocalDateTime.MAX) : LocalDateTime.MAX)
+                            .thenComparing(ordenOpciones(
                                 lugarAnterior, config.preferencias().distanciaKm(),
-                                config.preferencias().nivelGasto(), categoriasDelDia))
+                                config.preferencias().nivelGasto(), categoriasDelDia, grupo == 2)))
                         .orElseThrow();
 
                 if (elegido.tramo() != null && elegido.minutosTraslado() > 0) {
@@ -308,9 +372,13 @@ public class GeneracionItinerarioService {
                 pendientes.removeIf(p -> IdentidadLugares.mismoLugar(candidato.lugar(), p.lugar()));
                 anterior = candidato.lugar().id();
                 conflictosHorario.remove(anterior);
-                if (candidato.lugar().categorias() != null) {
-                    candidato.lugar().categorias()
-                            .forEach(c -> categoriasDelDia.merge(c, 1, Integer::sum));
+                if (grupo == 2) {
+                    var categoria = CriteriosItinerario.categoria(candidato.lugar(), categoriasActivas, categoriasAutomaticas,
+                            pendientes.stream().map(CandidatoEvaluadoDto::lugar).toList());
+                    if (categoria != null) {
+                        categoriasAutomaticas.merge(categoria, 1, Integer::sum);
+                        categoriasDelDia.merge(categoria, 1, Integer::sum);
+                    }
                 }
             }
 
@@ -352,6 +420,9 @@ public class GeneracionItinerarioService {
         if (hayComidaGenerica) {
             advertencias.add("Puedes elegir dónde comer durante la pausa. El tiempo para llegar al restaurante no está calculado.");
         }
+        comprobarSelecciones(config, dias, idsEnMatriz, conflictosHorario, advertencias);
+        if (equilibrioLimitado && pendientes.stream().anyMatch(c -> ReglasSeleccionLugares.orden(c.lugar(), config) == 2))
+            advertencias.add("Hemos dejado tiempo libre para mantener un reparto equilibrado entre tus intereses: no hemos encontrado visitas compatibles de las categorías pendientes para completar esos huecos.");
         ResultadoValidacionPlan validacion = validadorPlan.validar(dias, config.preferencias());
         advertencias.addAll(validacion.incidencias());
         if (!validacion.valido()) throw new IllegalStateException("El itinerario generado no cumple sus invariantes: "
@@ -359,6 +430,72 @@ public class GeneracionItinerarioService {
         return new ItinerarioGeneradoDto(
                 List.copyOf(dias), advertencias.stream().distinct().toList(), parcial || validacion.parcial(),
                 candidatos.size(), puntos.size(), List.copyOf(candidatos), resultado.fallback());
+    }
+
+    /** Se priorizan los obligatorios cuya última oportunidad compatible termina antes. */
+    private LocalDateTime ultimoInicio(CandidatoEvaluadoDto candidato, List<Ventana> ventanas,
+            ConfiguracionItinerarioDto config) {
+        for (var ventana : ventanas.reversed()) {
+            for (var inicio = ventana.fin().minusMinutes(candidato.duracionMinutos());
+                    !inicio.isBefore(ventana.inicio()); inicio = inicio.minusMinutes(1)) {
+                var fin = inicio.plusMinutes(candidato.duracionMinutos());
+                var comidaInicio = ventana.fecha().atTime(config.ritmo().comidaInicio());
+                var comidaFin = ventana.fecha().atTime(config.ritmo().comidaFin());
+                boolean comidaCompleta = !comidaInicio.isBefore(ventana.inicio()) && !comidaFin.isAfter(ventana.fin());
+                if (comidaCompleta && inicio.isBefore(comidaFin) && fin.isAfter(comidaInicio)) continue;
+                if (evaluadorHorario.evaluar(candidato, inicio, fin) != EstadoHorarioVisita.CONFLICTO_SEGUN_FUENTE)
+                    return inicio;
+            }
+        }
+        return LocalDateTime.MIN;
+    }
+
+    private static boolean reservado(OpcionComidaDto restaurante, ConfiguracionItinerarioDto config) {
+        if (config.selecciones() == null) return false;
+        // También comprobamos los alias del lugar; un evitado no reaparece como restaurante.
+        var lugar = new LugarDto(restaurante.id(), restaurante.nombre(), restaurante.direccion(),
+                restaurante.latitud(), restaurante.longitud(), List.of(CategoriaTuristica.GASTRONOMIA), List.of(), restaurante.horario());
+        return config.selecciones().stream().anyMatch(s -> IdentidadLugares.mismoLugar(s.lugar(), lugar));
+    }
+
+    /** No gastar la última oportunidad de otro obligatorio con una visita que podría hacerse después. */
+    private static boolean respetaObligatoriosPendientes(Opcion opcion, LocalDateTime cursor,
+            List<CandidatoEvaluadoDto> pendientes, Map<String, LocalDateTime> ultimosInicios,
+            Map<Par, DesplazamientoDto> rutas, int margen) {
+        var finVisita = cursorFinOpcion(cursor, opcion, margen);
+        String id = opcion.candidato().lugar().id();
+        for (var otro : pendientes) {
+            var ultimo = ultimosInicios.get(otro.lugar().id());
+            if (ultimo == null || id.equals(otro.lugar().id()) || !ultimo.toLocalDate().equals(cursor.toLocalDate())) continue;
+            var tramo = rutas.get(new Par(id, otro.lugar().id()));
+            if (!rutaValida(tramo)) return false;
+            var llegada = finVisita.plusMinutes((long) Math.ceil(tramo.duracionSegundos() / 60.0)).plusMinutes(margen);
+            if (llegada.isAfter(ultimo)) return false;
+        }
+        return true;
+    }
+
+    private static void comprobarSelecciones(ConfiguracionItinerarioDto config, List<DiaItinerarioDto> dias,
+            Set<String> idsEnMatriz, Set<String> conflictos, List<String> avisos) {
+        List<String> problemas = new ArrayList<>();
+        if (config.selecciones() == null) return;
+        var visitas = dias.stream().flatMap(d -> d.bloques().stream()).filter(b -> b.candidato() != null)
+                .map(b -> b.candidato().lugar()).toList();
+        for (var seleccion : config.selecciones()) {
+            if (seleccion.estado() == EstadoLugar.EVITADO || visitas.stream()
+                    .anyMatch(l -> IdentidadLugares.mismoLugar(l, seleccion.lugar()))) continue;
+            boolean obligatorio = seleccion.estado() == EstadoLugar.OBLIGATORIO;
+            String motivo = !idsEnMatriz.contains(seleccion.lugar().id())
+                    ? "no ha sido posible disponer de tiempo y datos de ubicación para planificarlo"
+                    : conflictos.contains(seleccion.lugar().id()) ? "el horario disponible no encaja con el resto del viaje"
+                    : "no encaja con el tiempo o los trayectos a pie disponibles";
+            String aviso = "No se ha podido incluir el lugar " + (obligatorio ? "obligatorio" : "preferido")
+                    + " «" + seleccion.lugar().nombre() + "»: " + motivo + "."
+                    + (obligatorio ? " Revisa la disponibilidad o reduce las visitas obligatorias." : "");
+            if (obligatorio) problemas.add(aviso);
+            else avisos.add(aviso);
+        }
+        if (!problemas.isEmpty()) throw new ObligatoriosPendientesException(problemas);
     }
 
     private static BloqueItinerarioDto bloqueSimple(TipoBloqueItinerario tipo,
@@ -514,8 +651,11 @@ public class GeneracionItinerarioService {
             String anterior,
             double distanciaDeseadaKm,
             NivelGasto gasto,
-            Map<CategoriaTuristica, Integer> categoriasDelDia) {
-        return Comparator
+            Map<CategoriaTuristica, Integer> categoriasDelDia, boolean automatico) {
+        Comparator<Opcion> referencias = automatico
+                ? Comparator.comparing((Opcion o) -> o.candidato().lugar(), CriteriosItinerario.referencias())
+                : (a, b) -> 0;
+        return referencias.thenComparing(Comparator
                 .comparingInt((Opcion o) ->
                         anterior == null
                                 || o.tramo().distanciaMetros() <= distanciaDeseadaKm * 1000
@@ -526,39 +666,49 @@ public class GeneracionItinerarioService {
                 .thenComparingInt(o -> repeticionCategoria(
                         o.candidato(), categoriasDelDia))
                 .thenComparing(Comparator.comparingInt(
-                        (Opcion o) -> o.candidato().prioridad()).reversed());
+                        (Opcion o) -> o.candidato().prioridad()).reversed())
+                .thenComparing(o -> o.candidato().lugar().id()));
     }
 
     private static List<CandidatoEvaluadoDto> seleccionar(
-            List<CandidatoEvaluadoDto> candidatos) {
+            List<CandidatoEvaluadoDto> candidatos, ConfiguracionItinerarioDto config) {
         List<CandidatoEvaluadoDto> restantes = new ArrayList<>(
                 candidatos.stream()
                         .filter(GeneracionItinerarioService::tieneCoordenadas)
-                        .sorted(Comparator.comparingInt(CandidatoEvaluadoDto::prioridad).reversed())
+                        .filter(c -> ReglasSeleccionLugares.estado(c.lugar(), config) != EstadoLugar.EVITADO)
+                        .sorted(Comparator.comparingInt((CandidatoEvaluadoDto c) -> ReglasSeleccionLugares.orden(c.lugar(), config))
+                                .thenComparing(Comparator.comparingInt(CandidatoEvaluadoDto::prioridad).reversed()))
                         .toList());
         List<CandidatoEvaluadoDto> elegidos = new ArrayList<>();
         Set<String> ids = new HashSet<>();
         Map<CategoriaTuristica, Integer> categorias =
                 new EnumMap<>(CategoriaTuristica.class);
+        var activas = CriteriosItinerario.categorias(config);
 
         while (!restantes.isEmpty() && elegidos.size() < MAXIMO_PUNTOS) {
-            int mejorPrioridad = restantes.get(0).prioridad();
-            CandidatoEvaluadoDto elegido = restantes.stream()
+            int grupo = ReglasSeleccionLugares.orden(restantes.getFirst().lugar(), config);
+            var opciones = restantes.stream().filter(c -> ReglasSeleccionLugares.orden(c.lugar(), config) == grupo).toList();
+            if (grupo == 2) {
+                int menorRepeticion = opciones.stream().mapToInt(c -> CriteriosItinerario.repeticion(c.lugar(), activas, categorias)).min().orElseThrow();
+                opciones = opciones.stream().filter(c -> CriteriosItinerario.repeticion(c.lugar(), activas, categorias) == menorRepeticion).toList();
+            }
+            int mejorPrioridad = opciones.stream().mapToInt(CandidatoEvaluadoDto::prioridad).max().orElseThrow();
+            CandidatoEvaluadoDto elegido = opciones.stream()
                     .filter(c -> c.prioridad() >= mejorPrioridad - BANDA_PRIORIDAD)
-                    .min(Comparator.comparingInt(
-                                    (CandidatoEvaluadoDto c) ->
-                                            repeticionCategoria(c, categorias))
+                    .min(Comparator.comparing(CandidatoEvaluadoDto::lugar, CriteriosItinerario.referencias())
                             .thenComparing(Comparator.comparingInt(
-                                    CandidatoEvaluadoDto::prioridad).reversed()))
+                                    CandidatoEvaluadoDto::prioridad).reversed()).thenComparing(c -> c.lugar().id()))
                     .orElseThrow();
             restantes.remove(elegido);
-            if (!ids.add(elegido.lugar().id())) {
+            if (!ids.add(elegido.lugar().id()) || elegidos.stream()
+                    .anyMatch(c -> IdentidadLugares.mismoLugar(c.lugar(), elegido.lugar()))) {
                 continue;
             }
             elegidos.add(elegido);
-            if (elegido.lugar().categorias() != null) {
-                elegido.lugar().categorias()
-                        .forEach(c -> categorias.merge(c, 1, Integer::sum));
+            if (grupo == 2) {
+                var categoria = CriteriosItinerario.categoria(elegido.lugar(), activas, categorias,
+                        restantes.stream().map(CandidatoEvaluadoDto::lugar).toList());
+                if (categoria != null) categorias.merge(categoria, 1, Integer::sum);
             }
         }
         return elegidos;

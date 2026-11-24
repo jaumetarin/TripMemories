@@ -12,6 +12,7 @@ import es.upv.pin.backend.dto.EtiquetasLugarGeoapifyDto;
 import es.upv.pin.backend.dto.LugarGeoapifyDto;
 import es.upv.pin.backend.model.CategoriaTuristica;
 import es.upv.pin.backend.model.SubcategoriaTuristica;
+import es.upv.pin.backend.model.TipoLugar;
 
 import static es.upv.pin.backend.model.CategoriaTuristica.*;
 import static es.upv.pin.backend.model.SubcategoriaTuristica.*;
@@ -79,6 +80,17 @@ public class ClasificacionLugaresService {
         return consultas.get(interes);
     }
 
+    public List<String> consultasIniciales(CategoriaTuristica interes) {
+        var grupos = consultas.get(interes);
+        return switch (interes) {
+            case HISTORIA_ARQUITECTURA -> List.of(ATRACCIONES_GENERALES);
+            case CULTURA_LOCAL -> List.of(grupos.getFirst(), ATRACCIONES_GENERALES);
+            case OCIO_ENTRETENIMIENTO -> List.of(grupos.get(1), grupos.get(2), grupos.getFirst());
+            case NATURALEZA_PARQUES -> grupos;
+            default -> grupos.subList(0, Math.min(2, grupos.size()));
+        };
+    }
+
     public int maxPaginas(String consulta) {
         // Solo ampliamos el respaldo de atracciones, hasta 500 resultados en páginas de 100.
         return ATRACCIONES_GENERALES.equals(consulta) ? 5 : 1;
@@ -135,8 +147,56 @@ public class ClasificacionLugaresService {
             resultado.add(HISTORIA_ARQUITECTURA);
             resultado.add(CULTURA_LOCAL);
         }
+        if (esPlaza(lugar)) {
+            resultado.add(HISTORIA_ARQUITECTURA);
+            resultado.add(CULTURA_LOCAL);
+        }
         if (descartadoParaOcio(lugar)) resultado.remove(OCIO_ENTRETENIMIENTO);
         return resultado;
+    }
+
+    private boolean esPlaza(LugarGeoapifyDto lugar) {
+        var raw = etiquetas(lugar);
+        if (raw != null && "square".equals(raw.place())) return true;
+        if (coincide(lugar.categories(), List.of("tourism.sights.square"))) return true;
+        // Geoapify también publica plazas ajardinadas como parques, por ejemplo Plaza de España.
+        String nombre = IdentidadLugares.normalizar(lugar.name());
+        return coincide(lugar.categories(), List.of("leisure.park"))
+                && List.of("plaza ", "placa ", "praca ", "piazza ", "square ", "place ").stream().anyMatch(nombre::startsWith);
+    }
+
+    public boolean referenciaDocumentada(LugarGeoapifyDto lugar) {
+        var raw = etiquetas(lugar);
+        return raw != null && (texto(raw.wikidata()).matches("Q[1-9][0-9]*")
+                || texto(raw.wikipedia()).matches("[a-zA-Z-]{2,12}:.+"));
+    }
+
+    public TipoLugar tipo(LugarGeoapifyDto lugar) {
+        var c = lugar.categories();
+        var raw = etiquetas(lugar);
+        if (esPlaza(lugar)) return TipoLugar.PLAZA;
+        if (coincide(c, List.of("entertainment.museum"))) return TipoLugar.MUSEO;
+        if (coincide(c, List.of("entertainment.culture.gallery"))) return TipoLugar.GALERIA;
+        if (coincide(c, List.of("entertainment.zoo", "entertainment.aquarium"))) return TipoLugar.ZOO_ACUARIO;
+        if (coincide(c, List.of("entertainment.bowling_alley"))) return TipoLugar.BOLERA;
+        if (coincide(c, List.of("entertainment.escape_game"))) return TipoLugar.ESCAPE_ROOM;
+        if (coincide(c, List.of("entertainment.theme_park", "entertainment.water_park"))) return TipoLugar.PARQUE_ATRACCIONES;
+        if (coincide(c, List.of("entertainment.amusement_arcade", "entertainment.activity_park", "entertainment.miniature_golf"))) return TipoLugar.RECREATIVO;
+        if (coincide(c, List.of("leisure.park", "national_park"))) return TipoLugar.PARQUE;
+        if (coincide(c, List.of("beach"))) return TipoLugar.PLAYA;
+        if (coincide(c, List.of("natural"))) return TipoLugar.PAISAJE;
+        if (coincide(c, List.of("commercial.shopping_mall", "commercial.department_store"))) return TipoLugar.CENTRO_COMERCIAL;
+        if (coincide(c, List.of("commercial.marketplace")) || raw != null && "marketplace".equals(raw.amenity())) return TipoLugar.MERCADO;
+        if (coincide(c, List.of("production.pottery")) || raw != null && raw.craft() != null) return TipoLugar.ARTESANIA;
+        if (coincide(c, List.of("entertainment.culture.theatre"))) return TipoLugar.TEATRO;
+        if (coincide(c, List.of("tourism.attraction.artwork"))) return TipoLugar.ARTE_URBANO;
+        if (coincide(c, List.of("tourism.sights.city_gate", "tourism.sights.tower", "tourism.sights.castle", "tourism.sights.manor",
+                "tourism.sights.archaeological_site", "tourism.sights.monument")) || raw != null && raw.historic() != null) return TipoLugar.MONUMENTO;
+        if (coincide(c, List.of("tourism.sights.building", "tourism.sights.city_hall", "tourism.sights.place_of_worship"))) return TipoLugar.EDIFICIO;
+        if (coincide(c, List.of("catering.restaurant", "catering.fast_food", "catering.food_court"))) return TipoLugar.RESTAURANTE;
+        if (coincide(c, List.of("catering.cafe"))) return TipoLugar.CAFETERIA;
+        if (coincide(c, List.of("entertainment.culture"))) return TipoLugar.CULTURA;
+        return TipoLugar.OTRO;
     }
 
     public boolean descartadoParaOcio(LugarGeoapifyDto lugar) {

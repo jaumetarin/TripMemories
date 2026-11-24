@@ -17,7 +17,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ConfiguracionItinerarioControllerTests {
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new ConfiguracionItinerarioController(
-            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService())))
+            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()),
+            org.mockito.Mockito.mock(es.upv.pin.backend.service.CatalogoLugaresService.class)))
             .setControllerAdvice(new ConfiguracionItinerarioExceptionHandler()).build();
 
     private String cuerpo() {

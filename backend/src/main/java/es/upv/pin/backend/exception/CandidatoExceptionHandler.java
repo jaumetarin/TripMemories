@@ -11,7 +11,8 @@ import es.upv.pin.backend.controller.CandidatoController;
 import es.upv.pin.backend.controller.PreparacionCandidatosController;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
-@RestControllerAdvice(assignableTypes = {CandidatoController.class, PreparacionCandidatosController.class, es.upv.pin.backend.controller.EvaluacionCandidatosController.class})
+@RestControllerAdvice(assignableTypes = {CandidatoController.class, PreparacionCandidatosController.class,
+        es.upv.pin.backend.controller.EvaluacionCandidatosController.class, es.upv.pin.backend.controller.SeleccionLugaresController.class})
 public class CandidatoExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

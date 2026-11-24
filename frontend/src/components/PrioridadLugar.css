@@ -1,0 +1,4 @@
+.prioridad { --prioridad-fondo: #e8f5ed; --prioridad-borde: #a1ccb2; --prioridad-texto: #21613a; --prioridad-activo: #267341; --prioridad-contraste: #fff; }
+.prioridad.PREFERIDO { --prioridad-fondo: #fff7d9; --prioridad-borde: #dfc265; --prioridad-texto: #715008; --prioridad-activo: #f2ce57; --prioridad-contraste: #503a03; }
+.prioridad.EVITADO { --prioridad-fondo: #ffeded; --prioridad-borde: #e7aaa5; --prioridad-texto: #9a3029; --prioridad-activo: #b43d34; --prioridad-contraste: #fff; }
+.prioridad-etiqueta { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid var(--prioridad-borde); border-radius: 7px; background: var(--prioridad-fondo); color: var(--prioridad-texto); font-size: .7rem; font-weight: 650; line-height: 1.5; white-space: nowrap; }

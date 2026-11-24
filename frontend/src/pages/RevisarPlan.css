@@ -15,6 +15,12 @@
 .revision-tarjeta h2 { margin: 0 0 7px; color: var(--secundario); font-size: .65rem; font-weight: 550; letter-spacing: .55px; line-height: 1.5; text-transform: uppercase; }
 .revision-valor { font-size: .85rem; line-height: 1.6; overflow-wrap: anywhere; }
 .revision-valor + .revision-valor { margin-top: 5px; }
+.revision-prioridades { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.revision-prioridades li { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 10px; font-size: .85rem; line-height: 1.6; overflow-wrap: anywhere; }
+.revision-problemas { padding-left: 20px; margin: 12px 0; }
+.revision-problemas li { margin: 8px 0; }
+.revision-corregir { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.revision-corregir .boton { padding: 10px 14px; font-size: .76rem; white-space: normal; }
 .revision-ayuda { margin-top: 8px; color: var(--secundario); font-size: .72rem; line-height: 1.6; }
 .revision-editar { flex-shrink: 0; min-height: 32px; padding: 6px 0 6px 8px; margin-top: -6px; border: 0; border-radius: 5px; background: transparent; color: var(--primario); font-size: .75rem; }
 .revision-editar:hover { color: var(--primario-hover); text-decoration: underline; text-underline-offset: 4px; }
