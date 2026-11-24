@@ -425,7 +425,7 @@ class GeneracionItinerarioComidaTest {
 
         var candidatos = new ArrayList<CandidatoEvaluadoDto>();
 
-        for (int i = 0; i < 49; i++) {
+        for (int i = 0; i < 50; i++) {
             candidatos.add(lugar("visita-" + i, 80, 60));
         }
 
@@ -463,10 +463,10 @@ class GeneracionItinerarioComidaTest {
 
         var plan = servicio.generar(config);
 
-        assertEquals(49, plan.candidatosEnMatriz());
+        assertEquals(50, plan.candidatosEnMatriz());
 
         verify(desplazamientos).calcular(argThat(puntos ->
-                puntos.size() == 50
+                puntos.size() == 51
                         && puntos.stream().anyMatch(
                                 punto -> punto.id().equals("referencia:inicio"))
                         && puntos.stream().noneMatch(

@@ -211,7 +211,7 @@ class PrioridadesItinerarioTests {
         servicio.generar(config);
         org.mockito.ArgumentCaptor<List<PuntoRutaDto>> captor = org.mockito.ArgumentCaptor.forClass(List.class);
         verify(rutas).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         for (var categoria : config.preferencias().intereses()) {
             long cantidad = captor.getValue().stream().filter(p -> p.id().startsWith(categoria.name())).count();
             assertTrue(cantidad >= 12 && cantidad <= 13, categoria + ": " + cantidad);

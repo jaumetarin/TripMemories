@@ -173,7 +173,7 @@ class GeneracionItinerarioServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void obligatorioSeConservaAntesDelLimiteDeCincuentaPuntosYEvitadoNoEntra() {
+    void obligatorioSeConservaEntreCincuentaLugaresMasElOrigenYEvitadoNoEntra() {
         var obligatorio = candidato("imprescindible", 1, CostLevel.UNKNOWN, 1.0);
         var evitado = candidato("evitado", 100, CostLevel.UNKNOWN, 1.0);
         var config = conSelecciones(config(1), new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO),
@@ -188,7 +188,7 @@ class GeneracionItinerarioServiceTest {
         servicio.generar(config);
         ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
         verify(desplazamientos).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         assertTrue(captor.getValue().stream().anyMatch(p -> p.id().equals("imprescindible")));
         assertTrue(captor.getValue().stream().noneMatch(p -> p.id().equals("evitado")));
     }
@@ -244,7 +244,7 @@ class GeneracionItinerarioServiceTest {
         servicio.generar(config);
         ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
         verify(desplazamientos).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         assertTrue(captor.getValue().stream().anyMatch(p -> p.id().equals("z-referente")));
     }
 
@@ -503,7 +503,7 @@ class GeneracionItinerarioServiceTest {
 }
 
     @Test
-    void limitaLaMatrizACincuentaYOmiteLugaresSinCoordenadas() {
+    void limitaACincuentaLugaresMasElOrigenYOmiteLugaresSinCoordenadas() {
         var config = config(1);
         var candidatos = new ArrayList<CandidatoEvaluadoDto>();
         for (int i = 0; i < 55; i++) {
@@ -518,10 +518,10 @@ class GeneracionItinerarioServiceTest {
         ArgumentCaptor<List<PuntoRutaDto>> captor =
                 ArgumentCaptor.forClass((Class) List.class);
         verify(desplazamientos).calcular(captor.capture());
-        assertEquals(50, captor.getValue().size());
+        assertEquals(51, captor.getValue().size());
         assertTrue(captor.getValue().stream().noneMatch(p -> p.id().equals("sin")));
         assertEquals(56, plan.candidatosEvaluados());
-        assertEquals(49, plan.candidatosEnMatriz());
+        assertEquals(50, plan.candidatosEnMatriz());
         assertTrue(captor.getValue().stream()
                 .anyMatch(punto -> punto.id().equals("referencia:inicio")));
         assertTrue(plan.advertencias().stream()

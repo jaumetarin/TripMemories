@@ -20,6 +20,7 @@ import es.upv.pin.backend.model.NivelGasto;
 import es.upv.pin.backend.model.ScheduleStatus;
 import es.upv.pin.backend.model.TipoBloqueItinerario;
 import es.upv.pin.backend.model.EstadoLugar;
+import es.upv.pin.backend.model.LimitesItinerario;
 import es.upv.pin.backend.dto.LugarDto;
 import es.upv.pin.backend.exception.ObligatoriosPendientesException;
 import java.time.Duration;
@@ -37,7 +38,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class GeneracionItinerarioService {
-    private static final int MAXIMO_PUNTOS = 50;
+    private static final int MAXIMO_LUGARES = LimitesItinerario.MAXIMO_LUGARES;
+    private static final int MAXIMO_PUNTOS_RUTA = LimitesItinerario.MAXIMO_PUNTOS_RUTA;
     private static final String ID_PUNTO_INICIO = "referencia:inicio";
     private static final int BANDA_PRIORIDAD = 5;
     private static final int HUECO_PARCIAL_MINUTOS = 15;
@@ -105,7 +107,7 @@ public class GeneracionItinerarioService {
                     seleccionados.stream().map(CandidatoEvaluadoDto::lugar).toList());
             // Una sugerencia de comida nunca desplaza un lugar elegido por el usuario.
             restaurantes = comidas.opciones().stream().filter(r -> !reservado(r, config))
-                    .limit(Math.max(0, MAXIMO_PUNTOS - prioritarios - 1))
+                    .limit(Math.max(0, MAXIMO_PUNTOS_RUTA - prioritarios - 1))
                     .toList();
             advertencias.addAll(comidas.advertencias());
         }
@@ -115,7 +117,7 @@ public class GeneracionItinerarioService {
                 .filter(c -> !idsRestaurantes.contains(c.lugar().id()))
                 .toList();
         List<CandidatoEvaluadoDto> pendientes = seleccionados.stream()
-                .limit(MAXIMO_PUNTOS - restaurantes.size() - 1)
+                .limit(MAXIMO_PUNTOS_RUTA - restaurantes.size() - 1)
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
 
         int candidatosEnMatriz = pendientes.size();
@@ -158,7 +160,7 @@ public class GeneracionItinerarioService {
         if (conCoordenadas < candidatos.size()) {
             advertencias.add("Algunos lugares han quedado fuera porque no conocemos su ubicación exacta.");
         }
-        if (conCoordenadas > MAXIMO_PUNTOS || seleccionados.size() > pendientes.size()) {
+        if (conCoordenadas > MAXIMO_LUGARES || seleccionados.size() > pendientes.size()) {
             advertencias.add("Hemos limitado los lugares que se comparan para calcular los desplazamientos; algunas opciones han quedado fuera.");
         }
         if (tramos.size() < puntos.size() * (puntos.size() - 1)
@@ -734,7 +736,7 @@ public class GeneracionItinerarioService {
                 new EnumMap<>(CategoriaTuristica.class);
         var activas = CriteriosItinerario.categorias(config);
 
-        while (!restantes.isEmpty() && elegidos.size() < MAXIMO_PUNTOS) {
+        while (!restantes.isEmpty() && elegidos.size() < MAXIMO_LUGARES) {
             int grupo = ReglasSeleccionLugares.orden(restantes.getFirst().lugar(), config);
             var opciones = restantes.stream().filter(c -> ReglasSeleccionLugares.orden(c.lugar(), config) == grupo).toList();
             if (grupo == 2) {

@@ -724,7 +724,7 @@ application.properties contiene únicamente la referencia a esa variable.
 POST /api/desplazamientos/calcular
 
 Recibe una lista de puntos con `id`, `latitud` y `longitud`.
-Admite hasta 50 puntos por cálculo, con identificadores únicos.
+Admite hasta 51 puntos por cálculo, con identificadores únicos: hasta 50 lugares y un origen.
 
 Devuelve los desplazamientos entre lugares distintos, con distancia en metros,
 duración en segundos, identificadores de origen y destino, estado y fuente.
@@ -774,7 +774,7 @@ se presentan como propuestas condicionadas: el texto disponible no confirma
 que el lugar está abierto en la fecha y hora elegidas.
 La prioridad combina afinidad y relevancia estimada: `(2 × afinidad + relevancia) / 3`.
 Sin estimación de relevancia se utiliza la afinidad. Las selecciones manuales se
-protegen antes de recortar la muestra de IA (120) y la matriz (50).
+protegen antes de recortar la muestra de IA (120) y los lugares para rutas (50, más el origen).
 Las visitas automáticas se reparten por interés antes de comparar prioridades, tanto
 en esos recortes como en el plan final. Dentro del turno de una categoría se admite
 una banda de cinco puntos de prioridad; las referencias publicadas del lugar y sus
@@ -782,12 +782,21 @@ nombres internacionales ayudan a priorizar referentes. Después se considera un 
 dentro de la distancia deseada, menor tiempo a pie y gasto acorde.
 La distancia deseada es flexible y un coste desconocido no se considera gratis.
 
-La matriz de OpenRouteService admite hasta 50 puntos con coordenadas
-válidas, incluyendo el origen, las visitas y los restaurantes si se proponen;; si hay más, se limita la selección y se añade un aviso. Una ruta
+La aplicación admite matrices de hasta 51 puntos con coordenadas
+válidas: un origen y hasta 50 lugares entre visitas y restaurantes. Los restaurantes
+solo ocupan puestos libres después de reservar los lugares seleccionados. Si hay más
+candidatos, se limita la muestra y se añade un aviso. Una ruta
 concreta no disponible puede causar un plan parcial con advertencia, sin
 inventar tiempos. Si falla el proveedor en conjunto, la respuesta es HTTP 503.
 Con menos de dos puntos geolocalizados no se consulta ORS. Si ninguna fecha
 tiene tiempo disponible, no se consulta ningún proveedor.
+
+Los límites se definen en `LimitesItinerario`: 50 lugares y 51 puntos de ruta,
+contando el origen. El cliente y el servicio de desplazamientos rechazan 52 puntos.
+La comprobación real del 24/11/2026 recibió matrices de distancia y duración de
+51 × 51 de OpenRouteService. Las pruebas simuladas comprueban además que 50
+obligatorios con tiempo y rutas suficientes se conservan, con y sin alojamiento,
+y que un restaurante sugerido no desplaza selecciones manuales.
 El JSON mal formado o una configuración inválida reciben HTTP 400. Ambos
 errores incluyen un objeto JSON con `mensaje`.
 
@@ -842,7 +851,7 @@ horario de fuente no se propone.
 Si no hay restaurante viable, la tarjeta dice «Pausa para comer. Puedes elegir
 un restaurante por la zona», sin un aviso de disponibilidad o reserva para un
 local inexistente. El aviso general recuerda que ese desplazamiento no está
-calculado. El origen, las visitas y los restaurantes comparten el límite de 50 puntos de ORS.
+calculado. El origen, las visitas y los restaurantes comparten el límite interno de 51 puntos de rutas.
 
 La validación final comprueba ventanas, orden, solapes, duraciones,
 desplazamientos, duplicados y exclusiones. Las visitas incompatibles con un
@@ -1135,7 +1144,7 @@ Geoapify reciben HTTP 503, con un campo `mensaje`.
 
 Cada día comienza en las coordenadas del alojamiento seleccionado. Si no hay
 alojamiento, se utiliza la referencia geográfica del destino. El origen ocupa
-un puesto dentro del límite de 50 puntos de OpenRouteService.
+un puesto adicional a los 50 lugares, dentro del límite interno de 51 puntos de rutas.
 
 El primer trayecto y su margen cuentan dentro de la disponibilidad diaria.
 Si no existe una ruta válida, no se supone un desplazamiento de cero minutos.
@@ -1201,7 +1210,7 @@ búsquedas equivalentes; se conserva la metadata seleccionada al recortar el cat
 La sesión sigue caducando a las dos horas de inactividad. Tras reiniciar el servidor o
 perder la sesión hay que revisar los lugares antes de confirmar. No se añaden claves API.
 
-Se admiten hasta 50 selecciones, en línea con el máximo de puntos de rutas. Los elegidos
+Se admiten hasta 50 selecciones y se reserva un punto adicional para el origen. Los elegidos
 se conservan antes del recorte de IA y de rutas. Aunque se reduzca `ITINERARIOS_MAX_CANDIDATOS`,
 la muestra incluye las selecciones manuales (como máximo 120 candidatos y tres lotes de IA).
 Un itinerario aceptado debe incluir todos los obligatorios. Se programan primero,
