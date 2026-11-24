@@ -99,10 +99,10 @@ public class GeoapifyClient {
         RespuestaLugaresGeoapifyDto respuesta;
 
         try {
-            respuesta = restClient.get()
+            respuesta = consultas.ejecutar(() -> restClient.get()
                     .uri(ruta, texto.strip(), destinoId.strip(), apiKey)
                     .retrieve()
-                    .body(RespuestaLugaresGeoapifyDto.class);
+                    .body(RespuestaLugaresGeoapifyDto.class));
 
         } catch (RestClientException exception) {
             throw new IllegalStateException(

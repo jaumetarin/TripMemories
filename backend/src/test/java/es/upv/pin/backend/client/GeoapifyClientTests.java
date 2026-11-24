@@ -1,6 +1,8 @@
 package es.upv.pin.backend.client;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import es.upv.pin.backend.dto.DestinoDto;
 import es.upv.pin.backend.dto.DestinoGeoapifyDto;
@@ -26,6 +28,29 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import es.upv.pin.backend.dto.RespuestaLugaresGeoapifyDto;
 
 class GeoapifyClientTests {
+
+    @Test
+    void laBusquedaDeAlojamientoUtilizaElLimitadorCompartido() {
+        var llamadas = new AtomicInteger();
+        var limitador = new LimiteConsultasGeoapify(3, 0) {
+            @Override
+            public <T> T ejecutar(Supplier<T> consulta) {
+                llamadas.incrementAndGet();
+                return super.ejecutar(consulta);
+            }
+        };
+        var constructor = RestClient.builder().baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(constructor).build();
+        var cliente = new GeoapifyClient(constructor.build(), "clave-de-prueba", limitador);
+        servidor.expect(requestTo(urlAlojamientosDePrueba()))
+                .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+
+        var respuesta = cliente.buscarAlojamientos("Hotel Centro", "destino-prueba");
+
+        assertTrue(respuesta.features().isEmpty());
+        assertEquals(1, llamadas.get());
+        servidor.verify();
+    }
 
     @Test
     void consultasHistoricasEspecificasNoOrdenanEnElProveedorPeroConservanCiudadYCategorias() {
