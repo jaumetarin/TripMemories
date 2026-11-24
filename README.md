@@ -773,10 +773,13 @@ explícito y comunica las limitaciones. Los horarios que no sean `VERIFIED`
 se presentan como propuestas condicionadas: el texto disponible no confirma
 que el lugar está abierto en la fecha y hora elegidas.
 La prioridad combina afinidad y relevancia estimada: `(2 × afinidad + relevancia) / 3`.
-Sin estimación de relevancia se utiliza la afinidad. Se aplica tanto al recorte previo
-de la matriz como a las visitas factibles. Entre candidatos que difieren como máximo
-en cinco puntos de prioridad, se prefiere un trayecto dentro de la distancia
-deseada, después menor tiempo a pie, gasto acorde y variedad de categorías.
+Sin estimación de relevancia se utiliza la afinidad. Las selecciones manuales se
+protegen antes de recortar la muestra de IA (120) y la matriz (50).
+Las visitas automáticas se reparten por interés antes de comparar prioridades, tanto
+en esos recortes como en el plan final. Dentro del turno de una categoría se admite
+una banda de cinco puntos de prioridad; las referencias publicadas del lugar y sus
+nombres internacionales ayudan a priorizar referentes. Después se considera un trayecto
+dentro de la distancia deseada, menor tiempo a pie y gasto acorde.
 La distancia deseada es flexible y un coste desconocido no se considera gratis.
 
 La matriz de OpenRouteService admite hasta 50 puntos con coordenadas
@@ -1157,3 +1160,156 @@ Para ejecutar las pruebas del backend, desde `backend`:
 ```powershell
 .\mvnw.cmd '-Dspring.flyway.enabled=false' test
 ```
+
+### UT19: seleccionar lugares y prioridades
+
+Tras las preferencias aparece el paso opcional **Elegir lugares**. La lista y el mapa
+comparten una única selección, mantenida en el borrador del formulario y enviada en
+`ConfiguracionItinerarioDto.selecciones`. Cada entrada contiene un `LugarDto` y un solo
+`EstadoLugar`: `OBLIGATORIO`, `PREFERIDO` o `EVITADO`. Repetir una selección no duplica
+el lugar; cambiar de estado lo sustituye y retirarlo devuelve el lugar al tratamiento
+automático. Los nombres, símbolos y botones permiten reconocer el estado sin depender
+solo del color. En móvil, las vistas Lista/Mapa conservan la selección.
+
+Las prioridades se distinguen también por color: verde para Obligatorio, amarillo para
+Preferido y rojo para Evitado, tanto en botones y etiquetas como en marcadores y resumen.
+Se mantienen el nombre y el símbolo de cada estado. La búsqueda inicial muestra una
+pantalla de espera; al filtrar o ampliar se conserva la lista y aparece un aviso de carga.
+La generación muestra una pantalla dedicada que explica la espera y evita repetir la
+acción. No se simulan porcentajes ni etapas completadas. Si falla, se recupera el resumen
+con los datos confirmados y el foco en el mensaje de error. Las animaciones respetan
+la preferencia de movimiento reducido.
+
+Endpoints de sesión (sin cuentas ni tablas nuevas):
+
+- `POST /api/lugares/buscar`: `{configuracion, texto, ampliar}`. Primero prepara lugares
+  compatibles del destino. Escribir filtra el catálogo del servidor; **Buscar más lugares**
+  añade consultas por nombre a Places con el mismo destino y categorías. Requiere al menos
+  tres caracteres. `completarCatalogo: true` solicita la búsqueda específica completa;
+  `limiteResultados` controla cuántas coincidencias mostrar (30 por defecto, hasta 150).
+  La respuesta indica `catalogoCompleto` para distinguir la muestra de la búsqueda ampliada.
+  La cobertura depende del proveedor y no es un inventario exhaustivo.
+- `POST /api/lugares/seleccion`: `{configuracion, lugarId, estado}`. Actualiza el estado;
+  `estado: null` retira la selección. El backend obtiene los metadatos de su catálogo,
+  sin confiar en nombres, categorías o coordenadas enviados por el navegador.
+- `POST /api/lugares/revisar`: recibe la configuración y retira con un aviso los lugares
+  incompatibles después de cambiar destino o preferencias. Conserva los demás.
+
+El catálogo se guarda en la sesión, separado del borrador, con resultados de consultas
+vigentes 15 minutos, hasta tres destinos y 4000 lugares por destino. Se reutilizan las
+búsquedas equivalentes; se conserva la metadata seleccionada al recortar el catálogo.
+La sesión sigue caducando a las dos horas de inactividad. Tras reiniciar el servidor o
+perder la sesión hay que revisar los lugares antes de confirmar. No se añaden claves API.
+
+Se admiten hasta 50 selecciones, en línea con el máximo de puntos de rutas. Los elegidos
+se conservan antes del recorte de IA y de rutas. Aunque se reduzca `ITINERARIOS_MAX_CANDIDATOS`,
+la muestra incluye las selecciones manuales (como máximo 120 candidatos y tres lotes de IA).
+Un itinerario aceptado debe incluir todos los obligatorios. Se programan primero,
+atendiendo a su última oportunidad de apertura y evitando que otra visita consuma
+el tiempo para llegar a ellos. Los preferidos van después y las visitas automáticas
+al final. Si algún obligatorio no cabe, no se devuelve un plan incompleto: la respuesta
+es HTTP 422 con `codigo: OBLIGATORIOS_PENDIENTES`, `mensaje` y una lista de `problemas`.
+La interfaz conserva el formulario, muestra los motivos y ofrece revisar los lugares
+o cambiar fechas y disponibilidad. Hay que editar y confirmar antes de volver a generar.
+Los preferidos que no se incluyen se explican en los avisos y no bloquean el resultado.
+
+Un horario ausente o que no se pueda interpretar no se convierte en abierto 24 horas:
+la visita puede incluirse, también si es obligatoria, con «Horario pendiente de confirmar».
+Los cierres interpretables sí se respetan. Se conservan ventanas, descansos, comidas,
+duraciones y caminos disponibles. La heurística no prueba que exista o no una solución
+global; si no consigue incluir todos los obligatorios, pide ajustes en lugar de afirmar
+que se ha cumplido la selección.
+
+`CriteriosItinerario` conserva turnos por categoría desde la muestra de IA hasta el
+itinerario final. Los obligatorios y preferidos no consumen los turnos automáticos.
+Cada lugar compartido se cuenta una sola vez, reservándolo para el interés con menos
+alternativas en caso de empate. Con varios intereses explícitos, las visitas automáticas
+de una categoría no superan en más de una a las de otra. Si la categoría pendiente
+abre más tarde, se puede esperar; si no encaja, se deja tiempo libre con un aviso en
+vez de rellenar con otra categoría. El recuento se mantiene entre días. Las señales
+documentales y la relevancia estimada orientan la representatividad, sin certificarla
+ni añadir llamadas o lotes de Gemini a los límites existentes.
+Los evitados y sus alias quedan fuera de visitas y propuestas gastronómicas.
+Cambiar las selecciones invalida la confirmación y la clave de reutilización de UT17.
+
+Comprobación de aceptación: buscar un lugar, marcarlo obligatorio dos veces (una sola
+entrada), cambiarlo a preferido y evitado, comprobar lista/mapa/resumen, volver y retirar
+la selección. Cambiar intereses o exclusiones conserva los compatibles y avisa de los
+retirados. Las pruebas del backend cubren además sesión, metadatos del servidor, caché,
+búsqueda por nombre, protección antes de límites y obligatorios imposibles o con apertura
+posterior. El frontend se comprueba con `npm run build`, `npm run lint` y navegación manual.
+
+Las consultas a Geoapify disponen de 20 segundos de lectura. Places reintenta una sola
+vez la misma petición únicamente si se agota ese tiempo; no repite errores HTTP de cuota,
+clave o parámetros ni respuestas inválidas. El registro identifica las categorías,
+la página y el intento sin incluir la clave ni la URL. Si ambos intentos fallan,
+la interfaz informa de la espera agotada y permite reintentar, sin afirmar que no hay lugares.
+
+#### Carga progresiva y reutilización de Geoapify
+
+`muestraInicial` consulta un conjunto acotado de grupos por interés, sin páginas
+adicionales ni geocodificación de calles. Historia usa las atracciones generales;
+Cultura añade mercados y espacios culturales; Ocio combina actividades recreativas,
+zoos/parques de atracciones y centros comerciales; Naturaleza consulta parques, playas
+y espacios naturales. Arte y Gastronomía usan sus dos primeros grupos.
+Los grupos compartidos se consultan una sola vez: Historia, Cultura, Ocio y Naturaleza
+suponen ocho consultas distintas. Se omiten los grupos excluidos. La muestra se
+clasifica, agrupa y filtra con las mismas reglas que los candidatos del planificador.
+Una muestra vacía no se presenta como prueba de que no existen más lugares.
+
+`MuestraLugaresService` reparte el límite de pantalla en cuotas iguales por interés
+activo. Con un límite de 30 y cuatro intereses muestra hasta 28 lugares: siete de cada
+categoría. Un lugar compartido ocupa una sola cuota. Se alternan las categorías en la
+lista y los tipos dentro de cada categoría; las compras ocupan como máximo un tercio
+de la cuota de Ocio (con un mínimo de una plaza). Si faltan alternativas, se muestra
+el recuento y se invita a ampliar o buscar por nombre, sin rellenar con otra categoría.
+Las selecciones manuales se presentan aparte. Una búsqueda por texto no aplica cuotas.
+
+Las peticiones usan `bias=proximity` con el centro del destino para orientar la búsqueda
+geográfica, salvo los grupos históricos específicos (`tourism.sights.*`): en las pruebas
+de Madrid su ordenación externa agotaba los dos intentos de 20 segundos; sin ella,
+ambos grupos respondieron en 6,58 y 8,69 s con 59 y 89 lugares. Estas consultas siguen
+filtradas por la ciudad y se ordenan localmente para la pantalla. No son tiempos garantizados.
+La comprobación posterior a través del backend completó la preparación de Madrid con
+Historia, Cultura, Ocio y Naturaleza en 24,22 s: 712 candidatos compatibles, sin timeout
+en estos grupos. Esta medición incluye el catálogo completo, no la evaluación con IA
+ni el cálculo de recorridos.
+Entre lugares del mismo tipo, se priorizan referencias Wikidata/Wikipedia
+publicadas por el proveedor, la cantidad de nombres internacionales y la cercanía.
+Son señales orientativas, no una puntuación de popularidad ni garantía de recuperar
+todos los imprescindibles. Se reconocen también plazas ajardinadas publicadas como
+parques. No hay listas de ciudades predefinidas ni llamadas adicionales a la IA.
+`LugarDto` conserva el tipo y estas señales para repetir el mismo criterio al reutilizar
+el catálogo; la pantalla muestra nombres, categorías y cantidades comprensibles.
+
+**Cargar más lugares de mis intereses** ejecuta la preparación completa bajo demanda y
+muestra inicialmente hasta 60 resultados; **Mostrar más resultados encontrados** permite
+ver más del catálogo ya recuperado, hasta 150. Buscar por nombre agrupa las categorías
+permitidas en una sola petición, sin obligar a cargar previamente el catálogo completo.
+Las selecciones y sus estados se conservan al ampliar y al volver al resumen.
+
+Las consultas independientes se ejecutan en paralelo y se reúnen en un orden estable;
+las páginas de una misma consulta conservan su secuencia. `LimiteConsultasGeoapify`
+limita cada instancia del backend a tres solicitudes simultáneas para todos sus usuarios
+y separa sus inicios al menos 350 ms. También se aplica al autocompletado y a las calles.
+Los límites de una clave compartida con otros procesos siguen aplicándose conjuntamente.
+
+`CacheGeoapify` guarda hasta 128 respuestas públicas durante 15 minutos en memoria.
+La clave distingue operación, destino, categorías, límite, página, nombre y sesgo geográfico. No almacena
+decisiones personales, errores ni respuestas inválidas; sí admite una lista vacía válida.
+Una consulta equivalente simultánea espera el resultado en vez de duplicar la petición.
+Se reutiliza entre sesiones, pantalla de selección, preparación del plan y restaurantes.
+Al generar se completan las búsquedas específicas y las páginas necesarias aprovechando
+las respuestas iniciales vigentes. Las exclusiones se aplican de nuevo a los datos
+recuperados, de modo que la caché no conserva preferencias antiguas. Reiniciar el backend
+vacía esta caché; no requiere tablas, Redis, nuevas dependencias ni variables de entorno.
+
+Medición del 24/11/2026, Madrid del 25 al 27 con Historia, Cultura local, Ocio y Naturaleza:
+la muestra equilibrada de 28 lugares tardó 4,05 s, con siete resultados por categoría.
+Incluyó el Retiro, Plaza Mayor, Plaza de España, mercados, bolera, zoo y parque de
+atracciones, con dos centros comerciales. En la optimización anterior, antes de este
+reparto y estas señales, la muestra inicial tardó 7,414 s frente a 45,9 s del catálogo
+completo; repetirla tardó 0,008 s y abrirla en otra sesión 0,029 s. Son mediciones de
+la búsqueda, no de la generación con IA,
+y no garantizan una latencia fija del proveedor. Las pruebas simulan caché, caducidad,
+concurrencia, filtros actuales, carga inicial, ampliación y reutilización por el planificador.

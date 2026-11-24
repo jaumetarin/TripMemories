@@ -28,7 +28,23 @@ export interface ConfiguracionItinerario {
   alojamientoLocalizado: Alojamiento | null
   preferencias: Preferencias
   ritmo: RitmoDiario
+  selecciones: SeleccionLugar[]
 }
+
+export type EstadoLugar = 'OBLIGATORIO' | 'PREFERIDO' | 'EVITADO'
+export interface SeleccionLugar { lugar: Lugar; estado: EstadoLugar }
+export interface CatalogoLugares {
+  lugares: Lugar[]
+  selecciones: SeleccionLugar[]
+  avisos: string[]
+  hayMas: boolean
+  limiteSelecciones: number
+  catalogoCompleto: boolean
+  reparto: RepartoCategoriaLugares[]
+  categoriasMuestra: Record<string, string>
+}
+
+export interface RepartoCategoriaLugares { codigo: string; nombre: string; mostrados: number; objetivo: number }
 
 export interface RitmoDiario {
   comidaInicio: string
@@ -205,6 +221,7 @@ function esConfiguracionItinerario(valor: unknown): valor is ConfiguracionItiner
       || esAlojamiento(valor.alojamientoLocalizado))
     && esPreferencias(valor.preferencias)
     && esRitmoDiario(valor.ritmo)
+    && Array.isArray(valor.selecciones) && valor.selecciones.every(esSeleccionLugar)
 }
 
 function esRitmoDiario(valor: unknown): valor is RitmoDiario {
@@ -245,6 +262,45 @@ function esLugar(valor: unknown): valor is Lugar {
     && (valor.longitud === null || typeof valor.longitud === 'number' && Number.isFinite(valor.longitud))
     && esListaDeTextos(valor.categorias) && esListaDeTextos(valor.subcategorias)
     && (valor.horario === undefined || typeof valor.horario === 'string')
+}
+
+function esSeleccionLugar(valor: unknown): valor is SeleccionLugar {
+  return esObjeto(valor) && esLugar(valor.lugar)
+    && ['OBLIGATORIO', 'PREFERIDO', 'EVITADO'].includes(String(valor.estado))
+}
+
+async function consultarLugares(ruta: string, cuerpo: unknown, signal: AbortSignal): Promise<CatalogoLugares> {
+  const respuesta = await fetch('/api/lugares/' + ruta, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]), body: JSON.stringify(cuerpo),
+  })
+  const datos: unknown = await respuesta.json().catch(() => null)
+  if (!respuesta.ok) throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
+    ? datos.mensaje : 'No se pueden consultar los lugares. Tus selecciones se conservan; vuelve a intentarlo.')
+  if (!esObjeto(datos) || !Array.isArray(datos.lugares) || !datos.lugares.every(esLugar)
+    || !Array.isArray(datos.selecciones) || !datos.selecciones.every(esSeleccionLugar)
+    || !esListaDeTextos(datos.avisos) || typeof datos.hayMas !== 'boolean'
+    || typeof datos.limiteSelecciones !== 'number' || typeof datos.catalogoCompleto !== 'boolean'
+    || !Array.isArray(datos.reparto) || !datos.reparto.every(r => esObjeto(r) && typeof r.codigo === 'string'
+      && typeof r.nombre === 'string' && typeof r.mostrados === 'number' && typeof r.objetivo === 'number')
+    || !esObjeto(datos.categoriasMuestra) || !Object.values(datos.categoriasMuestra).every(c => typeof c === 'string')) throw new Error('El servidor ha devuelto unos lugares no válidos.')
+  return datos as unknown as CatalogoLugares
+}
+
+export function buscarLugares(configuracion: ConfiguracionItinerario, texto: string, ampliar: boolean, signal: AbortSignal, limiteResultados = 30) {
+  return consultarLugares('buscar', { configuracion, texto, ampliar, limiteResultados }, signal)
+}
+
+export function completarCatalogoLugares(configuracion: ConfiguracionItinerario, texto: string, signal: AbortSignal) {
+  return consultarLugares('buscar', { configuracion, texto, ampliar: false, completarCatalogo: true, limiteResultados: 60 }, signal)
+}
+
+export function revisarSeleccionLugares(configuracion: ConfiguracionItinerario, signal: AbortSignal) {
+  return consultarLugares('revisar', configuracion, signal)
+}
+
+export function cambiarSeleccionLugar(configuracion: ConfiguracionItinerario, lugarId: string, estado: EstadoLugar | null, signal: AbortSignal) {
+  return consultarLugares('seleccion', { configuracion, lugarId, estado }, signal)
 }
 
 export async function prepararCandidatos(
@@ -572,6 +628,14 @@ export async function obtenerConsumoGeneracion(signal: AbortSignal): Promise<Con
   return datos as unknown as ConsumoGeneracion
 }
 
+export class ErrorObligatoriosPendientes extends Error {
+  readonly problemas: string[]
+  constructor(mensaje: string, problemas: string[]) {
+    super(mensaje)
+    this.problemas = problemas
+  }
+}
+
 export async function generarItinerario(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
 ): Promise<{ itinerario: ItinerarioGenerado; reutilizado: boolean }> {
@@ -584,6 +648,10 @@ export async function generarItinerario(
   })
   const datos: unknown = await respuesta.json().catch(() => null)
   if (!respuesta.ok) {
+    if (respuesta.status === 422 && esObjeto(datos) && datos.codigo === 'OBLIGATORIOS_PENDIENTES'
+      && typeof datos.mensaje === 'string' && esListaDeTextos(datos.problemas)) {
+      throw new ErrorObligatoriosPendientes(datos.mensaje, datos.problemas)
+    }
     throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
       ? datos.mensaje : 'No se ha podido generar el itinerario. Comprueba la conexión y vuelve a intentarlo.')
   }

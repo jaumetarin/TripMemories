@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -25,6 +26,58 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import es.upv.pin.backend.dto.RespuestaLugaresGeoapifyDto;
 
 class GeoapifyClientTests {
+
+    @Test
+    void consultasHistoricasEspecificasNoOrdenanEnElProveedorPeroConservanCiudadYCategorias() {
+        var builder = RestClient.builder().baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new GeoapifyClient(builder.build(), "clave-de-prueba");
+        var destino = new DestinoDto("madrid", "Madrid", null, "España", 40.4, -3.7);
+        for (var grupo : List.of(
+                "tourism.sights.city_gate,tourism.sights.tower,tourism.sights.castle,tourism.sights.manor,tourism.sights.fort",
+                "tourism.sights.building,tourism.sights.city_hall,tourism.sights.place_of_worship,tourism.sights.monastery,tourism.sights.archaeological_site")) {
+            servidor.expect(requestTo("https://api.geoapify.com/v2/places?categories=" + grupo.replace(",", "%2C")
+                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        }
+        for (var grupo : List.of(
+                "tourism.sights.city_gate,tourism.sights.tower,tourism.sights.castle,tourism.sights.manor,tourism.sights.fort",
+                "tourism.sights.building,tourism.sights.city_hall,tourism.sights.place_of_worship,tourism.sights.monastery,tourism.sights.archaeological_site")) {
+            cliente.buscarLugares(destino, grupo, 100, 0, "");
+            cliente.buscarLugares(new DestinoDto("madrid", "Madrid", null, "España", 40.42, -3.71), grupo, 100, 0, "");
+        }
+        servidor.verify(); // Cambiar el centro no duplica una consulta que ya no lleva sesgo.
+    }
+
+    @Test
+    void elSesgoDelDestinoFormaParteDeLaConsultaYDeLaCache() {
+        var builder = RestClient.builder().baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new GeoapifyClient(builder.build(), "clave-de-prueba");
+        servidor.expect(requestTo("https://api.geoapify.com/v2/places?categories=leisure.park&filter=place:madrid"
+                + "&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba"))
+                .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.geoapify.com/v2/places?categories=leisure.park&filter=place:madrid"
+                + "&limit=100&lang=es&bias=proximity:-3.6,40.4&apiKey=clave-de-prueba"))
+                .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        var destino = new DestinoDto("madrid", "Madrid", null, "España", 40.4, -3.7);
+        cliente.buscarLugares(destino, "leisure.park", 100, 0, "");
+        cliente.buscarLugares(destino, "leisure.park", 100, 0, "");
+        cliente.buscarLugares(new DestinoDto("madrid", "Madrid", null, "España", 40.4, -3.6), "leisure.park", 100, 0, "");
+        servidor.verify();
+    }
+
+    @Test
+    void buscarPorNombreMantieneDestinoYCategoriasYCodificaElTexto() {
+        var builder = RestClient.builder().baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new GeoapifyClient(builder.build(), "prueba");
+        servidor.expect(requestTo("https://api.geoapify.com/v2/places?categories=entertainment.museum"
+                + "&filter=place:madrid&limit=30&lang=es&apiKey=prueba&name=Reina%20Sof%C3%ADa"))
+                .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        assertTrue(cliente.buscarLugares("madrid", "entertainment.museum", 30, 0, "Reina Sofía").features().isEmpty());
+        servidor.verify();
+    }
 
     @Test
     void interpretaLosDestinosDeGeoapifyComoRecords() {
@@ -360,6 +413,76 @@ class GeoapifyClientTests {
         assertEquals(
                 "El servicio de alojamientos ha devuelto una respuesta no válida.",
                 error.getMessage());
+
+        servidor.verify();
+    }
+     @Test
+     void reintentaUnaVezElTimeoutYConservaLaMismaConsulta() {
+        var builder = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new GeoapifyClient(builder.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlLugaresDePrueba()))
+                .andRespond(request -> {
+                    throw new java.net.http.HttpTimeoutException(
+                            "URL y clave que no deben propagarse");
+                });
+
+        servidor.expect(requestTo(urlLugaresDePrueba()))
+                .andRespond(withSuccess(
+                        "{\"features\":[]}", MediaType.APPLICATION_JSON));
+
+        assertTrue(cliente.buscarLugares(
+                "destino-prueba", "entertainment.museum", 20)
+                .features().isEmpty());
+
+        servidor.verify();
+    }
+
+    @Test
+    void unTimeoutPersistenteTerminaTrasDosIntentosConUnMensajeCorregible() {
+        var builder = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new GeoapifyClient(builder.build(), "clave-de-prueba");
+
+        servidor.expect(
+                org.springframework.test.web.client.ExpectedCount.twice(),
+                requestTo(urlLugaresDePrueba()))
+                .andRespond(request -> {
+                    throw new java.net.SocketTimeoutException("clave-de-prueba");
+                });
+
+        var error = assertThrows(
+                IllegalStateException.class,
+                () -> cliente.buscarLugares(
+                        "destino-prueba", "entertainment.museum", 20));
+
+        assertTrue(error.getMessage().contains("tardando demasiado"));
+        assertFalse(error.getMessage().contains("clave-de-prueba"));
+
+        servidor.verify();
+    }
+
+    @Test
+    void noReintentaUnLimiteHttpDelProveedor() {
+        var builder = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new GeoapifyClient(builder.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlLugaresDePrueba()))
+                .andRespond(
+                        org.springframework.test.web.client.response
+                                .MockRestResponseCreators.withStatus(
+                                        org.springframework.http.HttpStatus
+                                                .TOO_MANY_REQUESTS));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> cliente.buscarLugares(
+                        "destino-prueba", "entertainment.museum", 20));
 
         servidor.verify();
     }

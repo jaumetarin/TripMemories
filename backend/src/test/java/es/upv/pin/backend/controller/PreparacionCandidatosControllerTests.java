@@ -44,7 +44,7 @@ class PreparacionCandidatosControllerTests {
         for (String consulta : clasificacion.consultasPorInteres(GASTRONOMIA).subList(1, 3)) {
             proveedor.expect(org.springframework.test.web.client.ExpectedCount.between(0, 2), requestTo(
                     "https://api.geoapify.com/v2/places?categories=" + consulta.replace(",", "%2C")
-                    + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba"))
+                    + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba"))
                     .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
         }
         var servicio = new PreparacionCandidatosService(new GeoapifyClient(constructor.build(), "clave-de-prueba"),
@@ -57,7 +57,7 @@ class PreparacionCandidatosControllerTests {
     private String url() {
         return "https://api.geoapify.com/v2/places?categories="
                 + new ClasificacionLugaresService().consultasPorInteres(GASTRONOMIA).getFirst().replace(",", "%2C")
-                + "&filter=place:madrid&limit=100&lang=es&apiKey=clave-de-prueba";
+                + "&filter=place:madrid&limit=100&lang=es&bias=proximity:-3.7,40.4&apiKey=clave-de-prueba";
     }
 
     @Test
@@ -72,7 +72,9 @@ class PreparacionCandidatosControllerTests {
         mvc.perform(post("/api/candidatos/preparar").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].length()").value(7))
+                .andExpect(jsonPath("$[0].tipo").value("RESTAURANTE"))
+                .andExpect(jsonPath("$[0].referenciaDocumentada").value(false))
+                .andExpect(jsonPath("$[0].nombresInternacionales").value(0))
                 .andExpect(jsonPath("$[0].id").value("a"))
                 .andExpect(jsonPath("$[0].latitud").value(40.4))
                 .andExpect(jsonPath("$[0].longitud").value(-3.7))
@@ -100,7 +102,7 @@ class PreparacionCandidatosControllerTests {
                 .andExpect(jsonPath("$[0].nombre").value("Con horario"))
                 .andExpect(jsonPath("$[0].horario").value("Mo-Su 10:00-20:00"))
                 .andExpect(jsonPath("$[1].nombre").value("Sin horario"))
-                .andExpect(jsonPath("$[1].length()").value(7))
+                .andExpect(jsonPath("$[1].tipo").value("RESTAURANTE"))
                 .andExpect(jsonPath("$[1].latitud").isEmpty())
                 .andExpect(jsonPath("$[1].longitud").isEmpty())
                 .andExpect(jsonPath("$[1].horario").doesNotExist());

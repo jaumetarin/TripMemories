@@ -76,6 +76,36 @@ class GeneracionItinerarioComidaTest {
 }
 
     @Test
+    void unRestauranteEvitadoTampocoSeOfreceComoAlternativaConOtroId() {
+        var base = config(LocalDateTime.of(2026, 11, 7, 10, 0), LocalDateTime.of(2026, 11, 7, 18, 0), true);
+        var evitado = new LugarDto("evitado", "Casa Pepa", "Calle Mayor 1", 40.34, -1.10,
+                List.of(CategoriaTuristica.GASTRONOMIA), List.of(), null);
+        var config = new ConfiguracionItinerarioDto(base.destino(), base.disponibilidad(), "", base.preferencias(),
+                base.ritmo(), List.of(new SeleccionLugarDto(evitado, EstadoLugar.EVITADO)));
+        when(configuraciones.validar(config)).thenReturn(config);
+        evaluar(config, lugar("a", 90, 60));
+        var alias = new OpcionComidaDto("otro-id", "Casa Pepa", 40.34, -1.10, "Calle Mayor 1");
+        when(recomendaciones.buscar(anyString(), any(), anySet(), anyList()))
+                .thenReturn(new RecomendacionComidaDto(List.of(alias), List.of()));
+        rutas("a");
+        var plan = servicio.generar(config);
+        assertTrue(plan.dias().stream().flatMap(d -> d.bloques().stream()).allMatch(b ->
+                b.restaurante() == null && b.alternativasComida().isEmpty()));
+        assertTrue(plan.dias().stream()
+                .flatMap(dia -> dia.bloques().stream())
+                .anyMatch(bloque ->
+                        bloque.tipo() == TipoBloqueItinerario.VISITA
+                                && bloque.candidato().lugar().id().equals("a")));
+
+        verify(desplazamientos).calcular(argThat(puntos ->
+                puntos.size() == 2
+                        && puntos.stream().anyMatch(
+                                punto -> punto.id().equals("referencia:inicio"))
+                        && puntos.stream().anyMatch(
+                                punto -> punto.id().equals("a"))));
+    }
+
+    @Test
     void restaurantePrincipalTieneTrayectosYAlternativaSinReserva() {
         var config = config(LocalDateTime.of(2026, 11, 7, 10, 0),
                 LocalDateTime.of(2026, 11, 7, 18, 0), true);
@@ -384,5 +414,65 @@ class GeneracionItinerarioComidaTest {
 
         assertNotNull(comida.restaurante());
         assertEquals("r1", comida.restaurante().id());
+    }
+
+    @Test
+    void losRestaurantesNoDesplazanVisitasPreferidasAlReservarElOrigen() {
+        var base = config(
+                LocalDateTime.of(2026, 11, 7, 10, 0),
+                LocalDateTime.of(2026, 11, 7, 18, 0),
+                false);
+
+        var candidatos = new ArrayList<CandidatoEvaluadoDto>();
+
+        for (int i = 0; i < 49; i++) {
+            candidatos.add(lugar("visita-" + i, 80, 60));
+        }
+
+        var selecciones = candidatos.stream()
+                .map(candidato -> new SeleccionLugarDto(
+                        candidato.lugar(), EstadoLugar.PREFERIDO))
+                .toList();
+
+        var config = new ConfiguracionItinerarioDto(
+                base.destino(),
+                base.disponibilidad(),
+                base.alojamiento(),
+                base.preferencias(),
+                base.ritmo(),
+                base.alojamientoLocalizado(),
+                selecciones);
+
+        when(configuraciones.validar(config)).thenReturn(config);
+        evaluar(config, candidatos.toArray(CandidatoEvaluadoDto[]::new));
+
+        var restaurante = new OpcionComidaDto(
+                "restaurante-extra",
+                "Restaurante de prueba",
+                40.34,
+                -1.10,
+                "Calle de Prueba 10");
+
+        when(recomendaciones.buscar(anyString(), any(), anySet(), anyList()))
+                .thenReturn(new RecomendacionComidaDto(
+                        List.of(restaurante), List.of()));
+
+        rutas(candidatos.stream()
+                .map(candidato -> candidato.lugar().id())
+                .toArray(String[]::new));
+
+        var plan = servicio.generar(config);
+
+        assertEquals(49, plan.candidatosEnMatriz());
+
+        verify(desplazamientos).calcular(argThat(puntos ->
+                puntos.size() == 50
+                        && puntos.stream().anyMatch(
+                                punto -> punto.id().equals("referencia:inicio"))
+                        && puntos.stream().noneMatch(
+                                punto -> punto.id().equals("restaurante-extra"))
+                        && candidatos.stream().allMatch(candidato ->
+                                puntos.stream().anyMatch(punto ->
+                                        punto.id().equals(candidato.lugar().id())))));
     }
 }

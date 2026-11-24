@@ -89,6 +89,110 @@ class GeneracionItinerarioServiceTest {
                 .filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).count());
     }
 
+    private ConfiguracionItinerarioDto conSelecciones(ConfiguracionItinerarioDto base, SeleccionLugarDto... selecciones) {
+        var config = new ConfiguracionItinerarioDto(base.destino(), base.disponibilidad(), base.alojamiento(),
+                base.preferencias(), base.ritmo(), List.of(selecciones));
+        when(configuraciones.validar(config)).thenReturn(config);
+        return config;
+    }
+
+    @Test
+    void obligatorioAntesDePreferidoYDeMayorPuntuacion() {
+        var fecha = LocalDateTime.of(2026, 5, 1, 11, 0);
+        var obligatorio = candidato("obligatorio", 1, CostLevel.UNKNOWN, 1.0);
+        var preferido = candidato("preferido", 90, CostLevel.UNKNOWN, 1.0);
+
+        var config = conSelecciones(
+                config(fecha, fecha.plusMinutes(70), NivelGasto.MODERADO, 3),
+                new SeleccionLugarDto(
+                        obligatorio.lugar(), EstadoLugar.OBLIGATORIO),
+                new SeleccionLugarDto(
+                        preferido.lugar(), EstadoLugar.PREFERIDO));
+
+        evaluar(config, List.of(
+                candidato("automatico", 100, CostLevel.UNKNOWN, 1.0),
+                preferido,
+                obligatorio));
+
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "obligatorio", "preferido", "automatico"));
+
+        var plan = servicio.generar(config);
+
+        var visitas = plan.dias().stream()
+                .flatMap(dia -> dia.bloques().stream())
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .toList();
+
+        assertEquals(1, visitas.size());
+        assertEquals(
+                "obligatorio",
+                visitas.getFirst().candidato().lugar().id());
+
+        assertTrue(plan.advertencias().stream().anyMatch(
+                aviso -> aviso.contains("preferido")
+                        && aviso.contains("No se ha podido incluir")));
+    }
+
+    @Test
+    void obligatorioImposibleBloqueaElPlanYPideCorregirLaConfiguracion() {
+        var fecha = LocalDateTime.of(2026, 5, 1, 11, 0);
+        var obligatorio = candidato("Museo obligatorio", 1, CostLevel.UNKNOWN, 1.0);
+        var config = conSelecciones(config(fecha, fecha.plusMinutes(30), NivelGasto.MODERADO, 3),
+                new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO));
+        evaluar(config, List.of(obligatorio));
+        var error = assertThrows(es.upv.pin.backend.exception.ObligatoriosPendientesException.class, () -> servicio.generar(config));
+        assertTrue(error.getProblemas().stream().anyMatch(a -> a.contains("Museo obligatorio") && a.contains("60 minutos")));
+        verifyNoInteractions(desplazamientos);
+    }
+
+    @Test
+    void esperaLaAperturaDelObligatorioEnVezDeOcuparSuVentanaConOtroLugar() {
+        var fecha = LocalDateTime.of(2026, 5, 1, 10, 0);
+        var base = candidato("obligatorio", 1, CostLevel.UNKNOWN, 1.0);
+        var original = base.lugar();
+        var lugarConHorario = new LugarDto(original.id(), original.nombre(), original.direccion(), original.latitud(), original.longitud(),
+                original.categorias(), original.subcategorias(), "Fr 11:00-12:00");
+        var obligatorio = new CandidatoEvaluadoDto(lugarConHorario, 1, 60, "Museo", "Seleccionado", CostLevel.UNKNOWN,
+                null, List.of(), "Fr 11:00-12:00", "Geoapify / OpenStreetMap", "LOCAL", CostConfidence.UNKNOWN,
+                ScheduleStatus.UNVERIFIED, null, null, null, null, null, null);
+        var config = conSelecciones(config(fecha, fecha.plusHours(2), NivelGasto.MODERADO, 3),
+                new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO));
+        evaluar(config, List.of(candidato("automatico", 100, CostLevel.UNKNOWN, 1.0), obligatorio));
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "obligatorio", "automatico"));
+        var plan = servicio.generar(config);
+        var visitas = plan.dias().getFirst().bloques().stream().filter(b -> b.tipo() == TipoBloqueItinerario.VISITA).toList();
+        assertEquals(1, visitas.size());
+        assertEquals("obligatorio", visitas.getFirst().candidato().lugar().id());
+        assertEquals(fecha.plusHours(1), visitas.getFirst().inicio());
+        assertEquals(ScheduleStatus.UNVERIFIED, visitas.getFirst().candidato().estadoHorario());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void obligatorioSeConservaAntesDelLimiteDeCincuentaPuntosYEvitadoNoEntra() {
+        var obligatorio = candidato("imprescindible", 1, CostLevel.UNKNOWN, 1.0);
+        var evitado = candidato("evitado", 100, CostLevel.UNKNOWN, 1.0);
+        var config = conSelecciones(config(1), new SeleccionLugarDto(obligatorio.lugar(), EstadoLugar.OBLIGATORIO),
+                new SeleccionLugarDto(evitado.lugar(), EstadoLugar.EVITADO));
+        var candidatos = new ArrayList<CandidatoEvaluadoDto>();
+        for (int i = 0; i < 60; i++) candidatos.add(candidato("a" + i, 90, CostLevel.UNKNOWN, 1.0));
+        candidatos.addAll(List.of(obligatorio, evitado));
+        evaluar(config, candidatos);
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "imprescindible"));
+        servicio.generar(config);
+        ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(desplazamientos).calcular(captor.capture());
+        assertEquals(50, captor.getValue().size());
+        assertTrue(captor.getValue().stream().anyMatch(p -> p.id().equals("imprescindible")));
+        assertTrue(captor.getValue().stream().noneMatch(p -> p.id().equals("evitado")));
+    }
+
     @Test
     void priorizaUnReferenteAunqueSuIdSeaPosteriorYNoPermiteSolapes() {
         var llegada = LocalDateTime.of(2026, 5, 1, 11, 0);
@@ -134,7 +238,9 @@ class GeneracionItinerarioServiceTest {
         for (int i = 0; i < 60; i++) candidatos.add(candidato("a" + i, 80, CostLevel.UNKNOWN, 1.0, 20));
         candidatos.add(candidato("z-referente", 80, CostLevel.UNKNOWN, 1.0, 95));
         evaluar(config, candidatos);
-        when(desplazamientos.calcular(anyList())).thenReturn(List.of());
+        when(desplazamientos.calcular(anyList())).thenReturn(
+                conRutasDesdeInicio(
+                        List.of(), "obligatorio", "automatico"));
         servicio.generar(config);
         ArgumentCaptor<List<PuntoRutaDto>> captor = ArgumentCaptor.forClass(List.class);
         verify(desplazamientos).calcular(captor.capture());

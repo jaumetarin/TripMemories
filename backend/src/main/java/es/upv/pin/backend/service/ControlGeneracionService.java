@@ -124,7 +124,8 @@ public class ControlGeneracionService {
                 configuracion.alojamiento(),
                 ordenadas,
                 configuracion.ritmo(),
-                configuracion.alojamientoLocalizado());
+                configuracion.alojamientoLocalizado(),
+                configuracion.selecciones());
     }
 
     public record Resultado(ItinerarioGeneradoDto itinerario, boolean reutilizado, Instant vigenteHasta) {}

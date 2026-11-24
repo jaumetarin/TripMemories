@@ -106,6 +106,27 @@ class EvaluacionCandidatosServiceTests {
     }
 
     @Test
+    void protegeLaSeleccionAntesDelLimiteDeIaYQuitaEvitados() {
+        var obligatorio = lugar(999);
+        var evitado = lugar(0);
+        var entrada = new ConfiguracionItinerarioDto(viaje.destino(), viaje.disponibilidad(), "", viaje.preferencias(), null,
+                List.of(new SeleccionLugarDto(obligatorio, EstadoLugar.OBLIGATORIO), new SeleccionLugarDto(evitado, EstadoLugar.EVITADO)));
+        when(config.validar(entrada)).thenReturn(entrada);
+        when(prep.preparar(entrada)).thenReturn(IntStream.range(0, 150).mapToObj(this::lugar).toList());
+        when(ai.evaluar(anyList(), anyList(), anyString())).thenAnswer(inv -> {
+            List<LugarDto> lote = inv.getArgument(0);
+            return lote.stream().collect(Collectors.toMap(LugarDto::id,
+                    l -> new ValoracionGemini(80, null, 60, "Visita", "Interés cultural")));
+        });
+        when(research.disponible()).thenReturn(false);
+        var resultado = service.evaluar(entrada);
+        assertEquals(120, resultado.candidatos().size());
+        assertEquals(obligatorio, resultado.candidatos().getFirst().lugar());
+        assertTrue(resultado.candidatos().stream().noneMatch(c -> c.lugar().id().equals(evitado.id())));
+        verify(ai, times(3)).evaluar(anyList(), anyList(), anyString());
+    }
+
+    @Test
     void conservaDescripcionYFuenteSinConvertirElCosteDesconocidoEnGratis() {
         preparar(List.of(lugar(1)));
         when(ai.evaluar(anyList(), anyList(), anyString()))

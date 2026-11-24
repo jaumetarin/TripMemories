@@ -32,10 +32,22 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class GeneracionItinerarioControllerTests {
     private final GeneracionItinerarioService servicio = mock(GeneracionItinerarioService.class);
-    private final ControlGeneracionService control = new ControlGeneracionService(servicio,
-            new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService()), 1, 60, 15);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new GeneracionItinerarioController(control))
-            .setControllerAdvice(new GeneracionItinerarioExceptionHandler()).build();
+    private final ControlGeneracionService control = new ControlGeneracionService(
+            servicio,
+            new ConfiguracionItinerarioService(
+                    new FechaHoraService(java.time.Clock.fixed(
+                            java.time.Instant.parse("2026-01-01T12:00:00Z"),
+                            java.time.ZoneOffset.UTC)),
+                    new PreferenciasService()),
+            1, 60, 15);
+
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+            new GeneracionItinerarioController(
+                    control,
+                    mock(es.upv.pin.backend.service.CatalogoLugaresService.class)))
+            .setControllerAdvice(new GeneracionItinerarioExceptionHandler())
+            .build();
+            
     private final String configuracion = """
             {"destino":{"id":"madrid","nombre":"Madrid","latitud":40.4,"longitud":-3.7},
              "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-10T18:00"},
@@ -49,6 +61,17 @@ class GeneracionItinerarioControllerTests {
                 },"preferencias":{"intereses":["GASTRONOMIA"],
              "categoriasExcluidas":[],"subcategoriasExcluidas":[],"nivelGasto":"MODERADO","distanciaKm":3}}
              """;
+
+    @Test
+    void unObligatorioNoIncluidoDevuelve422ConMotivosYSinUnPlanIncompleto() throws Exception {
+        when(servicio.generar(any())).thenThrow(new es.upv.pin.backend.exception.ObligatoriosPendientesException(
+                List.of("Museo: la visita no cabe en la disponibilidad.")));
+        mvc.perform(post("/api/itinerarios/generar").contentType(MediaType.APPLICATION_JSON).content(configuracion))
+                .andExpect(status().is(422)).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.codigo").value("OBLIGATORIOS_PENDIENTES"))
+                .andExpect(jsonPath("$.problemas[0]").value("Museo: la visita no cabe en la disponibilidad."))
+                .andExpect(jsonPath("$.dias").doesNotExist());
+    }
 
     @Test
     void devuelveItinerarioSinCache() throws Exception {

@@ -74,6 +74,20 @@ class ControlGeneracionServiceTests {
     }
 
     @Test
+    void cambiarPrioridadNoReutilizaUnPlanConLaSeleccionAnterior() {
+        var base = viaje("");
+        var lugar = new LugarDto("prado", "Museo del Prado", "Madrid", 40.4, -3.7,
+                List.of(CategoriaTuristica.ARTE_MUSEOS), List.of(), null);
+        for (var estado : List.of(EstadoLugar.OBLIGATORIO, EstadoLugar.PREFERIDO, EstadoLugar.EVITADO)) {
+            var config = new ConfiguracionItinerarioDto(base.destino(), base.disponibilidad(), base.alojamiento(),
+                    base.preferencias(), base.ritmo(), List.of(new SeleccionLugarDto(lugar, estado)));
+            assertFalse(control.generar(config, sesion).reutilizado());
+            assertTrue(control.generar(config, sesion).reutilizado());
+        }
+        verify(generacion, times(3)).generar(any());
+    }
+
+    @Test
     void configuracionInvalidaNoConsumeNiLlamaProveedores() {
         assertThrows(IllegalArgumentException.class, () -> control.generar(null, sesion));
         assertEquals(3, control.consultar(sesion).restantes());

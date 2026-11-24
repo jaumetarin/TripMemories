@@ -44,15 +44,15 @@
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 .pasos::before {
   content: '';
   position: absolute;
   top: 16px;
-  left: calc(100% / 8);
-  right: calc(100% / 8);
+  left: 10%;
+  right: 10%;
   height: 1px;
   background: #dcdce1;
 }

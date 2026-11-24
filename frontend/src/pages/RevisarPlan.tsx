@@ -1,8 +1,12 @@
+import { useEffect, useRef } from 'react'
 import type { CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, OpcionesGastoDistancia } from '../api'
 import { Icon } from '../assets/Icon'
+import { estadosLugar, etiquetasEstado, simbolosEstado } from '../components/estadosLugar'
+import { PantallaCarga } from '../components/PantallaCarga'
+import '../components/PrioridadLugar.css'
 import './RevisarPlan.css'
 
-export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia' | 'ritmo'
+export type CampoPlan = 'destino' | 'fechas' | 'horarios' | 'alojamiento' | 'intereses' | 'exclusiones' | 'gasto' | 'distancia' | 'ritmo' | 'lugares'
 
 type Props = {
   configuracion: ConfiguracionItinerario
@@ -11,6 +15,7 @@ type Props = {
   errorConfirmacion: string
   generando: boolean
   errorGeneracion: string
+  problemasObligatorios: string[]
   itinerarioDisponible: boolean
   consumo: ConsumoGeneracion | null
   cargandoConsumo: boolean
@@ -31,9 +36,17 @@ function mostrarFecha(valor: string) {
 }
 
 export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfirmacion,
-  generando, errorGeneracion, itinerarioDisponible, catalogo,
+  generando, errorGeneracion, problemasObligatorios, itinerarioDisponible, catalogo,
   opcionesGastoDistancia, consumo, cargandoConsumo, errorConsumo, onActualizarConsumo,
   onEditar, onAtras, onConfirmar, onGenerar }: Props) {
+  const errorGeneracionRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (errorGeneracion && !generando) {
+      errorGeneracionRef.current?.focus()
+    }
+  }, [errorGeneracion, generando])
+
   const {
     destino,
     disponibilidad,
@@ -45,6 +58,7 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
   const nombreSubcategoria = (codigo: string) => catalogo.flatMap(categoria => categoria.subcategorias)
     .find(subcategoria => subcategoria.codigo === codigo)?.nombre ?? codigo
   const nivelGasto = opcionesGastoDistancia?.nivelesGasto.find(nivel => nivel.codigo === preferencias.nivelGasto)
+  const seleccionesOrdenadas = [...configuracion.selecciones].sort((a, b) => estadosLugar.indexOf(a.estado) - estadosLugar.indexOf(b.estado))
   const exclusiones = [
     preferencias.categoriasExcluidas.length > 0
       ? 'Categorías completas: ' + preferencias.categoriasExcluidas.map(nombreCategoria).join(', ') : '',
@@ -81,6 +95,11 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
       preferencias.intereses.map(nombreCategoria).join(', ') || 'Sin intereses seleccionados',
     ] },
     { campo: 'exclusiones', titulo: 'A evitar', valores: exclusiones.length > 0 ? exclusiones : ['Sin preferencias para evitar'] },
+    { campo: 'lugares', titulo: 'Lugares y prioridades', valores: configuracion.selecciones.length
+      ? [...configuracion.selecciones].sort((a, b) => estadosLugar.indexOf(a.estado) - estadosLugar.indexOf(b.estado))
+        .map(s => `${etiquetasEstado[s.estado]}: ${s.lugar.nombre}`)
+      : ['Sin lugares seleccionados; te propondremos visitas según tus preferencias.'],
+      ayuda: 'El plan debe incluir todos los obligatorios. Los preferidos se incluyen cuando encajan y los evitados quedan fuera. Si falta un horario, tendrás que confirmarlo.' },
     { campo: 'gasto', titulo: 'Nivel de gasto', valores: [nivelGasto?.nombre ?? 'Sin seleccionar'],
       ayuda: opcionesGastoDistancia?.significadoGasto },
     { campo: 'distancia', titulo: 'Distancia deseada entre actividades',
@@ -93,6 +112,8 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
     ], ayuda: 'La franja de comida se reserva completa. El margen se suma al trayecto a pie.' },
   ]
 
+  if (generando) return <div className="revision-plan"><PantallaCarga tipo="itinerario" destino={destino.nombre} enfocar /></div>
+
   return (
     <div className="revision-plan" aria-busy={confirmando}>
       <div className="revision-tarjetas" aria-label="Detalles del plan">
@@ -100,7 +121,12 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
           <section className="revision-tarjeta" key={apartado.campo} aria-labelledby={'revision-' + apartado.campo}>
             <div className="revision-tarjeta-contenido">
               <h2 id={'revision-' + apartado.campo}>{apartado.titulo}</h2>
-              {apartado.valores.map(valor => <p className="revision-valor" key={valor}>{valor}</p>)}
+              {apartado.campo === 'lugares' && seleccionesOrdenadas.length > 0
+                ? <ul className="revision-prioridades">{seleccionesOrdenadas.map(seleccion => <li key={seleccion.lugar.id}>
+                  <span className={`prioridad prioridad-etiqueta ${seleccion.estado}`}><span aria-hidden="true">{simbolosEstado[seleccion.estado]}</span>{etiquetasEstado[seleccion.estado]}</span>
+                  <span>{seleccion.lugar.nombre}</span>
+                </li>)}</ul>
+                : apartado.valores.map(valor => <p className="revision-valor" key={valor}>{valor}</p>)}
               {apartado.ayuda && <p className="revision-ayuda">{apartado.ayuda}</p>}
             </div>
             <button className="revision-editar" type="button" aria-label={'Editar ' + apartado.titulo.toLowerCase()}
@@ -118,7 +144,16 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
           : 'Configuración pendiente de confirmar.'}
       </div>
       {errorConfirmacion && <p className="error-viaje" role="alert">{errorConfirmacion}</p>}
-      {errorGeneracion && <p className="error-viaje" role="alert">{errorGeneracion}</p>}
+      {errorGeneracion && <div className="error-viaje" role="alert" ref={errorGeneracionRef} tabIndex={-1}>
+        <p>{errorGeneracion}</p>
+        {problemasObligatorios.length > 0 && <>
+          <ul className="revision-problemas">{problemasObligatorios.map(problema => <li key={problema}>{problema}</li>)}</ul>
+          <div className="revision-corregir">
+            <button type="button" className="boton" onClick={() => onEditar('lugares')}>Revisar lugares obligatorios</button>
+            <button type="button" className="boton" onClick={() => onEditar('fechas')}>Cambiar fechas y disponibilidad</button>
+          </div>
+        </>}
+      </div>}
       <div className="revision-consumo" role="status" aria-live="polite">
         {generando ? <p>La disponibilidad se actualizará cuando termine la generación.</p>
           : cargandoConsumo ? <p>Consultando las generaciones disponibles…</p>
@@ -140,8 +175,9 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
         <button className="boton revision-atras" type="button" disabled={confirmando || generando} onClick={onAtras}>← Atrás</button>
         {confirmada ? (
           <button className="boton boton-primario" type="button"
-            disabled={generando || !itinerarioDisponible && (cargandoConsumo || !consumo || consumo.enCurso)} onClick={onGenerar}>
+            disabled={generando || problemasObligatorios.length > 0 || !itinerarioDisponible && (cargandoConsumo || !consumo || consumo.enCurso)} onClick={onGenerar}>
             {generando ? 'Generando itinerario…' : itinerarioDisponible ? 'Ver itinerario'
+              : problemasObligatorios.length > 0 ? 'Revisa los lugares obligatorios'
               : consumo?.restantes === 0 ? 'Consultar itinerario existente'
               : errorGeneracion ? 'Reintentar generación' : 'Generar itinerario'} <Icon name="flecha" />
           </button>

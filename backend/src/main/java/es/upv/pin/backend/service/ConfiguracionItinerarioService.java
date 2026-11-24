@@ -36,13 +36,15 @@ public class ConfiguracionItinerarioService {
         AlojamientoDto alojamientoLocalizado = validarAlojamiento(
                 alojamiento, configuracion.alojamientoLocalizado());
 
-        return new ConfiguracionItinerarioDto(
-                destino,
-                disponibilidad,
-                alojamiento,
-                preferencias,
-                validarRitmo(configuracion.ritmo()),
-                alojamientoLocalizado);
+                return new ConfiguracionItinerarioDto(
+                    destino,
+                    disponibilidad,
+                    alojamiento,
+                    preferencias,
+                    validarRitmo(configuracion.ritmo()),
+                    alojamientoLocalizado,
+                    ReglasSeleccionLugares.validar(
+                            configuracion.selecciones(), preferencias));
     }
     private AlojamientoDto validarAlojamiento(
         String texto,

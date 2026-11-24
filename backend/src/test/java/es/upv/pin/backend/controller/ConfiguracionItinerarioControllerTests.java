@@ -16,9 +16,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class ConfiguracionItinerarioControllerTests {
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new ConfiguracionItinerarioController(
-            new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService())))
-            .setControllerAdvice(new ConfiguracionItinerarioExceptionHandler()).build();
+        private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+            new ConfiguracionItinerarioController(
+                    new ConfiguracionItinerarioService(
+                            new FechaHoraService(java.time.Clock.fixed(
+                                    java.time.Instant.parse("2026-01-01T12:00:00Z"),
+                                    java.time.ZoneOffset.UTC)),
+                            new PreferenciasService()),
+                    org.mockito.Mockito.mock(
+                            es.upv.pin.backend.service.CatalogoLugaresService.class)))
+            .setControllerAdvice(new ConfiguracionItinerarioExceptionHandler())
+            .build();
 
     private String cuerpo() {
     return """
