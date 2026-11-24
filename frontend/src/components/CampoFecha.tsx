@@ -8,6 +8,7 @@ type Props = {
   nombre: string
   etiqueta: string
   valor: string
+  fechaMinima?: string
   onCambiar: (fecha: string) => void
   descripcion: string
   ref?: Ref<HTMLInputElement>
@@ -28,8 +29,17 @@ function convertirAISO(texto: string) {
   return `${anio.length === 2 ? `20${anio}` : anio}-${mes}-${dia}`
 }
 
-export function CampoFecha({ id, nombre, etiqueta, valor, onCambiar, descripcion, ref }: Props) {
-  const calendario = useRef<HTMLInputElement>(null)
+export function CampoFecha({
+      id,
+      nombre,
+      etiqueta,
+      valor,
+      fechaMinima,
+      onCambiar,
+      descripcion,
+      ref,
+    }: Props) {
+    const calendario = useRef<HTMLInputElement>(null)
   const [texto, setTexto] = useState<string | null>(null)
 
   return (
@@ -48,7 +58,7 @@ export function CampoFecha({ id, nombre, etiqueta, valor, onCambiar, descripcion
           onClick={() => calendario.current?.showPicker()}>
           <Icon name="calendario" />
         </button>
-        <input className="fecha-selector" ref={calendario} type="date" value={valor}
+        <input className="fecha-selector" ref={calendario} type="date" value={valor} min={fechaMinima}
           tabIndex={-1} aria-hidden="true"
           onChange={evento => {
             setTexto(null)

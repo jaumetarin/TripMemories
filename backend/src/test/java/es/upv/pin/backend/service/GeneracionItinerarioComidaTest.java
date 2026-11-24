@@ -50,13 +50,30 @@ class GeneracionItinerarioComidaTest {
     }
 
     private void rutas(String... ids) {
-        var resultado = new ArrayList<DesplazamientoDto>();
-        for (String origen : ids) for (String destino : ids) if (!origen.equals(destino)) {
-            resultado.add(new DesplazamientoDto(origen, destino, 500.0, 600.0,
-                    EstadoDesplazamiento.DISPONIBLE, "openrouteservice"));
+    var puntos = new ArrayList<>(List.of(ids));
+    puntos.add("referencia:inicio");
+
+    var resultado = new ArrayList<DesplazamientoDto>();
+
+    for (String origen : puntos) {
+        for (String destino : puntos) {
+            if (origen.equals(destino)) {
+                continue;
+            }
+
+            resultado.add(new DesplazamientoDto(
+                    origen,
+                    destino,
+                    500.0,
+                    600.0,
+                    EstadoDesplazamiento.DISPONIBLE,
+                    "openrouteservice"));
         }
-        when(desplazamientos.calcular(anyList())).thenReturn(List.copyOf(resultado));
     }
+
+    when(desplazamientos.calcular(anyList()))
+            .thenReturn(List.copyOf(resultado));
+}
 
     @Test
     void restaurantePrincipalTieneTrayectosYAlternativaSinReserva() {
@@ -81,7 +98,11 @@ class GeneracionItinerarioComidaTest {
                 && b.origenId().equals("a") && b.destinoId().equals("r1")));
         assertTrue(bloques.stream().anyMatch(b -> b.tipo() == TipoBloqueItinerario.TRASLADO
                 && b.origenId().equals("r1") && b.destinoId().equals("b")));
-        assertEquals(2, bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.MARGEN).count());
+        assertEquals(
+                3,
+                bloques.stream()
+                        .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.MARGEN)
+                        .count());
         var descanso = bloques.stream().filter(b -> b.tipo() == TipoBloqueItinerario.DESCANSO)
                 .findFirst().orElseThrow();
         assertEquals(15, java.time.Duration.between(descanso.inicio(), descanso.fin()).toMinutes());
@@ -148,15 +169,34 @@ class GeneracionItinerarioComidaTest {
         var restaurante = new OpcionComidaDto("r1", "Restaurante 1", 40.34, -1.10, "Centro");
         when(recomendaciones.buscar(eq("destino"), eq(config.preferencias()), eq(Set.of()), anyList()))
                 .thenReturn(new RecomendacionComidaDto(List.of(restaurante), List.of()));
+        
+        var ids = List.of("referencia:inicio", "a", "b", "r1");
         var rutas = new ArrayList<DesplazamientoDto>();
-        for (String origen : List.of("a", "b", "r1"))
-            for (String destino : List.of("a", "b", "r1")) if (!origen.equals(destino)) {
-                rutas.add((origen.equals("a") || origen.equals("b")) && destino.equals("r1")
-                        ? new DesplazamientoDto(origen, destino, null, null,
-                                EstadoDesplazamiento.RUTA_NO_DISPONIBLE, "openrouteservice")
-                        : new DesplazamientoDto(origen, destino, 500.0, 600.0,
-                                EstadoDesplazamiento.DISPONIBLE, "openrouteservice"));
-            }
+
+        for (String origen : ids) {
+        for (String destino : ids) {
+                if (origen.equals(destino)) {
+                continue;
+                }
+
+                rutas.add(destino.equals("r1")
+                        ? new DesplazamientoDto(
+                                origen,
+                                destino,
+                                null,
+                                null,
+                                EstadoDesplazamiento.RUTA_NO_DISPONIBLE,
+                                "openrouteservice")
+                        : new DesplazamientoDto(
+                                origen,
+                                destino,
+                                500.0,
+                                600.0,
+                                EstadoDesplazamiento.DISPONIBLE,
+                                "openrouteservice"));
+        }
+        }
+
         when(desplazamientos.calcular(anyList())).thenReturn(rutas);
 
         var plan = servicio.generar(config);
@@ -202,6 +242,7 @@ class GeneracionItinerarioComidaTest {
                 "Geoapify (sin verificar)", "LOCAL", CostConfidence.UNKNOWN,
                 ScheduleStatus.UNVERIFIED, null, null, null, null, null, null);
         evaluar(config, candidato);
+        rutas("museo");
 
         var plan = servicio.generar(config);
         var visita = plan.dias().getFirst().bloques().stream()
@@ -211,8 +252,8 @@ class GeneracionItinerarioComidaTest {
         assertTrue(visita.condicionada());
         assertTrue(plan.dias().getFirst().bloques().stream().anyMatch(b ->
                 b.tipo() == TipoBloqueItinerario.TIEMPO_LIBRE
-                        && b.inicio().equals(LocalDateTime.of(2026, 11, 7, 10, 0))
-                        && b.fin().equals(LocalDateTime.of(2026, 11, 7, 11, 0))));
+                && b.inicio().equals(LocalDateTime.of(2026, 11, 7, 10, 0))
+                && b.fin().equals(LocalDateTime.of(2026, 11, 7, 10, 40))));
         assertTrue(plan.advertencias().stream().noneMatch(a -> a.contains("sus horarios no encajan")));
     }
 
@@ -246,8 +287,8 @@ class GeneracionItinerarioComidaTest {
         when(recomendaciones.buscar(eq("destino"), eq(config.preferencias()), eq(Set.of()), anyList()))
                 .thenReturn(new RecomendacionComidaDto(List.of(lejos, cerca), List.of()));
         var tramos = new ArrayList<DesplazamientoDto>();
-        for (String desde : List.of("a", "b", "lejos", "cerca"))
-            for (String hasta : List.of("a", "b", "lejos", "cerca")) if (!desde.equals(hasta)) {
+        for (String desde : List.of("referencia:inicio", "a", "b", "lejos", "cerca"))
+        for (String hasta : List.of("referencia:inicio", "a", "b", "lejos", "cerca")) if (!desde.equals(hasta)) {
                 double metros = (desde.equals("lejos") || hasta.equals("lejos")) ? 3000 : 300;
                 tramos.add(new DesplazamientoDto(desde, hasta, metros, 600.0, EstadoDesplazamiento.DISPONIBLE, "openrouteservice"));
             }
@@ -284,5 +325,64 @@ class GeneracionItinerarioComidaTest {
         var plan = servicio.generar(config);
         assertTrue(new ValidadorPlanService().validar(plan.dias(), config.preferencias()).valido());
         assertTrue(plan.dias().getFirst().bloques().stream().noneMatch(b -> b.tipo() == TipoBloqueItinerario.TRASLADO));
+    }
+    @Test
+    void esperaLaPrimeraVisitaAunqueHayaRestauranteAccesibleDesdeElInicio() {
+        var config = config(
+                LocalDateTime.of(2026, 11, 7, 10, 0),
+                LocalDateTime.of(2026, 11, 7, 18, 0),
+                false);
+
+        var museo = new LugarDto(
+                "museo",
+                "Museo",
+                null,
+                40.34,
+                -1.10,
+                List.of(CategoriaTuristica.ARTE_MUSEOS),
+                List.of(),
+                "Sa 11:00-12:00");
+
+        var candidato = new CandidatoEvaluadoDto(
+                museo, 90, 60, null, null,
+                CostLevel.UNKNOWN, null, List.of(),
+                "Sa 11:00-12:00", "Geoapify (sin verificar)",
+                "LOCAL", CostConfidence.UNKNOWN,
+                ScheduleStatus.UNVERIFIED,
+                null, null, null, null, null, null);
+
+        evaluar(config, candidato);
+
+        var restaurante = new OpcionComidaDto(
+                "r1", "Restaurante", 40.34, -1.10, "Centro");
+
+        when(recomendaciones.buscar(
+                eq("destino"), eq(config.preferencias()), eq(Set.of()), anyList()))
+                .thenReturn(new RecomendacionComidaDto(
+                        List.of(restaurante), List.of()));
+
+        rutas("museo", "r1");
+
+        var bloques = servicio.generar(config).dias().getFirst().bloques();
+
+        var visitas = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.VISITA)
+                .toList();
+
+        assertEquals(1, visitas.size());
+        assertEquals(
+                LocalDateTime.of(2026, 11, 7, 11, 0),
+                visitas.getFirst().inicio());
+        assertEquals(
+                LocalDateTime.of(2026, 11, 7, 12, 0),
+                visitas.getFirst().fin());
+
+        var comida = bloques.stream()
+                .filter(bloque -> bloque.tipo() == TipoBloqueItinerario.COMIDA)
+                .findFirst()
+                .orElseThrow();
+
+        assertNotNull(comida.restaurante());
+        assertEquals("r1", comida.restaurante().id());
     }
 }

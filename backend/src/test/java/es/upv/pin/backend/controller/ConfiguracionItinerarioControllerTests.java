@@ -17,19 +17,32 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ConfiguracionItinerarioControllerTests {
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new ConfiguracionItinerarioController(
-            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService())))
+            new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService())))
             .setControllerAdvice(new ConfiguracionItinerarioExceptionHandler()).build();
 
     private String cuerpo() {
-        return """
-                {"destino":{"id":"madrid-id","nombre":"Madrid","region":"Madrid","pais":"España","latitud":40.4,"longitud":-3.7},
-                 "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-12T18:00","duracionDias":999},
-                 "alojamiento":" Hotel Madrid ",
-                 "preferencias":{"intereses":["GASTRONOMIA","GASTRONOMIA"],"categoriasExcluidas":["ARTE_MUSEOS"],
-                    "subcategoriasExcluidas":["COMIDA_RAPIDA"],"nivelGasto":"ECONOMICO","distanciaKm":3}}
-                """;
-    }
-
+    return """
+            {
+              "destino":{"id":"madrid-id","nombre":"Madrid","region":"Madrid","pais":"España","latitud":40.4,"longitud":-3.7},
+              "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-12T18:00","duracionDias":999},
+              "alojamiento":" Hotel Madrid ",
+              "alojamientoLocalizado":{
+                "id":"hotel-madrid",
+                "nombre":"Hotel Madrid",
+                "direccion":"Calle de Prueba 10",
+                "latitud":40.4168,
+                "longitud":-3.7038
+              },
+              "preferencias":{
+                "intereses":["GASTRONOMIA","GASTRONOMIA"],
+                "categoriasExcluidas":["ARTE_MUSEOS"],
+                "subcategoriasExcluidas":["COMIDA_RAPIDA"],
+                "nivelGasto":"ECONOMICO",
+                "distanciaKm":3
+              }
+            }
+            """;
+}
     @Test
     void confirmaTodaLaConfiguracionYDevuelveUnaVersionCanonicaSinCache() throws Exception {
         mvc.perform(post("/api/itinerarios/confirmar-configuracion").contentType(MediaType.APPLICATION_JSON).content(cuerpo()))
@@ -37,6 +50,16 @@ class ConfiguracionItinerarioControllerTests {
                 .andExpect(jsonPath("$.destino.id").value("madrid-id"))
                 .andExpect(jsonPath("$.disponibilidad.duracionDias").value(3))
                 .andExpect(jsonPath("$.alojamiento").value("Hotel Madrid"))
+                .andExpect(jsonPath("$.alojamientoLocalizado.id")
+                        .value("hotel-madrid"))
+                .andExpect(jsonPath("$.alojamientoLocalizado.nombre")
+                        .value("Hotel Madrid"))
+                .andExpect(jsonPath("$.alojamientoLocalizado.direccion")
+                        .value("Calle de Prueba 10"))
+                .andExpect(jsonPath("$.alojamientoLocalizado.latitud")
+                        .value(40.4168))
+                .andExpect(jsonPath("$.alojamientoLocalizado.longitud")
+                        .value(-3.7038))
                 .andExpect(jsonPath("$.preferencias.intereses.length()").value(1))
                 .andExpect(jsonPath("$.preferencias.subcategoriasExcluidas[0]").value("COMIDA_RAPIDA"))
                 .andExpect(jsonPath("$.preferencias.nivelGasto").value("ECONOMICO"))
@@ -93,4 +116,17 @@ class ConfiguracionItinerarioControllerTests {
                 .contentType(MediaType.APPLICATION_JSON).content(entrada))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.mensaje").isNotEmpty());
     }
+    @Test
+    void rechazaUnAlojamientoSinCoordenadas() throws Exception {
+        String entrada = cuerpo().replace(
+                "\"latitud\":40.4168",
+                "\"latitud\":null");
+
+        mvc.perform(post("/api/itinerarios/confirmar-configuracion")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(entrada))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.mensaje").value(
+                        "El alojamiento debe tener coordenadas válidas. Vuelve a seleccionarlo."));
+}
 }

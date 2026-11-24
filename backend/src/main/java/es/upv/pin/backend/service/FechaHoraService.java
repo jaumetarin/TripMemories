@@ -2,6 +2,8 @@ package es.upv.pin.backend.service;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.time.Clock;
+import java.time.LocalDate;
 
 import org.springframework.stereotype.Service;
 
@@ -11,6 +13,15 @@ import es.upv.pin.backend.dto.FechaHoraDto;
 public class FechaHoraService {
 
     private static final int MAXIMO_DIAS = 10;
+    private final Clock reloj;
+
+    public FechaHoraService() {
+        this(Clock.systemDefaultZone());
+    }
+
+    public FechaHoraService(Clock reloj) {
+        this.reloj = reloj;
+    }
 
     public FechaHoraDto validar(FechaHoraDto disponibilidad) {
 
@@ -35,6 +46,10 @@ public class FechaHoraService {
         if (!salida.isAfter(llegada)) {
             throw new IllegalArgumentException(
                     "La salida debe ser posterior a la llegada. Revisa las fechas y las horas para disponer de tiempo de viaje.");
+        }
+        if (llegada.toLocalDate().isBefore(LocalDate.now(reloj))) {
+            throw new IllegalArgumentException(
+                    "La fecha de llegada debe ser hoy o un día posterior.");
         }
 
         // Contamos días de calendario, no bloques de 24 horas.

@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class FechaHoraControllerTests {
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new FechaHoraController(new FechaHoraService()))
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new FechaHoraController(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC))))
             .setControllerAdvice(new FechaHoraExceptionHandler()).build();
 
     @ParameterizedTest

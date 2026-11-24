@@ -1,8 +1,8 @@
 import { Component, lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ItinerarioGenerado, BloqueItinerario, DiaItinerario, CandidatoEvaluado, OpcionComida } from '../api'
+import type { ItinerarioGenerado, BloqueItinerario, DiaItinerario, CandidatoEvaluado, OpcionComida, ConfiguracionItinerario, } from '../api'
 import { horaLocal as hora, visitasDelDia } from './visitasItinerario'
-import type { VisitaMapa } from './visitasItinerario'
+import type { PuntoInicioMapa, VisitaMapa } from './visitasItinerario'
 import './ItinerarioPorDias.css'
 
 const MapaItinerario = lazy(() => import('./MapaItinerario'))
@@ -20,7 +20,7 @@ class MapaProtegido extends Component<{ children: ReactNode; onVerLista: () => v
 
 interface Props {
   itinerario: ItinerarioGenerado
-  destinoNombre: string
+  configuracion: ConfiguracionItinerario
 }
 
 const nombresTipo: Record<BloqueItinerario['tipo'], string> = {
@@ -102,7 +102,7 @@ function Restaurante({ opcion }: { opcion: OpcionComida }) {
   return <div className="itinerario-restaurante"><strong>{opcion.nombre}</strong>
     {opcion.direccion && <p>{opcion.direccion}</p>}
     {opcion.distanciaMetros != null && opcion.duracionSegundos != null && <p className="comida-trayecto">
-      Desde la visita anterior: {opcion.distanciaMetros < 1000 ? `${Math.round(opcion.distanciaMetros)} m`
+      Desde la ubicación anterior: {opcion.distanciaMetros < 1000 ? `${Math.round(opcion.distanciaMetros)} m`
         : `${(opcion.distanciaMetros / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 })} km`}
       {' · '}{Math.ceil(opcion.duracionSegundos / 60)} min a pie
     </p>}
@@ -179,7 +179,25 @@ function ContenidoDia({ dia, nombres, visitas, seleccionada, onSeleccionar }: {
   </div>
 }
 
-export default function ItinerarioPorDias({ itinerario, destinoNombre }: Props) {
+export default function ItinerarioPorDias({
+  itinerario,
+  configuracion,
+}: Props) {
+  const destinoNombre = configuracion.destino.nombre
+  const alojamiento = configuracion.alojamientoLocalizado
+  const puntoInicio = useMemo<PuntoInicioMapa>(() => {
+  const seleccionado = configuracion.alojamientoLocalizado
+  const ubicacion = seleccionado ?? configuracion.destino
+
+  return {
+    nombre: seleccionado?.nombre
+      ?? `Referencia de ${configuracion.destino.nombre}`,
+    direccion: seleccionado?.direccion ?? null,
+    posicion: [ubicacion.latitud, ubicacion.longitud],
+  }
+}, [configuracion])
+
+  const nombreOrigen = puntoInicio.nombre 
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null)
   const [seleccion, setSeleccion] = useState<{ dia: DiaItinerario; clave: string } | null>(null)
   const [vistaMovil, setVistaMovil] = useState<'lista' | 'mapa'>('lista')
@@ -228,9 +246,16 @@ export default function ItinerarioPorDias({ itinerario, destinoNombre }: Props) 
   itinerario.dias.forEach(d => d.bloques.forEach(bloque => {
     if (bloque.restaurante) nombres.set(bloque.restaurante.id, bloque.restaurante.nombre)
   }))
+  nombres.set('referencia:inicio', nombreOrigen)
   return <section className="itinerario-por-dias" aria-labelledby="itinerario-titulo">
     <h2 id="itinerario-titulo">Tu itinerario en {destinoNombre}</h2>
     <p>Las horas corresponden a la hora local del destino.</p>
+    <p>
+      Inicio de cada día: <strong>{nombreOrigen}</strong>
+      {alojamiento && alojamiento.direccion !== alojamiento.nombre && (
+        <> · {alojamiento.direccion}</>
+      )}
+    </p>
     {(itinerario.parcial || itinerario.advertencias.length > 0) && <aside className="itinerario-aviso itinerario-consejos" aria-label="Antes de tu viaje">
       <h3>Antes de tu viaje</h3>
       {itinerario.parcial && <p className="itinerario-plan-parcial">El plan puede dejar tiempo libre o algunos lugares fuera. Revisa las visitas de cada día.</p>}
@@ -257,8 +282,14 @@ export default function ItinerarioPorDias({ itinerario, destinoNombre }: Props) 
           <p className="itinerario-mapa-ayuda">Los números corresponden al orden de las visitas de este día.</p>
           <MapaProtegido key={dia.fecha} onVerLista={() => setVistaMovil('lista')}>
             <Suspense fallback={<p role="status" className="mapa-cargando">Cargando mapa… La lista sigue disponible.</p>}>
-              <MapaItinerario key={dia.fecha} visitas={visitas} seleccion={seleccionActual}
-                onSeleccionar={clave => seleccionar(clave, 'mapa')} onVerTarjeta={verTarjeta} />
+              <MapaItinerario
+                  key={dia.fecha}
+                  visitas={visitas}
+                  puntoInicio={puntoInicio}
+                  seleccion={seleccionActual}
+                  onSeleccionar={clave => seleccionar(clave, 'mapa')}
+                  onVerTarjeta={verTarjeta}
+                />
             </Suspense>
           </MapaProtegido>
         </section>

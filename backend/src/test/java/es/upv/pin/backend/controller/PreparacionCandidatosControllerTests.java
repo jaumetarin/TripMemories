@@ -25,6 +25,13 @@ class PreparacionCandidatosControllerTests {
     private final String cuerpo = """
             {"destino":{"id":"madrid","nombre":"Madrid","region":"Madrid","pais":"España","latitud":40.4,"longitud":-3.7},
              "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-12T18:00"},"alojamiento":"Hotel",
+             "alojamientoLocalizado":{
+             "id":"hotel-prueba",
+             "nombre":"Hotel",
+             "direccion":"Calle de Prueba 10",
+             "latitud":40.4168,
+             "longitud":-3.7038
+                },
              "preferencias":{"intereses":["GASTRONOMIA"],"categoriasExcluidas":[],"subcategoriasExcluidas":["COMIDA_RAPIDA"],
               "nivelGasto":"ECONOMICO","distanciaKm":3}}
             """;
@@ -41,7 +48,7 @@ class PreparacionCandidatosControllerTests {
                     .andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
         }
         var servicio = new PreparacionCandidatosService(new GeoapifyClient(constructor.build(), "clave-de-prueba"),
-                new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()),
+                new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService()),
                 clasificacion);
         mvc = MockMvcBuilders.standaloneSetup(new PreparacionCandidatosController(servicio))
                 .setControllerAdvice(new CandidatoExceptionHandler()).build();

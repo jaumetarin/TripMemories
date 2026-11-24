@@ -26,15 +26,22 @@ class EvaluacionCandidatosControllerTests {
             """
             {"destino":{"id":"madrid","nombre":"Madrid","latitud":40.4,"longitud":-3.7},
              "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-10T18:00"},
-             "alojamiento":"Hotel","preferencias":{"intereses":["GASTRONOMIA"],
+             "alojamiento":"Hotel",
+             "alojamientoLocalizado":{
+             "id":"hotel-prueba",
+             "nombre":"Hotel",
+             "direccion":"Calle de Prueba 10",
+             "latitud":40.4168,
+             "longitud":-3.7038
+                },"preferencias":{"intereses":["GASTRONOMIA"],
              "categoriasExcluidas":[],"subcategoriasExcluidas":[],"nivelGasto":"MODERADO","distanciaKm":3}}
-            """;
+             """;
 
     @BeforeEach
     void preparar() {
         var validacion =
                 new ConfiguracionItinerarioService(
-                        new FechaHoraService(), new PreferenciasService());
+                        new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService());
         var servicio =
                 new EvaluacionCandidatosService(
                         validacion,

@@ -35,6 +35,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class GeneracionItinerarioService {
     private static final int MAXIMO_PUNTOS = 50;
+    private static final String ID_PUNTO_INICIO = "referencia:inicio";
     private static final int BANDA_PRIORIDAD = 5;
     private static final int HUECO_PARCIAL_MINUTOS = 15;
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(GeneracionItinerarioService.class);
@@ -74,6 +75,7 @@ public class GeneracionItinerarioService {
 
     public ItinerarioGeneradoDto generar(ConfiguracionItinerarioDto entrada) {
         ConfiguracionItinerarioDto config = configuraciones.validar(entrada);
+        PuntoRutaDto inicio = puntoInicio(config);
         List<Ventana> ventanas = ventanas(config.disponibilidad());
         List<String> advertencias = new ArrayList<>();
 
@@ -105,10 +107,23 @@ public class GeneracionItinerarioService {
                 .filter(c -> !idsRestaurantes.contains(c.lugar().id()))
                 .toList();
         List<CandidatoEvaluadoDto> pendientes = seleccionados.stream()
-                .limit(MAXIMO_PUNTOS - restaurantes.size()).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-        List<PuntoRutaDto> puntos = new ArrayList<>(pendientes.stream()
-                .map(c -> new PuntoRutaDto(c.lugar().id(), c.lugar().latitud(), c.lugar().longitud())).toList());
-        restaurantes.forEach(r -> puntos.add(new PuntoRutaDto(r.id(), r.latitud(), r.longitud())));
+                .limit(MAXIMO_PUNTOS - restaurantes.size() - 1)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+
+        int candidatosEnMatriz = pendientes.size();
+
+        List<PuntoRutaDto> puntos = new ArrayList<>();
+        puntos.add(inicio);
+
+        pendientes.forEach(c -> puntos.add(new PuntoRutaDto(
+                c.lugar().id(),
+                c.lugar().latitud(),
+                c.lugar().longitud())));
+
+        restaurantes.forEach(r -> puntos.add(new PuntoRutaDto(
+                r.id(),
+                r.latitud(),
+                r.longitud())));
         Set<String> idsEnMatriz = new HashSet<>();
         puntos.forEach(p -> idsEnMatriz.add(p.id()));
         candidatos.stream().filter(c -> !idsEnMatriz.contains(c.lugar().id())).forEach(c ->
@@ -156,7 +171,7 @@ public class GeneracionItinerarioService {
             Map<CategoriaTuristica, Integer> categoriasDelDia =
                     new EnumMap<>(CategoriaTuristica.class);
             LocalDateTime cursor = ventana.inicio();
-            String anterior = null;
+            String anterior = inicio.id();
             LocalDateTime comidaInicio = ventana.fecha().atTime(config.ritmo().comidaInicio());
             LocalDateTime comidaFin = ventana.fecha().atTime(config.ritmo().comidaFin());
             boolean comidaCompleta = !comidaInicio.isBefore(ventana.inicio()) && !comidaFin.isAfter(ventana.fin());
@@ -205,9 +220,20 @@ public class GeneracionItinerarioService {
                     if (!conLlegada.isEmpty() || anterior != null && !comidaDesdeAqui.isEmpty()) factibles = conLlegada;
                 }
                 if (factibles.isEmpty()) {
-                    LocalDateTime siguiente = anterior != null && !comidaDesdeAqui.isEmpty() ? null : siguienteInicioConVisita(
-                            pendientes, anterior, rutas, cursor, limite,
-                            config.ritmo().margenMinutos(), conflictosHorario);
+                    boolean priorizarComida = anterior != null
+                            && !anterior.equals(inicio.id())
+                            && !comidaDesdeAqui.isEmpty();
+
+                    LocalDateTime siguiente = priorizarComida
+                            ? null
+                            : siguienteInicioConVisita(
+                                    pendientes,
+                                    anterior,
+                                    rutas,
+                                    cursor,
+                                    limite,
+                                    config.ritmo().margenMinutos(),
+                                    conflictosHorario);
                     if (siguiente != null) {
                         bloques.add(bloqueSimple(TipoBloqueItinerario.TIEMPO_LIBRE,
                                 cursor, siguiente, "Espera hasta el horario de una visita"));
@@ -346,10 +372,12 @@ public class GeneracionItinerarioService {
         if (hayCondicionadas) {
             advertencias.add("Confirma los horarios y precios antes de ir: no hemos podido comprobar toda la información.");
         }
+
         if (hayVisitas) {
-            advertencias.add("Los trayectos del plan no incluyen la ida y vuelta a tu alojamiento. Reserva tiempo para esos desplazamientos.");
-        }
+        advertencias.add(
+                "El recorrido no incluye la vuelta al punto de inicio. Reserva tiempo para ese desplazamiento.");        }
         if (hayComidaGenerica) {
+
             advertencias.add("Puedes elegir dónde comer durante la pausa. El tiempo para llegar al restaurante no está calculado.");
         }
         ResultadoValidacionPlan validacion = validadorPlan.validar(dias, config.preferencias());
@@ -358,14 +386,34 @@ public class GeneracionItinerarioService {
                 + String.join("; ", validacion.incidencias()));
         return new ItinerarioGeneradoDto(
                 List.copyOf(dias), advertencias.stream().distinct().toList(), parcial || validacion.parcial(),
-                candidatos.size(), puntos.size(), List.copyOf(candidatos), resultado.fallback());
-    }
+                candidatos.size(), candidatosEnMatriz, List.copyOf(candidatos), resultado.fallback());
+            }
 
     private static BloqueItinerarioDto bloqueSimple(TipoBloqueItinerario tipo,
             LocalDateTime inicio, LocalDateTime fin, String etiqueta) {
         return new BloqueItinerarioDto(tipo, inicio, fin, null,
                 null, null, null, null, null, false, etiqueta);
     }
+    
+    private static PuntoRutaDto puntoInicio(
+        ConfiguracionItinerarioDto configuracion) {
+
+    var alojamiento = configuracion.alojamientoLocalizado();
+
+    if (alojamiento != null) {
+        return new PuntoRutaDto(
+                ID_PUNTO_INICIO,
+                alojamiento.latitud(),
+                alojamiento.longitud());
+    }
+
+    var destino = configuracion.destino();
+
+    return new PuntoRutaDto(
+            ID_PUNTO_INICIO,
+            destino.latitud(),
+            destino.longitud());
+}
 
     private static List<Ventana> ventanas(FechaHoraDto fechas) {
         List<Ventana> resultado = new ArrayList<>();

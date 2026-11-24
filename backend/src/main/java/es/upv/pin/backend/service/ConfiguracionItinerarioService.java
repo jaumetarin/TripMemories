@@ -7,6 +7,8 @@ import es.upv.pin.backend.dto.DestinoDto;
 import es.upv.pin.backend.dto.FechaHoraDto;
 import es.upv.pin.backend.dto.PreferenciasDto;
 import es.upv.pin.backend.dto.RitmoDiarioDto;
+import es.upv.pin.backend.dto.AlojamientoDto;
+
 import java.time.LocalTime;
 
 @Service
@@ -28,10 +30,68 @@ public class ConfiguracionItinerarioService {
         // La duración se recalcula; nunca se confía en el número enviado por el cliente.
         FechaHoraDto disponibilidad = fechaHoraService.validar(configuracion.disponibilidad());
         PreferenciasDto preferencias = preferenciasService.validar(configuracion.preferencias());
-        String alojamiento = textoOpcional(configuracion.alojamiento(), 250, "El alojamiento");
-        return new ConfiguracionItinerarioDto(destino, disponibilidad, alojamiento, preferencias, validarRitmo(configuracion.ritmo()));
+        String alojamiento = textoOpcional(
+                configuracion.alojamiento(), 250, "El alojamiento");
+
+        AlojamientoDto alojamientoLocalizado = validarAlojamiento(
+                alojamiento, configuracion.alojamientoLocalizado());
+
+        return new ConfiguracionItinerarioDto(
+                destino,
+                disponibilidad,
+                alojamiento,
+                preferencias,
+                validarRitmo(configuracion.ritmo()),
+                alojamientoLocalizado);
+    }
+    private AlojamientoDto validarAlojamiento(
+        String texto,
+        AlojamientoDto seleccionado) {
+
+    if (texto.isBlank() && seleccionado == null) {
+        return null;
     }
 
+    if (texto.isBlank() || seleccionado == null) {
+        throw new IllegalArgumentException(
+                "Selecciona un alojamiento de las sugerencias o deja el campo vacío.");
+    }
+
+    if (seleccionado.id() == null || seleccionado.id().isBlank()
+            || seleccionado.nombre() == null || seleccionado.nombre().isBlank()
+            || seleccionado.direccion() == null || seleccionado.direccion().isBlank()) {
+        throw new IllegalArgumentException(
+                "El alojamiento debe tener identificador, nombre y dirección. Vuelve a seleccionarlo.");
+    }
+
+    if (seleccionado.latitud() == null || seleccionado.longitud() == null
+            || !Double.isFinite(seleccionado.latitud())
+            || !Double.isFinite(seleccionado.longitud())
+            || seleccionado.latitud() < -90 || seleccionado.latitud() > 90
+            || seleccionado.longitud() < -180 || seleccionado.longitud() > 180) {
+        throw new IllegalArgumentException(
+                "El alojamiento debe tener coordenadas válidas. Vuelve a seleccionarlo.");
+    }
+
+    String id = textoOpcional(
+            seleccionado.id(), 2048, "El identificador del alojamiento");
+    String nombre = textoOpcional(
+            seleccionado.nombre(), 250, "El nombre del alojamiento");
+    String direccion = textoOpcional(
+            seleccionado.direccion(), 500, "La dirección del alojamiento");
+
+    if (!texto.equals(nombre) && !texto.equals(direccion)) {
+        throw new IllegalArgumentException(
+                "El texto del alojamiento no coincide con la selección. Vuelve a seleccionarlo.");
+    }
+
+    return new AlojamientoDto(
+            id,
+            nombre,
+            direccion,
+            seleccionado.latitud(),
+            seleccionado.longitud());
+}
     private RitmoDiarioDto validarRitmo(RitmoDiarioDto ritmo) {
         LocalTime inicio = ritmo == null || ritmo.comidaInicio() == null ? LocalTime.of(13, 0) : ritmo.comidaInicio();
         LocalTime fin = ritmo == null || ritmo.comidaFin() == null ? LocalTime.of(15, 0) : ritmo.comidaFin();

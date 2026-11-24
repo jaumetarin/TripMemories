@@ -34,7 +34,13 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
   generando, errorGeneracion, itinerarioDisponible, catalogo,
   opcionesGastoDistancia, consumo, cargandoConsumo, errorConsumo, onActualizarConsumo,
   onEditar, onAtras, onConfirmar, onGenerar }: Props) {
-  const { destino, disponibilidad, alojamiento, preferencias, ritmo } = configuracion
+  const {
+    destino,
+    disponibilidad,
+    alojamientoLocalizado,
+    preferencias,
+    ritmo,
+  } = configuracion
   const nombreCategoria = (codigo: string) => catalogo.find(categoria => categoria.codigo === codigo)?.nombre ?? codigo
   const nombreSubcategoria = (codigo: string) => catalogo.flatMap(categoria => categoria.subcategorias)
     .find(subcategoria => subcategoria.codigo === codigo)?.nombre ?? codigo
@@ -55,8 +61,23 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
     { campo: 'horarios', titulo: 'Llegada / salida', valores: [
       disponibilidad.llegada.split('T')[1].slice(0, 5) + ' / ' + disponibilidad.salida.split('T')[1].slice(0, 5),
     ], ayuda: 'Llegada el primer día y salida el último. Horas locales del destino.' },
-    { campo: 'alojamiento', titulo: 'Alojamiento', valores: [alojamiento.trim() || 'Sin alojamiento indicado'] },
-    { campo: 'intereses', titulo: 'Intereses', valores: [
+    {
+    campo: 'alojamiento',
+    titulo: 'Alojamiento y punto de partida',
+    valores: alojamientoLocalizado
+      ? [...new Set([
+        alojamientoLocalizado.nombre,
+        alojamientoLocalizado.direccion,
+      ])]
+      : [
+        'Sin alojamiento indicado',
+        `Referencia del destino: ${destino.nombre}`,
+      ],
+    ayuda: alojamientoLocalizado
+      ? 'Cada día comenzará en esta ubicación. El recorrido no incluye el trayecto de regreso.'
+      : 'Cada día comenzará en una ubicación de referencia del destino. Puedes seleccionar un alojamiento para cambiarla.',
+  },
+      { campo: 'intereses', titulo: 'Intereses', valores: [
       preferencias.intereses.map(nombreCategoria).join(', ') || 'Sin intereses seleccionados',
     ] },
     { campo: 'exclusiones', titulo: 'A evitar', valores: exclusiones.length > 0 ? exclusiones : ['Sin preferencias para evitar'] },

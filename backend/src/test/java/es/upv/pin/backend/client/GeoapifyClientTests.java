@@ -9,10 +9,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.HttpMethod;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -211,4 +213,154 @@ class GeoapifyClientTests {
 
         servidor.verify();
         }
+    @Test
+    void buscaAlojamientosDentroDelDestinoYLeeSusCoordenadas() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(
+                        "https://api.geoapify.com/v1/geocode/autocomplete"
+                                + "?text=Hotel%20Centro"
+                                + "&filter=place:destino-prueba"
+                                + "&lang=es&limit=5&format=geojson"
+                                + "&apiKey=clave-de-prueba"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "type": "FeatureCollection",
+                          "features": [
+                            {
+                              "type": "Feature",
+                              "properties": {
+                                "place_id": "hotel-prueba",
+                                "name": "Hotel Centro",
+                                "formatted": "Calle de Prueba 10, Madrid",
+                                "lat": 40.4168,
+                                "lon": -3.7038,
+                                "result_type": "amenity"
+                              },
+                              "geometry": {
+                                "type": "Point",
+                                "coordinates": [-3.7038, 40.4168]
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        RespuestaLugaresGeoapifyDto respuesta =
+                cliente.buscarAlojamientos(
+                        "  Hotel Centro  ", "  destino-prueba  ");
+
+        assertEquals(1, respuesta.features().size());
+
+        var alojamiento = respuesta.features().getFirst().properties();
+
+        assertEquals("hotel-prueba", alojamiento.place_id());
+        assertEquals("Hotel Centro", alojamiento.name());
+        assertEquals(
+                "Calle de Prueba 10, Madrid",
+                alojamiento.formatted());
+        assertEquals(40.4168, alojamiento.lat().doubleValue());
+        assertEquals(-3.7038, alojamiento.lon().doubleValue());
+        assertEquals("amenity", alojamiento.result_type());
+
+        servidor.verify();
+    }
+    private String urlAlojamientosDePrueba() {
+        return "https://api.geoapify.com/v1/geocode/autocomplete"
+                + "?text=Hotel%20Centro"
+                + "&filter=place:destino-prueba"
+                + "&lang=es&limit=5&format=geojson"
+                + "&apiKey=clave-de-prueba";
+    }
+    @Test
+    void aceptaBusquedaDeAlojamientoSinCoincidencias() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlAlojamientosDePrueba()))
+                .andRespond(withSuccess("""
+                        {
+                          "type": "FeatureCollection",
+                          "features": []
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        RespuestaLugaresGeoapifyDto respuesta =
+                cliente.buscarAlojamientos("Hotel Centro", "destino-prueba");
+
+        assertTrue(respuesta.features().isEmpty());
+
+        servidor.verify();
+    }
+
+    @Test
+    void comunicaUnFalloDelProveedorAlBuscarAlojamiento() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlAlojamientosDePrueba()))
+                .andRespond(withServerError());
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> cliente.buscarAlojamientos(
+                        "Hotel Centro", "destino-prueba"));
+
+        assertEquals(
+                "No se ha podido consultar el servicio de alojamientos.",
+                error.getMessage());
+
+        servidor.verify();
+    }
+
+    @Test
+    void rechazaUnaRespuestaDeAlojamientoSinFeatures() {
+        RestClient.Builder constructor = RestClient.builder()
+                .baseUrl("https://api.geoapify.com");
+
+        MockRestServiceServer servidor = MockRestServiceServer
+                .bindTo(constructor)
+                .build();
+
+        GeoapifyClient cliente = new GeoapifyClient(
+                constructor.build(), "clave-de-prueba");
+
+        servidor.expect(requestTo(urlAlojamientosDePrueba()))
+                .andRespond(withSuccess(
+                        "{}", MediaType.APPLICATION_JSON));
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> cliente.buscarAlojamientos(
+                        "Hotel Centro", "destino-prueba"));
+
+        assertEquals(
+                "El servicio de alojamientos ha devuelto una respuesta no válida.",
+                error.getMessage());
+
+        servidor.verify();
+    }
 }

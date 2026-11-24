@@ -1,6 +1,12 @@
 import type { BloqueItinerario } from '../api'
 
 // Datos de presentación: el backend ya ha elegido las actividades y su orden.
+export interface PuntoInicioMapa {
+  nombre: string
+  direccion: string | null
+  posicion: [number, number]
+}
+
 export interface VisitaMapa {
   clave: string
   lugarId: string

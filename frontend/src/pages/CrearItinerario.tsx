@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { confirmarConfiguracion, generarItinerario, obtenerConsumoGeneracion, obtenerCatalogoPreferencias, obtenerOpcionesGastoDistancia, validarFechaHora } from '../api'
-import type { CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, Destino, FechaHora, ItinerarioGenerado, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
+import type { Alojamiento, CategoriaPreferencia, ConfiguracionItinerario, ConsumoGeneracion, Destino, FechaHora, ItinerarioGenerado, OpcionesGastoDistancia, Preferencias, RitmoDiario } from '../api'
 import { Icon } from '../assets/Icon'
 import { BuscadorDestinos } from '../components/BuscadorDestinos'
+import { BuscadorAlojamientos } from '../components/BuscadorAlojamientos'
 import { CandidatosLugares } from '../components/CandidatosLugares'
 import { CampoFecha } from '../components/CampoFecha'
 import ItinerarioPorDias from '../components/ItinerarioPorDias'
@@ -21,6 +22,14 @@ const etapas = ['Destino y disponibilidad', 'Preferencias y gasto', 'Revisar y g
 // Unimos los campos sin convertirlos a UTC: son horas locales del destino.
 function unirFechaHora(fecha: string, hora: string): string | null {
   return fecha && hora ? `${fecha}T${hora}` : null
+}
+function obtenerFechaActual(): string {
+  const ahora = new Date()
+  const anio = ahora.getFullYear()
+  const mes = String(ahora.getMonth() + 1).padStart(2, '0')
+  const dia = String(ahora.getDate()).padStart(2, '0')
+
+  return `${anio}-${mes}-${dia}`
 }
 
 const selectoresEdicion: Record<CampoPlan, string> = {
@@ -42,6 +51,8 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [fechaSalida, setFechaSalida] = useState('')
   const [horaSalida, setHoraSalida] = useState('18:00')
   const [alojamiento, setAlojamiento] = useState('')
+  const [alojamientoLocalizado, setAlojamientoLocalizado] =
+    useState<Alojamiento | null>(null)
   const [disponibilidad, setDisponibilidad] = useState<FechaHora | null>(null)
   const [paso, setPaso] = useState<'destino' | 'preferencias' | 'resumen' | 'resultado'>('destino')
   const [preferencias, setPreferencias] = useState<Preferencias>({
@@ -59,6 +70,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [reintentoCatalogo, setReintentoCatalogo] = useState(0)
   const [errorDisponibilidad, setErrorDisponibilidad] = useState('')
   const [errorDestino, setErrorDestino] = useState('')
+  const [errorAlojamiento, setErrorAlojamiento] = useState('')
   const [validando, setValidando] = useState(false)
   const [editandoResumen, setEditandoResumen] = useState(false)
   const [configuracionConfirmada, setConfiguracionConfirmada] = useState<ConfiguracionItinerario | null>(null)
@@ -147,8 +159,10 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   }, [paso])
 
   useEffect(() => {
-    if (!validando && (errorDisponibilidad || errorDestino)) errores.current?.focus()
-  }, [validando, errorDisponibilidad, errorDestino])
+    if (!validando && (errorDisponibilidad || errorDestino || errorAlojamiento)) {
+      errores.current?.focus()
+    }
+  }, [validando, errorDisponibilidad, errorDestino, errorAlojamiento])
 
   async function continuar(evento: SubmitEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -156,6 +170,20 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
 
     setErrorDisponibilidad('')
     setErrorDestino(destinoSeleccionado ? '' : 'Selecciona un destino de la lista de sugerencias.')
+    setErrorAlojamiento('')
+    if (fechaLlegada && fechaLlegada < obtenerFechaActual()) {
+      setErrorDisponibilidad(
+        'La fecha de llegada debe ser hoy o un día posterior.'
+      )
+      return
+    }
+
+    if (alojamiento.trim() && alojamientoLocalizado === null) {
+      setErrorAlojamiento(
+        'Selecciona un alojamiento de las sugerencias o deja el campo vacío.'
+      )
+      return
+    }
     const controlador = new AbortController()
     peticion.current = controlador
     setValidando(true)
@@ -214,6 +242,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     destino: destinoSeleccionado,
     disponibilidad,
     alojamiento,
+    alojamientoLocalizado,
     preferencias: {
       intereses: preferencias.intereses,
       categoriasExcluidas: preferencias.categoriasExcluidas,
@@ -243,6 +272,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       setFechaSalida(confirmada.disponibilidad.salida.split('T')[0])
       setHoraSalida(confirmada.disponibilidad.salida.split('T')[1].slice(0, 5))
       setAlojamiento(confirmada.alojamiento)
+      setAlojamientoLocalizado(confirmada.alojamientoLocalizado)
       setPreferencias(confirmada.preferencias)
       setRitmo({
         ...confirmada.ritmo,
@@ -325,16 +355,37 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           <div className="titulo-formulario"><span className="icono-coleccion"><Icon name="ubicacion" /></span><div><h2>Tu viaje</h2><p>Destino, fechas y horas en un solo lugar.</p></div></div>
           <fieldset className="campos-viaje" disabled={validando}>
             <legend className="solo-lectores">Destino y disponibilidad del viaje</legend>
-            <div id="editar-destino"><BuscadorDestinos seleccionado={destinoSeleccionado} onSeleccionar={destino => {
-              setDestinoSeleccionado(destino)
-              setErrorDestino('')
-            }} /></div>
+            <div id="editar-destino">
+            <BuscadorDestinos
+              seleccionado={destinoSeleccionado}
+              onSeleccionar={destino => {
+                if (destino?.id !== destinoSeleccionado?.id) {
+                  setAlojamiento('')
+                  setAlojamientoLocalizado(null)
+                  setErrorAlojamiento('')
+                }
+
+                setDestinoSeleccionado(destino)
+                setErrorDestino('')
+              }}
+            />
+          </div>
             <div className="disponibilidad-campos">
               <fieldset className="momento-viaje">
                 <legend>Llegada</legend>
-                <CampoFecha ref={inicio} id="fecha-llegada" nombre="fechaLlegada" etiqueta="Fecha de llegada"
-                  valor={fechaLlegada} descripcion="ayuda-disponibilidad errores-viaje"
-                  onCambiar={fecha => { setFechaLlegada(fecha); setErrorDisponibilidad('') }} />
+                <CampoFecha
+                    ref={inicio}
+                    id="fecha-llegada"
+                    nombre="fechaLlegada"
+                    etiqueta="Fecha de llegada"
+                    valor={fechaLlegada}
+                    fechaMinima={obtenerFechaActual()}
+                    descripcion="ayuda-disponibilidad errores-viaje"
+                    onCambiar={fecha => {
+                      setFechaLlegada(fecha)
+                      setErrorDisponibilidad('')
+                    }}
+                  />
                 <label htmlFor="hora-llegada">Hora de llegada aproximada</label>
                 <input id="hora-llegada" name="horaLlegada" type="time" step={60} required
                   value={horaLlegada} aria-describedby="ayuda-llegada errores-viaje"
@@ -343,9 +394,18 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
               </fieldset>
               <fieldset className="momento-viaje">
                 <legend>Salida</legend>
-                <CampoFecha id="fecha-salida" nombre="fechaSalida" etiqueta="Fecha de salida"
-                  valor={fechaSalida} descripcion="ayuda-disponibilidad errores-viaje"
-                  onCambiar={fecha => { setFechaSalida(fecha); setErrorDisponibilidad('') }} />
+                <CampoFecha
+                  id="fecha-salida"
+                  nombre="fechaSalida"
+                  etiqueta="Fecha de salida"
+                  valor={fechaSalida}
+                  fechaMinima={fechaLlegada || undefined}
+                  descripcion="ayuda-disponibilidad errores-viaje"
+                  onCambiar={fecha => {
+                    setFechaSalida(fecha)
+                    setErrorDisponibilidad('')
+                  }}
+                />
                 <label htmlFor="hora-salida">Hora de salida aproximada</label>
                 <input id="hora-salida" name="horaSalida" type="time" step={60} required
                   value={horaSalida} aria-describedby="ayuda-salida errores-viaje"
@@ -354,19 +414,22 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
               </fieldset>
             </div>
             <p className="ayuda-fechas" id="ayuda-disponibilidad">De 1 a 10 días, contando el primero y el último. La salida debe ser posterior a la llegada. Todas las horas son locales del destino.</p>
-            <div className="campo-alojamiento">
-              <label htmlFor="alojamiento">Dirección del alojamiento <span>(opcional)</span></label>
-              <div className="alojamiento-entrada">
-                <Icon name="casa" />
-                <input id="alojamiento" type="text" name="alojamiento" maxLength={250}
-                  placeholder="Hotel, apartamento o zona de referencia" value={alojamiento}
-                  onChange={evento => setAlojamiento(evento.target.value)} aria-describedby="ayuda-alojamiento" />
-              </div>
-              <p className="ayuda-fechas" id="ayuda-alojamiento">Puedes dejarlo vacío si todavía no sabes dónde te alojarás.</p>
-            </div>
+            <BuscadorAlojamientos
+              key={destinoSeleccionado?.id ?? 'sin-destino'}
+              destinoId={destinoSeleccionado?.id ?? null}
+              texto={alojamiento}
+              seleccionado={alojamientoLocalizado}
+              activo={paso === 'destino' && !validando}
+              onCambiar={(texto, seleccionado) => {
+                setAlojamiento(texto)
+                setAlojamientoLocalizado(seleccionado)
+                setErrorAlojamiento('')
+              }}
+            />
           </fieldset>
           <div ref={errores} id="errores-viaje" className="errores-viaje" tabIndex={-1} role="alert" aria-atomic="true">
             {errorDestino && <p className="error-viaje">{errorDestino}</p>}
+            {errorAlojamiento && <p className="error-viaje">{errorAlojamiento}</p>}
             {errorDisponibilidad && <p className="error-viaje">{errorDisponibilidad}</p>}
           </div>
           <p className="aviso-formulario">Comprobaremos tu disponibilidad antes de continuar. El viaje todavía no se guarda.</p>
@@ -399,7 +462,10 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
               onClick={() => setVistaResultado('candidatos')}>Lugares considerados ({itinerario.candidatos.length})</button>
           </nav>
           <div hidden={vistaResultado !== 'plan'}>
-            <ItinerarioPorDias itinerario={itinerario} destinoNombre={configuracionConfirmada.destino.nombre} />
+          <ItinerarioPorDias
+            itinerario={itinerario}
+            configuracion={configuracionConfirmada}
+          />
           </div>
           {vistaResultado === 'candidatos' && <CandidatosLugares candidatos={itinerario.candidatos}
             fallback={itinerario.evaluacionFallback} programados={idsProgramados} />}

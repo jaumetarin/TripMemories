@@ -3,6 +3,7 @@ package es.upv.pin.backend.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import org.mockito.ArgumentCaptor;
 
 import es.upv.pin.backend.dto.*;
 import es.upv.pin.backend.exception.ControlGeneracionException;
@@ -19,7 +20,7 @@ import org.springframework.mock.web.MockHttpSession;
 class ControlGeneracionServiceTests {
     private final GeneracionItinerarioService generacion = mock(GeneracionItinerarioService.class);
     private final ConfiguracionItinerarioService configuraciones = new ConfiguracionItinerarioService(
-            new FechaHoraService(), new PreferenciasService());
+            new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService());
     private final AtomicReference<Instant> ahora = new AtomicReference<>(Instant.parse("2026-11-10T09:00:00Z"));
     private final Clock reloj = mock(Clock.class);
     private final MockHttpSession sesion = new MockHttpSession();
@@ -35,12 +36,36 @@ class ControlGeneracionServiceTests {
     }
 
     private ConfiguracionItinerarioDto viaje(String alojamiento) {
-        return new ConfiguracionItinerarioDto(new DestinoDto("madrid", "Madrid", null, null, 40.4, -3.7),
-                new FechaHoraDto(LocalDateTime.parse("2026-11-10T10:00"), LocalDateTime.parse("2026-11-10T18:00"), 1),
-                alojamiento, new PreferenciasDto(List.of(CategoriaTuristica.ARTE_MUSEOS, CategoriaTuristica.NATURALEZA_PARQUES),
-                        List.of(), List.of(), NivelGasto.MODERADO, 3.0));
-    }
+        String nombre = alojamiento == null ? "" : alojamiento.strip();
 
+        AlojamientoDto localizado = nombre.isEmpty()
+                ? null
+                : new AlojamientoDto(
+                        "hotel-" + nombre,
+                        nombre,
+                        "Calle de Prueba 10",
+                        40.41,
+                        -3.71);
+
+        return new ConfiguracionItinerarioDto(
+                new DestinoDto(
+                        "madrid", "Madrid", null, null, 40.4, -3.7),
+                new FechaHoraDto(
+                        LocalDateTime.parse("2026-11-10T10:00"),
+                        LocalDateTime.parse("2026-11-10T18:00"),
+                        1),
+                alojamiento,
+                new PreferenciasDto(
+                        List.of(
+                                CategoriaTuristica.ARTE_MUSEOS,
+                                CategoriaTuristica.NATURALEZA_PARQUES),
+                        List.of(),
+                        List.of(),
+                        NivelGasto.MODERADO,
+                        3.0),
+                null,
+                localizado);
+}
     @Test
     void consultarNoLlamaAlGeneradorNiConsumeCuota() {
         assertEquals(3, control.consultar(sesion).restantes());
@@ -90,7 +115,13 @@ class ControlGeneracionServiceTests {
         control.generar(entrada, sesion);
         var preferencias = new PreferenciasDto(List.of(CategoriaTuristica.NATURALEZA_PARQUES,
                 CategoriaTuristica.ARTE_MUSEOS, CategoriaTuristica.ARTE_MUSEOS), List.of(), List.of(), NivelGasto.MODERADO, 3.0);
-        var equivalente = new ConfiguracionItinerarioDto(entrada.destino(), entrada.disponibilidad(), "Hotel", preferencias);
+        var equivalente = new ConfiguracionItinerarioDto(
+        entrada.destino(),
+        entrada.disponibilidad(),
+        "Hotel",
+        preferencias,
+        entrada.ritmo(),
+        entrada.alojamientoLocalizado());
         assertTrue(control.generar(equivalente, sesion).reutilizado());
         verify(generacion).generar(any());
     }
@@ -155,5 +186,46 @@ class ControlGeneracionServiceTests {
             assertFalse(control.consultar(sesion).enCurso());
             verify(generacion).generar(any());
         }
+    }
+    @Test
+    void entregaAlGeneradorElAlojamientoSeleccionado() {
+        var entrada = viaje("Hotel");
+
+        control.generar(entrada, sesion);
+
+        var captor = ArgumentCaptor.forClass(ConfiguracionItinerarioDto.class);
+
+        verify(generacion).generar(captor.capture());
+
+        assertEquals(
+                entrada.alojamientoLocalizado(),
+                captor.getValue().alojamientoLocalizado());
+    }
+
+    @Test
+    void cambiarDeAlojamientoAunqueTengaElMismoNombreNoReutilizaElPlan() {
+        var entrada = viaje("Hotel");
+
+        control.generar(entrada, sesion);
+
+        var otroAlojamiento = new AlojamientoDto(
+                "otro-hotel",
+                "Hotel",
+                "Otra calle 20",
+                40.42,
+                -3.72);
+
+        var modificada = new ConfiguracionItinerarioDto(
+                entrada.destino(),
+                entrada.disponibilidad(),
+                entrada.alojamiento(),
+                entrada.preferencias(),
+                entrada.ritmo(),
+                otroAlojamiento);
+
+        var resultado = control.generar(modificada, sesion);
+
+        assertFalse(resultado.reutilizado());
+        verify(generacion, times(2)).generar(any());
     }
 }

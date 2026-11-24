@@ -15,6 +15,7 @@ import es.upv.pin.backend.dto.DestinoDto;
 import es.upv.pin.backend.dto.FechaHoraDto;
 import es.upv.pin.backend.dto.PreferenciasDto;
 import es.upv.pin.backend.model.NivelGasto;
+import es.upv.pin.backend.dto.AlojamientoDto;
 
 import static es.upv.pin.backend.model.CategoriaTuristica.*;
 import static es.upv.pin.backend.model.SubcategoriaTuristica.*;
@@ -22,12 +23,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ConfiguracionItinerarioServiceTests {
     private final ConfiguracionItinerarioService servicio =
-            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService());
+            new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)), new PreferenciasService());
     private final DestinoDto destino = new DestinoDto("madrid-id", "Madrid", "Madrid", "España", 40.4168, -3.7038);
     private final FechaHoraDto fechas = new FechaHoraDto(
             LocalDateTime.parse("2026-11-10T10:00"), LocalDateTime.parse("2026-11-12T18:00"), 999);
     private final PreferenciasDto preferencias = new PreferenciasDto(
             List.of(GASTRONOMIA), List.of(ARTE_MUSEOS), List.of(COMIDA_RAPIDA), NivelGasto.ECONOMICO, 3.0);
+    private final AlojamientoDto hotel = new AlojamientoDto(
+            "hotel-madrid",
+            "Hotel Madrid",
+            "Calle de Prueba 10",
+            40.4,
+            -3.7);
 
     private ConfiguracionItinerarioDto viaje(DestinoDto lugar, FechaHoraDto intervalo, String alojamiento,
             PreferenciasDto seleccion) {
@@ -51,30 +58,66 @@ class ConfiguracionItinerarioServiceTests {
 
     @Test
     void normalizaLaConfiguracionCompletaYRecalculaLaDuracion() {
-        var resultado = servicio.validar(viaje(destino, fechas, "  Hotel Madrid  ", preferencias));
+        var entrada = new ConfiguracionItinerarioDto(
+                destino,
+                fechas,
+                "  Hotel Madrid  ",
+                preferencias,
+                null,
+                hotel);
+
+        var resultado = servicio.validar(entrada);
+
         assertEquals(destino, resultado.destino());
         assertEquals(3, resultado.disponibilidad().duracionDias());
         assertEquals(fechas.llegada(), resultado.disponibilidad().llegada());
         assertEquals(fechas.salida(), resultado.disponibilidad().salida());
         assertEquals("Hotel Madrid", resultado.alojamiento());
+        assertEquals(hotel, resultado.alojamientoLocalizado());
         assertEquals(preferencias, resultado.preferencias());
     }
 
     @Test
     void cambiarUnParametroConservaLosDemasYNoSustituyeOtraConfirmacion() {
-        var anterior = servicio.validar(viaje(destino, fechas, "Hotel", preferencias));
-        var modificadas = new PreferenciasDto(preferencias.intereses(), preferencias.categoriasExcluidas(),
-                preferencias.subcategoriasExcluidas(), NivelGasto.MODERADO, preferencias.distanciaKm());
-        var actual = servicio.validar(viaje(anterior.destino(), anterior.disponibilidad(), anterior.alojamiento(),
-                modificadas));
+        var entrada = new ConfiguracionItinerarioDto(
+                destino,
+                fechas,
+                "Hotel Madrid",
+                preferencias,
+                null,
+                hotel);
+
+        var anterior = servicio.validar(entrada);
+
+        var modificadas = new PreferenciasDto(
+                preferencias.intereses(),
+                preferencias.categoriasExcluidas(),
+                preferencias.subcategoriasExcluidas(),
+                NivelGasto.MODERADO,
+                preferencias.distanciaKm());
+
+        var actual = servicio.validar(new ConfiguracionItinerarioDto(
+                anterior.destino(),
+                anterior.disponibilidad(),
+                anterior.alojamiento(),
+                modificadas,
+                anterior.ritmo(),
+                anterior.alojamientoLocalizado()));
+
         assertEquals(NivelGasto.MODERADO, actual.preferencias().nivelGasto());
         assertEquals(3.0, actual.preferencias().distanciaKm());
         assertEquals(anterior.destino(), actual.destino());
         assertEquals(anterior.disponibilidad(), actual.disponibilidad());
         assertEquals(anterior.alojamiento(), actual.alojamiento());
+        assertEquals(anterior.alojamientoLocalizado(), actual.alojamientoLocalizado());
+        assertEquals(anterior.ritmo(), actual.ritmo());
         assertEquals(preferencias.intereses(), actual.preferencias().intereses());
-        assertEquals(preferencias.categoriasExcluidas(), actual.preferencias().categoriasExcluidas());
-        assertEquals(preferencias.subcategoriasExcluidas(), actual.preferencias().subcategoriasExcluidas());
+        assertEquals(
+                preferencias.categoriasExcluidas(),
+                actual.preferencias().categoriasExcluidas());
+        assertEquals(
+                preferencias.subcategoriasExcluidas(),
+                actual.preferencias().subcategoriasExcluidas());
         assertEquals(NivelGasto.ECONOMICO, anterior.preferencias().nivelGasto());
     }
 
@@ -97,9 +140,42 @@ class ConfiguracionItinerarioServiceTests {
 
     @Test
     void rechazaAlojamientoDemasiadoLargoPeroPermiteElLimite() {
-        assertEquals(250, servicio.validar(viaje(destino, fechas, "a".repeat(250), preferencias)).alojamiento().length());
-        assertThrows(IllegalArgumentException.class,
-                () -> servicio.validar(viaje(destino, fechas, "a".repeat(251), preferencias)));
+        String nombre = "a".repeat(250);
+
+        var seleccionado = new AlojamientoDto(
+                "hotel-limite",
+                nombre,
+                "Calle de Prueba 10",
+                40.4,
+                -3.7);
+
+        var entradaValida = new ConfiguracionItinerarioDto(
+                destino,
+                fechas,
+                nombre,
+                preferencias,
+                null,
+                seleccionado);
+
+        assertEquals(
+                250,
+                servicio.validar(entradaValida).alojamiento().length());
+
+        var entradaInvalida = new ConfiguracionItinerarioDto(
+                destino,
+                fechas,
+                "a".repeat(251),
+                preferencias,
+                null,
+                seleccionado);
+
+        var error = assertThrows(
+                IllegalArgumentException.class,
+                () -> servicio.validar(entradaInvalida));
+
+        assertEquals(
+                "El alojamiento no puede superar 250 caracteres.",
+                error.getMessage());
     }
 
     @Test
@@ -147,5 +223,43 @@ class ConfiguracionItinerarioServiceTests {
         var distanciaInvalida = new PreferenciasDto(List.of(), List.of(), List.of(), NivelGasto.MODERADO, 11.0);
         assertThrows(IllegalArgumentException.class,
                 () -> servicio.validar(viaje(destino, fechas, "", distanciaInvalida)));
+    }
+    @Test
+    void conservaElAlojamientoLocalizadoAlValidarLaConfiguracion() {
+        var alojamiento = new AlojamientoDto(
+                "hotel-prueba",
+                "Hotel Centro",
+                "Calle de Prueba 10",
+                40.4,
+                -3.7);
+
+        var entrada = new ConfiguracionItinerarioDto(
+                destino,
+                fechas,
+                "Hotel Centro",
+                preferencias,
+                null,
+                alojamiento);
+
+        var resultado = servicio.validar(entrada);
+
+        assertEquals(alojamiento, resultado.alojamientoLocalizado());
+    }
+
+    @Test
+    void rechazaUnAlojamientoEscritoSinSeleccionarUnaUbicacion() {
+        var entrada = new ConfiguracionItinerarioDto(
+                destino,
+                fechas,
+                "Hotel sin seleccionar",
+                preferencias);
+
+        var error = assertThrows(
+                IllegalArgumentException.class,
+                () -> servicio.validar(entrada));
+
+        assertEquals(
+                "Selecciona un alojamiento de las sugerencias o deja el campo vacío.",
+                error.getMessage());
     }
 }

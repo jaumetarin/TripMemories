@@ -5,9 +5,25 @@ public record ConfiguracionItinerarioDto(
         FechaHoraDto disponibilidad,
         String alojamiento,
         PreferenciasDto preferencias,
-        RitmoDiarioDto ritmo) {
-    public ConfiguracionItinerarioDto(DestinoDto destino, FechaHoraDto disponibilidad,
-            String alojamiento, PreferenciasDto preferencias) {
-        this(destino, disponibilidad, alojamiento, preferencias, null);
+        RitmoDiarioDto ritmo,
+        AlojamientoDto alojamientoLocalizado) {
+
+    public ConfiguracionItinerarioDto(
+            DestinoDto destino,
+            FechaHoraDto disponibilidad,
+            String alojamiento,
+            PreferenciasDto preferencias,
+            RitmoDiarioDto ritmo) {
+
+        this(destino, disponibilidad, alojamiento, preferencias, ritmo, null);
+    }
+
+    public ConfiguracionItinerarioDto(
+            DestinoDto destino,
+            FechaHoraDto disponibilidad,
+            String alojamiento,
+            PreferenciasDto preferencias) {
+
+        this(destino, disponibilidad, alojamiento, preferencias, null, null);
     }
 }

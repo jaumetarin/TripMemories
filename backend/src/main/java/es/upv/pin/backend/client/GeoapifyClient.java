@@ -60,7 +60,54 @@ public class GeoapifyClient {
 
         return respuesta.getResults();
     }
+    public RespuestaLugaresGeoapifyDto buscarAlojamientos(
+            String texto, String destinoId) {
 
+        if (texto == null
+                || texto.strip().length() < 3
+                || texto.strip().length() > 250) {
+            throw new IllegalArgumentException(
+                    "Escribe entre 3 y 250 caracteres para buscar alojamiento.");
+        }
+
+        if (destinoId == null
+                || destinoId.isBlank()
+                || destinoId.length() > 2048) {
+            throw new IllegalArgumentException(
+                    "Selecciona un destino válido para buscar alojamiento.");
+        }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "La clave de Geoapify no está configurada.");
+        }
+
+        String ruta = "/v1/geocode/autocomplete"
+                + "?text={texto}"
+                + "&filter=place:{destinoId}"
+                + "&lang=es&limit=5&format=geojson"
+                + "&apiKey={clave}";
+
+        RespuestaLugaresGeoapifyDto respuesta;
+
+        try {
+            respuesta = restClient.get()
+                    .uri(ruta, texto.strip(), destinoId.strip(), apiKey)
+                    .retrieve()
+                    .body(RespuestaLugaresGeoapifyDto.class);
+
+        } catch (RestClientException exception) {
+            throw new IllegalStateException(
+                    "No se ha podido consultar el servicio de alojamientos.");
+        }
+
+        if (respuesta == null || respuesta.features() == null) {
+            throw new IllegalStateException(
+                    "El servicio de alojamientos ha devuelto una respuesta no válida.");
+        }
+
+        return respuesta;
+    }
     public RespuestaLugaresGeoapifyDto buscarLugares(
             String destinoId,
             String categorias,

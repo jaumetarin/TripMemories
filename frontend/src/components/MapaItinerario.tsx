@@ -3,52 +3,142 @@ import { divIcon, latLngBounds } from 'leaflet'
 import type { Marker as MarcadorLeaflet } from 'leaflet'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
 import { agruparUbicaciones, horaLocal } from './visitasItinerario'
-import type { UbicacionVisitas, VisitaMapa } from './visitasItinerario'
+import type { PuntoInicioMapa, UbicacionVisitas, VisitaMapa } from './visitasItinerario'
 import 'leaflet/dist/leaflet.css'
 import './MapaItinerario.css'
 
 interface Props {
   visitas: VisitaMapa[]
+  puntoInicio: PuntoInicioMapa
   seleccion: { clave: string } | null
   onSeleccionar: (clave: string) => void
   onVerTarjeta: (clave: string) => void
 }
 
-function encuadrar(map: ReturnType<typeof useMap>, grupos: UbicacionVisitas[]) {
+function encuadrar(
+  map: ReturnType<typeof useMap>,
+  grupos: UbicacionVisitas[],
+  puntoInicio: PuntoInicioMapa
+) {
   map.stop()
-  if (grupos.length === 1) map.setView(grupos[0].posicion, 15, { animate: false })
-  else map.fitBounds(latLngBounds(grupos.map(grupo => grupo.posicion)), { padding: [45, 45], maxZoom: 16, animate: false })
+
+  const posiciones = [
+    puntoInicio.posicion,
+    ...grupos.map(grupo => grupo.posicion),
+  ]
+
+  const mismaUbicacion = grupos.every(grupo =>
+    grupo.posicion[0] === puntoInicio.posicion[0]
+    && grupo.posicion[1] === puntoInicio.posicion[1]
+  )
+
+  if (mismaUbicacion) {
+    map.setView(puntoInicio.posicion, 15, { animate: false })
+  } else {
+    map.fitBounds(latLngBounds(posiciones), {
+      padding: [55, 55],
+      maxZoom: 16,
+      animate: false,
+    })
+  }
 }
 
-function VistaMapa({ grupos, seleccion }: { grupos: UbicacionVisitas[]; seleccion: Props['seleccion'] }) {
+function VistaMapa({
+  grupos,
+  seleccion,
+  puntoInicio,
+}: {
+  grupos: UbicacionVisitas[]
+  seleccion: Props['seleccion']
+  puntoInicio: PuntoInicioMapa
+}) {
   const map = useMap()
+
   useEffect(() => {
     let encuadreAplicado = false
+
     const ajustar = () => {
       const contenedor = map.getContainer()
+
       if (!contenedor.clientWidth || !contenedor.clientHeight) return
+
       map.invalidateSize({ pan: false })
+
       if (encuadreAplicado) return
       encuadreAplicado = true
-      const grupo = grupos.find(elemento => elemento.visitas.some(visita => visita.clave === seleccion?.clave))
+
+      const grupo = grupos.find(elemento =>
+        elemento.visitas.some(visita => visita.clave === seleccion?.clave)
+      )
+
       if (grupo) {
         map.flyTo(grupo.posicion, Math.max(15, map.getZoom()), {
-          animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches, duration: 0.45,
+          animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+          duration: 0.45,
         })
-      } else encuadrar(map, grupos)
+      } else {
+        encuadrar(map, grupos, puntoInicio)
+      }
     }
-    // También se activa al volver desde una pestaña oculta o cambiar de tamaño.
+
     const observador = new ResizeObserver(ajustar)
     observador.observe(map.getContainer())
     ajustar()
-    // Leaflet detiene sus animaciones al desmontar el mapa; aquí solo limpiamos el observador.
+
     return () => observador.disconnect()
-  }, [map, grupos, seleccion])
-  return <button type="button" className="mapa-ver-dia" onClick={evento => {
-    evento.stopPropagation()
-    map.closePopup()
-    encuadrar(map, grupos)
-  }}>Ver todas las visitas del día</button>
+  }, [map, grupos, seleccion, puntoInicio])
+
+  return (
+    <button type="button" className="mapa-ver-dia" onClick={evento => {
+      evento.stopPropagation()
+      map.closePopup()
+      encuadrar(map, grupos, puntoInicio)
+    }}>
+      Ver origen y visitas
+    </button>
+  )
+}
+function MarcadorInicio({
+  puntoInicio,
+}: {
+  puntoInicio: PuntoInicioMapa
+}) {
+  const marcador = useRef<MarcadorLeaflet>(null)
+
+  const icono = useMemo(() => divIcon({
+    html: '<span aria-hidden="true">Inicio</span>',
+    className: 'inicio-marcador',
+    iconSize: [70, 30],
+    iconAnchor: [35, 46],
+    popupAnchor: [0, -46],
+  }), [])
+
+  useEffect(() => {
+    marcador.current?.getElement()?.setAttribute(
+      'aria-label',
+      `Mostrar punto de inicio: ${puntoInicio.nombre}`
+    )
+  }, [puntoInicio.nombre])
+
+  return (
+    <Marker
+      ref={marcador}
+      position={puntoInicio.posicion}
+      icon={icono}
+      title={`Punto de inicio: ${puntoInicio.nombre}`}
+      zIndexOffset={500}
+    >
+      <Popup>
+        <div className="mapa-visitas-popup">
+          <p><strong>Inicio de cada día</strong></p>
+          <p>{puntoInicio.nombre}</p>
+          {puntoInicio.direccion
+            && puntoInicio.direccion !== puntoInicio.nombre
+            && <p>{puntoInicio.direccion}</p>}
+        </div>
+      </Popup>
+    </Marker>
+  )
 }
 
 function MarcadorVisitas({ grupo, seleccion, onSeleccionar, onVerTarjeta }: {
@@ -102,24 +192,61 @@ function MarcadorVisitas({ grupo, seleccion, onSeleccionar, onVerTarjeta }: {
   </Marker>
 }
 
-export default function MapaItinerario({ visitas, seleccion, onSeleccionar, onVerTarjeta }: Props) {
+export default function MapaItinerario({
+  visitas,
+  puntoInicio,
+  seleccion,
+  onSeleccionar,
+  onVerTarjeta,
+}: Props) {
   const grupos = useMemo(() => agruparUbicaciones(visitas), [visitas])
   const [errorFondo, setErrorFondo] = useState(false)
-  if (grupos.length === 0) return <div className="mapa-estado-vacio" role="status">
-    <span aria-hidden="true">◎</span>
-    <p>{visitas.length === 0 ? 'No hay visitas programadas para mostrar en este día.' : 'Las visitas de este día no tienen una ubicación disponible.'}</p>
-    <p>Puedes consultar el itinerario completo en la lista.</p>
-  </div>
 
   return <>
-    {errorFondo && <p className="mapa-aviso" role="status">Parte del mapa no se ha podido cargar. La lista de visitas sigue disponible.</p>}
-    <MapContainer className="mapa-itinerario-lienzo" center={grupos[0].posicion} zoom={13} scrollWheelZoom={false}>
-      <TileLayer url={import.meta.env.VITE_MAP_TILES_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'}
+    {grupos.length === 0 && (
+      <p className="mapa-aviso" role="status">
+        {visitas.length === 0
+          ? 'No hay visitas programadas para este día. Se muestra el punto de inicio.'
+          : 'Las visitas no tienen una ubicación disponible. Se muestra el punto de inicio.'}
+      </p>
+    )}
+
+    {errorFondo && (
+      <p className="mapa-aviso" role="status">
+        Parte del mapa no se ha podido cargar. La lista de visitas sigue disponible.
+      </p>
+    )}
+
+    <MapContainer
+      className="mapa-itinerario-lienzo"
+      center={puntoInicio.posicion}
+      zoom={13}
+      scrollWheelZoom={false}
+    >
+      <TileLayer
+        url={import.meta.env.VITE_MAP_TILES_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'}
         attribution={'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
-        maxZoom={19} eventHandlers={{ tileerror: () => setErrorFondo(true) }} />
-      <VistaMapa grupos={grupos} seleccion={seleccion} />
-      {grupos.map(grupo => <MarcadorVisitas key={grupo.posicion.join(',')} grupo={grupo} seleccion={seleccion}
-        onSeleccionar={onSeleccionar} onVerTarjeta={onVerTarjeta} />)}
+        maxZoom={19}
+        eventHandlers={{ tileerror: () => setErrorFondo(true) }}
+      />
+
+      <VistaMapa
+        grupos={grupos}
+        seleccion={seleccion}
+        puntoInicio={puntoInicio}
+      />
+
+      <MarcadorInicio puntoInicio={puntoInicio} />
+
+      {grupos.map(grupo => (
+        <MarcadorVisitas
+          key={grupo.posicion.join(',')}
+          grupo={grupo}
+          seleccion={seleccion}
+          onSeleccionar={onSeleccionar}
+          onVerTarjeta={onVerTarjeta}
+        />
+      ))}
     </MapContainer>
   </>
 }
