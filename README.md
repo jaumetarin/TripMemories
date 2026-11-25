@@ -1,6 +1,166 @@
-# TripMemories
+# Rute
 
 Aplicación web para planificar itinerarios de viaje y guardar recuerdos asociados a viajes, actividades y lugares. Proyecto universitario desarrollado por un equipo de cinco estudiantes de la Universitat Politècnica de València.
+
+El nombre de la aplicación es **Rute**. Se conservan los nombres internos del
+repositorio, el paquete Java y la base de datos `tripmemories` para mantener las
+instalaciones existentes.
+
+## UT21–UT22: cuentas, verificación y sesión
+
+La portada es pública. Crear o generar un itinerario, consultar el perfil y abrir
+Mis viajes o Mis recuerdos requiere iniciar sesión. El backend protege **todas**
+las rutas `/api/**`, salvo las operaciones públicas de autenticación indicadas
+abajo. Los ejemplos de consultas de otras secciones también necesitan ahora la
+cookie de sesión y, si son POST, el token CSRF.
+
+### Registro y datos almacenados
+
+El formulario solicita nombre, correo, contraseña y confirmación. Las contraseñas
+de registro admiten entre 8 y 128 caracteres y deben incluir al menos una letra,
+un número y un símbolo (como `!`, `@` o `#`). Se admiten letras con tildes y `ñ`;
+los espacios se permiten, pero no cuentan como símbolo. No se exige combinar
+mayúsculas y minúsculas. La confirmación se compara y no se guarda.
+
+Solo en Crear cuenta, al salir del campo de contraseña, la interfaz comprueba
+los requisitos y señala cuáles faltan. Después del primer chequeo, los indicadores
+se actualizan al corregir el texto. También se comprueba al enviar y en el backend,
+para impedir registros inválidos aunque se omita la interfaz. El login y la
+verificación del correo solo comprueban la contraseña existente: no aplican la
+nueva regla de composición a cuentas o registros anteriores.
+
+Se reutiliza `usuario`: `id` UUID, `nombre`, `correo`, `password_hash` y el nuevo
+`correo_verificado`. El índice existente sobre `lower(correo)` impide duplicados
+también cuando llegan registros simultáneos. Nombre y correo se normalizan al
+registrar; el correo se almacena en minúsculas. El nombre no es un identificador único.
+
+La contraseña se convierte en un **hash Argon2id**, con sal aleatoria por contraseña,
+19 MiB de memoria, dos iteraciones y paralelismo uno. No se guarda la contraseña
+original ni existe una operación para descifrarla. La configuración sigue el mínimo
+recomendado por [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+Los hashes BCrypt anteriores se pueden comprobar y actualizar a Argon2id tras
+un acceso correcto, pero no se marca automáticamente como verificada ninguna
+cuenta anterior ni la cuenta de demostración del seed.
+
+Flyway aplica `V2__cuentas_y_verificacion.sql` al arrancar. Añade el indicador a
+`usuario` y crea `verificacion_correo`: un registro por usuario con el **hash** del
+token, su caducidad y la fecha del último envío. Las pruebas utilizan otro PostgreSQL
+temporal con Testcontainers; no aplican migraciones sobre tus datos locales.
+
+### Verificar el correo con Brevo
+
+1. Crear una cuenta en [Brevo](https://www.brevo.com/), completar su activación y
+   configurar/verificar un remitente. Si se utiliza un dominio propio, completar
+   también la autenticación del dominio que solicite Brevo.
+2. Crear una **API key de Brevo** para envíos transaccionales. No confundirla con
+   una clave SMTP; este proyecto usa su [API HTTP de envío](https://developers.brevo.com/docs/send-a-transactional-email).
+3. En la misma PowerShell desde la que se arranca el backend, ejecutar:
+
+   ```powershell
+   cd C:\Users\denis\Desktop\TripMemories\backend
+   $claveBrevo = Read-Host 'Pega la API key de Brevo' -AsSecureString
+   $env:BREVO_API_KEY = [System.Net.NetworkCredential]::new('', $claveBrevo).Password.Trim()
+   Remove-Variable claveBrevo
+   $env:BREVO_SENDER_EMAIL = 'tu-remitente-verificado@tu-dominio.com'
+   $env:BREVO_SENDER_NAME = 'Rute'
+   $env:APP_FRONTEND_URL = 'http://localhost:5173'
+   .\mvnw.cmd spring-boot:run
+   ```
+
+   Sustituir el correo por el remitente aprobado. No pegar la clave en Java,
+   `application.properties`, variables `VITE_*`, Git ni chats. Estas variables solo
+   duran en esa terminal. Para conservarlas en Windows, guardarlas como variables
+   del usuario y abrir una terminal nueva; reiniciar el backend tras cambiarlas.
+
+4. Abrir siempre `http://localhost:5173`, pulsar Crear cuenta y completar el formulario.
+   Sin las variables de Brevo el backend puede arrancar, pero el registro y el reenvío
+   devuelven un error comprensible y **no crean altas nuevas**.
+5. Abrir el correo, pulsar Verificar mi correo y confirmar con la contraseña elegida
+   al registrarse. Esta confirmación impide activar por error un registro creado
+   por otra persona. Después iniciar sesión con correo y contraseña. No se pide
+   volver a verificar el correo en cada acceso.
+
+El enlace es aleatorio, dura 30 minutos y sirve una vez. Se incluye en el fragmento
+de la URL y se retira de la barra al abrir la pantalla; la verificación ocurre mediante
+POST explícito, no por visitar el enlace. El nuevo envío invalida el enlace anterior.
+Se puede solicitar otro desde Iniciar sesión → Reenviar correo de verificación,
+dejando al menos 60 segundos entre envíos. Si se repite el registro de una solicitud
+pendiente tras esa espera, se renuevan nombre, contraseña y enlace; una cuenta
+verificada nunca se sobrescribe desde el registro.
+
+Las altas y reenvíos válidos responden con el mismo mensaje genérico exista o no
+la cuenta, sin publicar datos privados ni confirmar qué direcciones están registradas.
+Un fallo de envío no activa la cuenta: se mantiene pendiente y se puede reenviar.
+Se envía después de confirmar la transacción, en una cola en memoria limitada; si
+el proceso se reinicia antes del envío habrá que solicitar un nuevo enlace. Brevo
+debe estar activo y autorizar el remitente: configurar las variables no sustituye
+esa activación. Revisar su panel de entregas y el correo no deseado si no llega.
+
+### Sesión y protección de las operaciones
+
+La sesión se guarda en el servidor. El navegador conserva una cookie `JSESSIONID`
+HttpOnly, SameSite=Lax; no se guardan credenciales ni tokens de acceso en
+localStorage. El login renueva el identificador de sesión y su protección CSRF.
+Dos horas sin actividad o reiniciar el servidor termina la sesión. Cerrar sesión
+invalida la sesión en el backend, elimina la cookie y retira los datos privados de
+la interfaz; también se avisa a otras pestañas abiertas de Rute.
+
+| Método y ruta | Función | Acceso |
+| --- | --- | --- |
+| `GET /api/auth/csrf` | Token y nombre de cabecera CSRF | Público |
+| `POST /api/auth/registro` | Alta pendiente de verificación | Público + CSRF |
+| `POST /api/auth/reenviar` | Solicitar otro enlace | Público + CSRF |
+| `POST /api/auth/verificar` | Token y contraseña del registro | Público + CSRF |
+| `POST /api/auth/login` | Correo y contraseña | Público + CSRF |
+| `POST /api/auth/logout` | Invalidar sesión | CSRF |
+| `GET /api/auth/sesion` | Identidad de la sesión actual | Autenticado |
+| Resto de `/api/**` | Operaciones de Rute | Autenticado; POST con CSRF |
+
+`frontend/src/sesion.ts` centraliza estas peticiones y `api.ts` lo utiliza también
+para el itinerario. Las operaciones que modifican datos envían `X-CSRF-TOKEN`
+obtenido de `/api/auth/csrf`; se renueva después del login/logout. Un error 401 al
+consultar datos privados lleva al acceso sin seguir mostrando el formulario privado.
+
+Se limitan los intentos por IP y operación durante 15 minutos: 5 registros, 5
+reenvíos, 10 accesos y 10 verificaciones. Un exceso devuelve 429 antes de ejecutar
+la operación. Son controles en memoria de una instancia; se reinician con el proceso.
+No se confía en cabeceras `X-Forwarded-For` enviadas por el cliente. Al desplegar tras
+un proxy habrá que configurar explícitamente los proxies de confianza y revisar
+el origen de la IP para que todos los visitantes no compartan el límite del proxy.
+
+### Base de datos y despliegue futuro
+
+Las conexiones locales conservan los valores anteriores. Para usar PostgreSQL
+compartido se configuran `DB_URL` (URL JDBC), `DB_USER` y `DB_PASSWORD` en el backend;
+Flyway aplica las mismas migraciones. No hace falta cambiar los repositorios Java.
+
+En producción configurar `APP_FRONTEND_URL` con la URL HTTPS de Rute y
+`SESSION_COOKIE_SECURE=true`. Servir el frontend y `/api` bajo el mismo origen
+(proxy hacia el backend), equivalente al proxy Vite de desarrollo. El frontend
+actual usa rutas `/api` relativas y cookies del mismo origen: dos servicios con
+dominios distintos requieren preparar ese proxy o adaptar conscientemente cookies,
+CORS y peticiones; no basta con cambiar una URL. CORS admite únicamente el origen
+configurado; en desarrollo se admiten `localhost` y `127.0.0.1` con el mismo puerto.
+Usar siempre el mismo nombre en cada sesión, porque sus cookies son distintas.
+Cambiar las variables requiere reiniciar el backend.
+
+Para ejecutar todas las pruebas del backend, con Docker Desktop abierto:
+
+```powershell
+cd backend
+.\mvnw.cmd test
+```
+
+Los correos de las pruebas se simulan: no hace falta Brevo, no se envían mensajes
+reales y no se consumen sus créditos. Las pruebas cubren validación, duplicados,
+persistencia, enlace caducado/reutilizado, CSRF, límites, renovación de sesión y
+logout. El envío real debe comprobarse después de configurar el remitente y la clave.
+
+La creación de cuentas no añade todavía el guardado de viajes o archivos. Las
+pantallas privadas existentes conservan su alcance; sus futuras consultas deberán
+filtrar siempre por el usuario autenticado del backend, no por un ID enviado por
+el navegador. Los planes en memoria siguen perteneciendo a la sesión y se pierden
+al cerrarla; las cuentas sí permanecen guardadas en PostgreSQL.
 
 ## Tecnologías
 
@@ -50,16 +210,15 @@ El código Java se organiza por capas dentro de `es.upv.pin.backend`:
 | --- | --- |
 | `controller` | Endpoints HTTP; reciben peticiones y delegan en los servicios. |
 | `service` | Reglas de negocio y coordinación de las operaciones. |
-| `repository` | Acceso a PostgreSQL; reservado para las funcionalidades que lo necesiten. |
-| `model` | Objetos del dominio, como User o Trip; se añadirán al implementar esas funcionalidades. |
+| `repository` | Acceso a PostgreSQL mediante consultas parametrizadas; incluye `UsuarioRepository`. |
+| `model` | Objetos internos, como `Usuario` y la identidad `UsuarioAutenticado`. |
 | `dto` | Datos de entrada y salida de la API. |
 | `client` | Comunicación con APIs externas, como Geoapify. |
 | `config` | Configuración e inicialización de dependencias. |
 | `exception` | Excepciones y su conversión a respuestas HTTP. |
 
 `BackendApplication` permanece en el paquete raíz para que Spring detecte todas las
-capas. Los paquetes `model` y `repository` incluyen un `package-info.java` que documenta
-su propósito. Las pruebas reproducen la estructura de paquetes en `src/test/java`.
+capas. Las pruebas reproducen la estructura de paquetes en `src/test/java`.
 
 ## Requisitos
 
