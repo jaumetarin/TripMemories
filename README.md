@@ -1560,3 +1560,44 @@ Ejecutar las pruebas desde `backend`, con Docker Desktop disponible:
 El alcance actual comprende los viajes y las propuestas de generación.
 Las operaciones de álbumes, metadatos y archivos deberán incorporar estas
 comprobaciones cuando se implementen.
+
+## UT25–UT27: editar las actividades de un viaje guardado
+
+En **Mis viajes → Abrir viaje → Editar actividades** puedes eliminar visitas,
+subirlas o bajarlas dentro del mismo día y sustituirlas por alternativas compatibles.
+El editor muestra una propuesta con el recorrido y los horarios recalculados;
+el viaje guardado no cambia hasta pulsar **Guardar cambios del itinerario**.
+Cancelar conserva la versión anterior. La navegación avisa si quedan cambios pendientes.
+
+Los conflictos de horarios, recorridos o disponibilidad bloquean el guardado.
+Los avisos requieren aceptación explícita. Eliminar una visita obligatoria pide
+confirmación y conserva su prioridad, indicando que queda incumplida. Una visita
+obligatoria puede reordenarse, pero no sustituirse automáticamente.
+
+Las alternativas proceden de los candidatos ya guardados: se filtran por preferencias,
+exclusiones, gasto, duplicados y proximidad de hasta 10 km a la visita original.
+Se comparan hasta seis candidatos y se ofrecen hasta tres que encajen en el día.
+Elegir una opción exige confirmar; cancelar la selección no modifica el recorrido.
+La búsqueda de alternativas no vuelve a consultar Gemini ni Geoapify.
+
+Se reutilizan recorridos guardados con coordenadas coincidentes y una caché por
+sesión de hasta 512 pares dirigidos durante 15 minutos. Solo los trayectos que faltan
+se consultan a OpenRouteService, agrupados por origen y hasta 50 destinos por petición.
+Los fallos no se cachean; **Recalcular recorridos** permite reintentarlos.
+
+Todas las operaciones comprueban autenticación, propietario, CSRF y revisión del viaje.
+Cada modificación renueva el identificador de propuesta para rechazar acciones obsoletas.
+Los borradores viven en la sesión, caducan a los 30 minutos y se limitan a tres viajes.
+El guardado utiliza la actualización atómica existente y conserva las versiones anteriores;
+un fallo de escritura revierte la operación completa. No requiere nuevas tablas ni claves.
+
+Los endpoints POST están bajo `/api/viajes/{viajeId}/edicion`: `/iniciar` y,
+con `/{propuestaId}`, `/reordenar`, `/recalcular`, `/guardar`,
+`/visitas/{actividadId}/eliminar`, `/visitas/{actividadId}/alternativas` y
+`/visitas/{actividadId}/sustituir`. El servidor conserva y valida la propuesta;
+no acepta un itinerario arbitrario enviado por el navegador.
+
+Las pruebas cubren reconstrucción, horarios, comidas, caché, reutilización y errores
+del proveedor. Las pruebas de integración usan PostgreSQL temporal, login y CSRF
+reales, y OpenRouteService simulado: comprueban permisos, revisiones, persistencia,
+obligatorios, alternativas y reversión de errores al guardar.

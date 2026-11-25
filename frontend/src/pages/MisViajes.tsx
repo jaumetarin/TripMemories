@@ -4,6 +4,7 @@ import { actualizarTitulo, listarViajes, obtenerViaje } from '../viajes'
 import type { ResumenViaje, ViajeGuardado } from '../viajes'
 import ItinerarioPorDias from '../components/ItinerarioPorDias'
 import { CandidatosLugares } from '../components/CandidatosLugares'
+import { EditorActividades } from '../components/EditorActividades'
 import './MisViajes.css'
 
 type Props = { onCrear: () => void; onEditar: (viaje: ViajeGuardado) => void }
@@ -19,6 +20,7 @@ export function MisViajes({ onCrear, onEditar }: Props) {
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [vista, setVista] = useState<'plan' | 'candidatos'>('plan')
+  const [editandoActividades, setEditandoActividades] = useState(false)
   const peticion = useRef<AbortController | null>(null)
   const cabecera = useRef<HTMLHeadingElement>(null)
   const errores = useRef<HTMLParagraphElement>(null)
@@ -66,6 +68,9 @@ export function MisViajes({ onCrear, onEditar }: Props) {
   }
   function recargarListado() { setCargando(true); setError(''); setReintento(v => v + 1) }
   function volver() { peticion.current?.abort(); peticion.current = null; setViaje(null); setAbriendo(null); setMensaje(''); recargarListado() }
+  if (viaje && editandoActividades) return <EditorActividades viaje={viaje}
+    onCerrar={() => setEditandoActividades(false)}
+    onGuardado={() => { setEditandoActividades(false); volver(); setMensaje('Cambios del itinerario guardados correctamente. Ya puedes abrir la versión actualizada.') }} />
   const programados = new Set(viaje?.itinerario.dias.flatMap(dia => dia.bloques.flatMap(bloque => bloque.candidato ? [bloque.candidato.lugar.id] : [])) ?? [])
   return <section className="mis-viajes" aria-labelledby="mis-viajes-titulo">
     <p className="antetitulo">TU COLECCIÓN PERSONAL</p>
@@ -77,8 +82,11 @@ export function MisViajes({ onCrear, onEditar }: Props) {
         <button className="boton" type="button" disabled={guardando} onClick={volver}>← Volver a Mis viajes</button>
         <button className="boton boton-primario" type="button" disabled={guardando || !!abriendo}
           onClick={() => onEditar({ ...viaje, resumen: { ...viaje.resumen, titulo: titulo.trim() || viaje.resumen.titulo } })}>Editar configuración</button>
+        <button className="boton boton-primario" type="button" disabled={guardando || !!abriendo || titulo.trim() !== viaje.resumen.titulo}
+          onClick={() => setEditandoActividades(true)}>Editar actividades</button>
       </div>
       <p>Guardado en tu cuenta. Esta consulta no genera otra propuesta ni consume una generación.</p>
+      {titulo.trim() !== viaje.resumen.titulo && <p>Guarda o descarta el título pendiente antes de editar las actividades.</p>}
       <form className="guardar-viaje" onSubmit={guardarNombre}>
         <label htmlFor="editar-titulo-viaje">Título del viaje</label>
         <input id="editar-titulo-viaje" value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={160} required disabled={guardando || !!abriendo} />

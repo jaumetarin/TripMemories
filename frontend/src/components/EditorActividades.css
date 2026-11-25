@@ -1,0 +1,13 @@
+.editor-actividades { max-width: 1120px; margin: 0 auto; }
+.editor-dia { margin: 32px 0; }
+.editor-visitas { padding-left: 24px; }
+.editor-visitas > li { margin: 16px 0; padding: 20px; border: 1px solid #ddd; border-radius: 16px; background: white; }
+.editor-visitas h3 { margin: 0 0 12px; overflow-wrap: anywhere; }
+.editor-incidencias ul { list-style: none; padding: 0; }
+.editor-incidencias li { margin: 12px 0; }
+.editor-alternativas { padding: 16px; background: #f4f8fb; border-radius: 12px; }
+.editor-alternativas fieldset { border: 0; padding: 0; min-width: 0; }
+.editor-alternativas label, .editor-aceptacion { display: flex; align-items: flex-start; gap: 12px; margin: 16px 0; line-height: 1.6; }
+.editor-alternativas input, .editor-aceptacion input { flex: 0 0 auto; margin-top: 6px; width: 18px; height: 18px; }
+.editor-actividades h1 { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .editor-visitas { padding-left: 18px; } .editor-visitas > li { padding: 14px; } }
