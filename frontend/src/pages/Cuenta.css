@@ -1,0 +1,56 @@
+.cuenta { max-width: 1000px; margin: 35px auto 70px; display: grid; grid-template-columns: 1fr 1fr; gap: 90px; align-items: center; }
+.cuenta-presentacion h1 { max-width: 420px; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.055em; line-height: 1.12; margin: 12px 0 22px; }
+.cuenta-presentacion > p:not(.antetitulo) { color: var(--secundario); line-height: 1.8; font-size: .95rem; max-width: 360px; }
+.cuenta-simbolo { display: grid; place-items: center; width: 65px; height: 65px; background: #e7f2ed; color: #27775e; border-radius: 20px; margin-bottom: 28px; }
+.cuenta-simbolo .icono { width: 33px; height: 33px; }
+.cuenta-promesa { display: flex; align-items: center; gap: 12px; margin-top: 45px; color: #4d6a5b; font-size: .8rem; }
+.cuenta-promesa .icono { width: 20px; height: 20px; }
+.cuenta-panel { background: white; padding: 32px; border: 1px solid #e3e7e5; border-radius: 25px; box-shadow: 0 14px 60px #233b2c06; min-width: 0; }
+.cuenta-panel h2 { font-size: 1.2rem; letter-spacing: -.025em; margin-bottom: 22px; }
+.cuenta-pestanas { display: flex; background: #f2f4f3; padding: 4px; border-radius: 13px; margin-bottom: 28px; }
+.cuenta-pestanas button { width: 50%; padding: 11px 6px; border: 0; border-radius: 10px; background: transparent; color: #68736d; font: inherit; font-size: .8rem; }
+.cuenta-pestanas button[aria-current] { background: white; color: #234f3c; box-shadow: 0 2px 8px #203d2810; font-weight: 600; }
+.cuenta fieldset { min-width: 0; padding: 0; border: 0; }
+.cuenta-campo { margin-bottom: 19px; }
+.cuenta-campo label { display: block; font-size: .8rem; font-weight: 550; margin-bottom: 9px; }
+.cuenta-campo input { display: block; width: 100%; min-width: 0; min-height: 46px; padding: 11px 13px; border: 1px solid #d9dfdb; border-radius: 11px; color: #213b2d; background: #fcfdfc; font: inherit; font-size: .88rem; }
+.cuenta-campo input:focus { outline: 2px solid #28785c; outline-offset: 2px; }
+.cuenta-campo input[aria-invalid="true"] { border-color: #b84d43; }
+.cuenta-ayuda { color: #737d76; font-size: .72rem; line-height: 1.65; margin-top: 9px; }
+.cuenta-reglas { list-style: none; margin: 12px 0 0; padding: 0; color: #626d66; font-size: .73rem; line-height: 1.6; }
+.cuenta-reglas li { display: flex; gap: 7px; margin-top: 5px; }
+.cuenta-reglas li > span:first-child { width: 13px; flex-shrink: 0; text-align: center; font-weight: 700; }
+.cuenta-reglas .cuenta-regla-cumplida, .cuenta-contrasena-valida { color: #236545; }
+.cuenta-reglas .cuenta-regla-pendiente { color: #a13e32; }
+.cuenta-contrasena-valida { font-size: .73rem; line-height: 1.6; margin-top: 9px; }
+.cuenta-enviar { width: 100%; margin-top: 6px; }
+.cuenta button:disabled { opacity: .55; cursor: not-allowed; }
+.cuenta-enlace { display: block; margin: 20px auto 0; border: 0; background: none; color: #266f56; text-decoration: underline; text-underline-offset: 4px; font: inherit; font-size: .75rem; }
+.cuenta-error { margin: 14px 0; padding: 13px; border: 1px solid #efd1cb; border-radius: 10px; background: #fff4f1; color: #973d33; font-size: .78rem; line-height: 1.7; }
+.cuenta-error-campo { color: #a13e32; font-size: .73rem; line-height: 1.6; margin-top: 6px; }
+.cuenta-confirmacion { text-align: center; }
+.cuenta-confirmacion p { font-size: .83rem; color: #66736a; line-height: 1.8; margin: 15px 0; }
+.cuenta-confirmacion .boton { margin-top: 15px; }
+.cuenta-confirmacion-icono { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: #e5f3eb; color: #28764f; margin: 0 auto 22px; font-size: 1.5rem; }
+.sesion-aviso { max-width: 1000px; margin: 0 auto 20px; padding: 14px 18px; border: 1px solid #dce7df; border-radius: 13px; background: #edf5f0; color: #45634f; font-size: .8rem; line-height: 1.7; }
+.sesion-aviso button { margin-left: 12px; border: 0; padding: 0; background: none; color: #176447; text-decoration: underline; }
+.perfil-cuenta { max-width: 600px; margin: 35px auto 60px; padding: 35px; background: white; border: 1px solid #e1e8e3; border-radius: 24px; }
+.perfil-cuenta h1 { font-size: 2rem; letter-spacing: -.04em; margin-bottom: 25px; }
+.perfil-cuenta dt { color: #6b7b70; font-size: .75rem; margin-top: 18px; }
+.perfil-cuenta dd { margin: 5px 0 0; overflow-wrap: anywhere; }
+.perfil-cuenta .boton { margin-top: 30px; }
+.cabecera-sesion { display: flex; align-items: center; gap: 10px; }
+.cerrar-sesion { border: 0; padding: 4px; background: none; color: #58685e; font: inherit; font-size: .7rem; white-space: nowrap; }
+@media (max-width: 800px) {
+  .cuenta { grid-template-columns: 1fr; gap: 30px; max-width: 470px; margin-top: 5px; }
+  .cuenta-presentacion { text-align: center; }
+  .cuenta-presentacion h1, .cuenta-presentacion > p:not(.antetitulo) { margin-left: auto; margin-right: auto; }
+  .cuenta-simbolo { margin: 0 auto 22px; }
+  .cuenta-promesa { display: none; }
+  .cuenta-panel { padding: 25px 22px; }
+  .cabecera-sesion { gap: 7px; }
+}
+@media (max-width: 520px) {
+  .cabecera-sesion .boton-cabecera { width: auto; padding: 7px 12px; white-space: nowrap; }
+  .cerrar-sesion { max-width: 48px; white-space: normal; text-align: center; line-height: 1.4; }
+}

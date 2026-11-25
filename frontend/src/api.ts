@@ -1,3 +1,4 @@
+import { peticionApi } from './sesion'
 export interface Destino {
   id: string
   nombre: string
@@ -162,7 +163,7 @@ async function leerRespuestaPreferencias(respuesta: Response): Promise<unknown> 
 }
 
 export async function obtenerCatalogoPreferencias(signal: AbortSignal): Promise<CategoriaPreferencia[]> {
-  const respuesta = await fetch('/api/itinerarios/catalogo-preferencias', {
+  const respuesta = await peticionApi('/api/itinerarios/catalogo-preferencias', {
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: { Accept: 'application/json' },
   })
@@ -174,7 +175,7 @@ export async function obtenerCatalogoPreferencias(signal: AbortSignal): Promise<
 }
 
 export async function validarPreferencias(preferencias: Preferencias, signal: AbortSignal): Promise<Preferencias> {
-  const respuesta = await fetch('/api/itinerarios/validar-preferencias', {
+  const respuesta = await peticionApi('/api/itinerarios/validar-preferencias', {
     method: 'POST',
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -186,7 +187,7 @@ export async function validarPreferencias(preferencias: Preferencias, signal: Ab
 }
 
 export async function obtenerOpcionesGastoDistancia(signal: AbortSignal): Promise<OpcionesGastoDistancia> {
-  const respuesta = await fetch('/api/itinerarios/opciones-gasto-distancia', {
+  const respuesta = await peticionApi('/api/itinerarios/opciones-gasto-distancia', {
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: { Accept: 'application/json' },
   })
@@ -237,7 +238,7 @@ function esRitmoDiario(valor: unknown): valor is RitmoDiario {
 export async function confirmarConfiguracion(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
 ): Promise<ConfiguracionItinerario> {
-  const respuesta = await fetch('/api/itinerarios/confirmar-configuracion', {
+  const respuesta = await peticionApi('/api/itinerarios/confirmar-configuracion', {
     method: 'POST',
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -270,7 +271,7 @@ function esSeleccionLugar(valor: unknown): valor is SeleccionLugar {
 }
 
 async function consultarLugares(ruta: string, cuerpo: unknown, signal: AbortSignal): Promise<CatalogoLugares> {
-  const respuesta = await fetch('/api/lugares/' + ruta, {
+  const respuesta = await peticionApi('/api/lugares/' + ruta, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]), body: JSON.stringify(cuerpo),
   })
@@ -306,7 +307,7 @@ export function cambiarSeleccionLugar(configuracion: ConfiguracionItinerario, lu
 export async function prepararCandidatos(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
 ): Promise<Lugar[]> {
-  const respuesta = await fetch('/api/candidatos/preparar', {
+  const respuesta = await peticionApi('/api/candidatos/preparar', {
     method: 'POST',
     // Hasta seis consultas independientes, cada una con timeout en el backend.
     signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
@@ -347,7 +348,7 @@ export async function buscarAlojamientos(
     destinoId,
   })
 
-  const respuesta = await fetch(`/api/alojamientos?${parametros}`, {
+  const respuesta = await peticionApi(`/api/alojamientos?${parametros}`, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: { Accept: 'application/json' },
     cache: 'no-store',
@@ -376,7 +377,7 @@ export async function buscarAlojamientos(
 
 export async function buscarDestinos(texto: string, signal: AbortSignal): Promise<Destino[]> {
   const parametros = new URLSearchParams({ texto })
-  const respuesta = await fetch(`/api/destinos?${parametros}`, {
+  const respuesta = await peticionApi(`/api/destinos?${parametros}`, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     headers: { Accept: 'application/json' },
   })
@@ -399,7 +400,7 @@ export async function validarFechaHora(
   signal?: AbortSignal
 ): Promise<FechaHora> {
 
-  const respuesta = await fetch('/api/itinerarios/validar-fecha-hora', {
+  const respuesta = await peticionApi('/api/itinerarios/validar-fecha-hora', {
     method: 'POST',
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
@@ -544,7 +545,7 @@ function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado {
 export async function evaluarCandidatos(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
 ): Promise<EvaluacionCandidatos> {
-  const respuesta = await fetch('/api/candidatos/evaluar', {
+  const respuesta = await peticionApi('/api/candidatos/evaluar', {
     method: 'POST',
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -614,7 +615,7 @@ export interface ConsumoGeneracion {
 }
 
 export async function obtenerConsumoGeneracion(signal: AbortSignal): Promise<ConsumoGeneracion> {
-  const respuesta = await fetch('/api/itinerarios/consumo', {
+  const respuesta = await peticionApi('/api/itinerarios/consumo', {
     signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
     credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' },
   })
@@ -639,7 +640,7 @@ export class ErrorObligatoriosPendientes extends Error {
 export async function generarItinerario(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
 ): Promise<{ itinerario: ItinerarioGenerado; reutilizado: boolean }> {
-  const respuesta = await fetch('/api/itinerarios/generar', {
+  const respuesta = await peticionApi('/api/itinerarios/generar', {
     method: 'POST',
     credentials: 'same-origin',
     signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
