@@ -219,6 +219,38 @@ class ResolucionRutasEdicionServiceTests {
         verify(cliente, times(1)).calcularDesde(origen, List.of(a.destino()));
     }
 
+    @Test
+    void elPlazoSeComparteEntreResolucionesYDetieneNuevasConsultas() {
+        var reloj = new java.util.concurrent.atomic.AtomicLong();
+        var tiempo = new TiempoEdicion(reloj::get);
+        when(cliente.calcularDesde(any(), anyList())).thenAnswer(invocacion -> {
+            reloj.addAndGet(java.time.Duration.ofSeconds(25).toNanos());
+            return matriz(((List<?>) invocacion.getArgument(1)).size());
+        });
+        TiempoEdicion.ejecutar(tiempo, () -> {
+            for (int i=0; i<6; i++) {
+                var solicitud = new Solicitud(new PuntoRutaDto("origen-"+i,39.4+i*.001,-.3),destino(i));
+                var resultado = servicio.resolver(viaje,List.of(solicitud),sesion);
+                assertEquals(i>=4,resultado.consultaFallida());
+            }
+            return null;
+        });
+        verify(cliente,times(4)).calcularDesde(any(),anyList());
+        assertEquals(java.time.Duration.ofSeconds(100).toNanos(),reloj.get());
+    }
+
+    @Test
+    void laCacheSigueDisponibleSinNuevasLlamadasAlAgotarTiempoDeConsultas() {
+        var reloj = new java.util.concurrent.atomic.AtomicLong();
+        var tiempo = new TiempoEdicion(reloj::get);
+        cache.guardar(a,ruta(a,100),sesion);
+        reloj.set(java.time.Duration.ofSeconds(100).toNanos());
+        var resultado = TiempoEdicion.ejecutar(tiempo,()->servicio.resolver(viaje,List.of(a),sesion));
+        assertFalse(resultado.consultaFallida());
+        assertEquals(EstadoDesplazamiento.DISPONIBLE,resultado.rutas().getFirst().estado());
+        verifyNoInteractions(cliente);
+    }
+
     private static PuntoRutaDto destino(int i) {
         return new PuntoRutaDto("destino-" + i, 39.48 + i * .001, -0.38);
     }

@@ -40,14 +40,14 @@ public class ResolucionRutasEdicionService {
             control.enCurso = true;
         }
         try {
-            return resolverInterno(viaje, unicas, sesion);
+            return resolverInterno(viaje, unicas, sesion, TiempoEdicion.actual());
         } finally {
             synchronized (control) { control.enCurso = false; }
         }
     }
 
     private Resultado resolverInterno(ViajeGuardadoDto viaje, List<Solicitud> solicitudes,
-            HttpSession sesion) {
+            HttpSession sesion, TiempoEdicion tiempo) {
         Map<Solicitud, DesplazamientoDto> resueltas = new LinkedHashMap<>();
         var pendientes = new ArrayList<Solicitud>();
         for (var solicitud : solicitudes) {
@@ -85,7 +85,8 @@ public class ResolucionRutasEdicionService {
         for (var grupo : grupos.values()) {
             for (int desde = 0; desde < grupo.size(); desde += maximoDestinos) {
                 var lote = grupo.subList(desde, Math.min(grupo.size(), desde + maximoDestinos));
-                if (consultaFallida) {
+                if (consultaFallida || !tiempo.permiteConsulta()) {
+                    consultaFallida = true;
                     marcarNoDisponibles(lote, resueltas);
                     continue;
                 }

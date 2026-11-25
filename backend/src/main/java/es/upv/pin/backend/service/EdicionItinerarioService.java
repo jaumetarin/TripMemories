@@ -144,7 +144,13 @@ public class EdicionItinerarioService {
                     .sorted(Comparator.comparingInt(c -> Math.abs(c.duracionMinutos() - original.candidato().duracionMinutos())))
                     .limit(6).toList();
             var opciones = new ArrayList<CandidatoEvaluadoDto>();
+            var tiempo = TiempoEdicion.actual();
             for (var candidato : candidatos) {
+                if (!tiempo.permiteConsulta()) {
+                    borrador.ofrecidas.put(actividad, opciones.stream().map(c -> c.lugar().id()).toList());
+                    return new AlternativasEdicionDto(List.copyOf(opciones),
+                            "Se agotó el tiempo de comparación. Puedes elegir una opción ya comprobada o reintentar; la visita actual se conserva.");
+                }
                 var nueva = secuencias.sustituir(borrador.visitas.get(dia), actividad, candidato);
                 var prueba = proponer(borrador, dia, nueva, sesion);
                 var incidencias = new ArrayList<>(prueba.incidencias.getOrDefault(dia, List.of()));
@@ -225,10 +231,12 @@ public class EdicionItinerarioService {
     }
 
     private Borrador proponer(Borrador anterior, LocalDate fecha, List<Visita> visitas, HttpSession sesion) {
+        TiempoEdicion.actual().comprobar();
         var original = anterior.base.itinerario().dias().stream().filter(d -> d.fecha().equals(fecha)).findFirst().orElseThrow();
         var solicitudes = necesidades.obtener(anterior.base.configuracion(), original, visitas);
         var calculadas = rutas.resolver(anterior.base, solicitudes, sesion);
         var reconstruido = reconstruccion.reconstruir(original, visitas, anterior.base.configuracion().ritmo(), calculadas.rutas());
+        TiempoEdicion.actual().comprobar();
         var nuevasVisitas = new LinkedHashMap<>(anterior.visitas);
         nuevasVisitas.put(fecha, List.copyOf(visitas));
         var dias = new LinkedHashMap<>(anterior.dias);

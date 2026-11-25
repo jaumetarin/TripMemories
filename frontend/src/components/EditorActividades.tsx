@@ -29,12 +29,12 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
   useEffect(() => { titulo.current?.focus() }, [])
   useEffect(() => { if (opciones) tituloAlternativas.current?.focus() }, [opciones])
   useEffect(() => {
-    if (!focoTrasCambio.current) return
+    if (!focoTrasCambio.current || ocupado) return
     const destino = [...(zona.current?.querySelectorAll<HTMLButtonElement>('[data-editor-id]') ?? [])]
-      .find(elemento => elemento.dataset.editorId === focoTrasCambio.current)
+      .find(elemento => elemento.dataset.editorId === focoTrasCambio.current && !elemento.disabled)
     destino?.focus({ preventScroll: true })
     focoTrasCambio.current = null
-  }, [estado])
+  }, [estado, moviendo, opciones, ocupado])
   useEffect(() => {
     const controlador = new AbortController()
     peticion.current = controlador
@@ -141,8 +141,8 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
           onClick={() => { setMoviendo({ actividad: visita.actividadId, posicion: indice }); setOpciones(null) }}
           data-editor-id={visita.actividadId} aria-label={'Mover ' + visita.candidato.lugar.nombre}
           aria-expanded={moviendo?.actividad === visita.actividadId} title="Arrastra hasta otra visita o pulsa para elegir una posición">↕ Mover</button>
-        <button className="boton" type="button" disabled={ocupado || visita.obligatorio} onClick={() => alternativas(visita)} aria-label={'Sustituir ' + visita.candidato.lugar.nombre}>Sustituir</button>
-        <button className="boton editor-eliminar" type="button" disabled={ocupado} onClick={() => eliminar(visita)} aria-label={'Eliminar ' + visita.candidato.lugar.nombre}>Eliminar</button>
+        <button className="boton" type="button" disabled={ocupado || visita.obligatorio} onClick={() => alternativas(visita)} data-editor-id={visita.actividadId} aria-label={'Sustituir ' + visita.candidato.lugar.nombre}>Sustituir</button>
+        <button className="boton editor-eliminar" type="button" disabled={ocupado} onClick={() => eliminar(visita)} data-editor-id={visita.actividadId} aria-label={'Eliminar ' + visita.candidato.lugar.nombre}>Eliminar</button>
       </div>
       {visita.obligatorio && <p className="editor-ayuda">Puedes moverla. Para sustituirla tendrías que revisar antes su prioridad.</p>}
       {moviendo?.actividad === visita.actividadId && <div className="editor-mover">
@@ -150,7 +150,7 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
           {dia.visitas.map((otra, posicion) => <option key={otra.actividadId} value={posicion}>{posicion + 1}. {posicion === indice ? 'Posición actual' : (posicion < indice ? 'Antes de ' : 'Después de ') + otra.candidato.lugar.nombre}</option>)}
         </select></label>
         <button className="boton boton-primario" type="button" disabled={ocupado || moviendo.posicion === indice} onClick={() => mover(dia, visita.actividadId, moviendo.posicion)}>Mover aquí</button>
-        <button className="boton" type="button" onClick={() => setMoviendo(null)}>Cancelar movimiento</button>
+        <button className="boton" type="button" onClick={() => { focoTrasCambio.current = visita.actividadId; setMoviendo(null) }}>Cancelar movimiento</button>
       </div>}
       {opciones?.actividad === visita.actividadId && <section className="editor-alternativas" aria-label={'Alternativas a ' + visita.candidato.lugar.nombre}>
         <h4 tabIndex={-1} ref={tituloAlternativas}>¿Qué prefieres hacer en su lugar?</h4>
@@ -162,7 +162,7 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
             <p>{c.motivo}</p>{c.horario && <p>Horario: {c.horario}</p>}
             <button className="boton boton-primario" type="button" disabled={ocupado} onClick={() => elegir(visita, c.lugar.id)} aria-label={'Elegir ' + c.lugar.nombre}>Elegir esta actividad</button></li>
         })}</ul>
-        <button className="boton" type="button" disabled={ocupado} onClick={() => { setOpciones(null); setMensaje('Se conserva la actividad actual.') }}>Conservar la actual</button>
+        <button className="boton" type="button" disabled={ocupado} onClick={() => { focoTrasCambio.current = visita.actividadId; setOpciones(null); setMensaje('Se conserva la actividad actual.') }}>Conservar la actual</button>
       </section>}
     </div>
   }
