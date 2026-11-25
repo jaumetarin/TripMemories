@@ -16,6 +16,7 @@ export interface DiaEditable { fecha: string; visitas: VisitaEditable[] }
 export interface EstadoEdicion {
   propuesta: { propuestaId: string; revisionBase: number; itinerario: ItinerarioGenerado; incidencias: IncidenciaEdicion[]; puedeGuardar: boolean }
   dias: DiaEditable[]
+  eliminadas: { dia: string; visita: VisitaEditable }[]
   modificada: boolean
 }
 export interface AlternativasEdicion { candidatos: CandidatoEvaluado[]; mensaje: string }
@@ -34,7 +35,9 @@ function esEstado(x: unknown): x is EstadoEdicion {
     || !esItinerarioGenerado(x.propuesta.itinerario) || !Array.isArray(x.propuesta.incidencias)
     || !x.propuesta.incidencias.every(esIncidencia) || typeof x.propuesta.puedeGuardar !== 'boolean'
     || x.propuesta.puedeGuardar !== x.propuesta.incidencias.every(i => i.nivel !== 'CONFLICTO')
-    || typeof x.modificada !== 'boolean' || !Array.isArray(x.dias)) return false
+    || typeof x.modificada !== 'boolean' || !Array.isArray(x.dias) || !Array.isArray(x.eliminadas)
+    || !x.eliminadas.every(e => objeto(e) && typeof e.dia === 'string' && fecha.test(e.dia) && objeto(e.visita)
+      && id(e.visita.actividadId) && esCandidatoEvaluado(e.visita.candidato) && typeof e.visita.obligatorio === 'boolean')) return false
   return x.dias.every(d => objeto(d) && typeof d.fecha === 'string' && fecha.test(d.fecha) && Array.isArray(d.visitas)
     && d.visitas.every(v => objeto(v) && id(v.actividadId) && esCandidatoEvaluado(v.candidato) && typeof v.obligatorio === 'boolean'))
 }
@@ -93,4 +96,8 @@ export async function guardarEdicion(viaje: string, estado: EstadoEdicion, acept
 
 export async function recuperarEdicion(viaje: string, revision: number, signal: AbortSignal) {
   return leerEstado(await enviar(viaje, 'recuperar', { revision }, signal))
+}
+
+export async function restaurarVisita(viaje: string, estado: EstadoEdicion, actividad: string, signal: AbortSignal) {
+  return leerEstado(await enviar(viaje, visitaRuta(estado, actividad, 'restaurar'), { revision: estado.propuesta.revisionBase }, signal))
 }

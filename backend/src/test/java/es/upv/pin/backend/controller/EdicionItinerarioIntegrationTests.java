@@ -178,7 +178,7 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
         var anterior = abrir();
         var borrador = iniciar();
         var otraSesion = entrar(crearUsuario() + "@example.test");
-        var acciones = Map.of("/recuperar", "{\"revision\":1}", "/visitas/" + actividad(anterior, "b") + "/eliminar", "{\"revision\":1}",
+        var acciones = Map.of("/visitas/" + actividad(anterior, "b") + "/restaurar", "{\"revision\":1}", "/recuperar", "{\"revision\":1}", "/visitas/" + actividad(anterior, "b") + "/eliminar", "{\"revision\":1}",
                 "/reordenar", json.writeValueAsString(new ReordenarActividadesDto(1L, fecha, anterior.actividades().stream()
                         .filter(ref -> anterior.itinerario().dias().getFirst().bloques().get(ref.orden() - 1).tipo() == TipoBloqueItinerario.VISITA)
                         .map(ViajeGuardadoDto.ReferenciaActividadDto::id).toList())),
@@ -385,6 +385,52 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
         assertTrue(sinVisita.propuesta().itinerario().incidenciasEdicion().isEmpty());
     }
 
+
+    @Test
+    void deshacerRecuperaSoloLaVisitaEliminadaYConservaLaSustitucion() throws Exception {
+        var anterior = abrir();
+        UUID idA = actividad(anterior, "a"), idB = actividad(anterior, "b");
+        var eliminada = cambiar(iniciar(), "/visitas/" + idB + "/eliminar", new EliminarActividadDto(1L));
+        assertEquals(idB, eliminada.eliminadas().getFirst().visita().actividadId());
+        var consulta = mvc.perform(peticion(eliminada, "/visitas/" + idA + "/alternativas", new RevisionEdicionDto(1L)))
+                .andExpect(status().isOk()).andReturn();
+        assertTrue(json.readValue(consulta.getResponse().getContentAsString(), AlternativasEdicionDto.class)
+                .candidatos().stream().anyMatch(candidato -> candidato.lugar().id().equals("c")));
+        var sustituida = cambiar(eliminada, "/visitas/" + idA + "/sustituir", new SustituirActividadDto(1L,"c"));
+        assertEquals(1, sustituida.eliminadas().size());
+        var restaurada = cambiar(sustituida, "/visitas/" + idB + "/restaurar", new RevisionEdicionDto(1L));
+        assertTrue(restaurada.eliminadas().isEmpty());
+        assertEquals(List.of("c", "b"), ids(restaurada.propuesta().itinerario()));
+        assertEquals(anterior, abrir());
+        mvc.perform(peticion(sustituida, "/visitas/" + idB + "/restaurar", new RevisionEdicionDto(1L)))
+                .andExpect(status().isConflict());
+        mvc.perform(peticion(restaurada, "/visitas/" + idB + "/restaurar", new RevisionEdicionDto(1L)))
+                .andExpect(status().isBadRequest());
+        guardar(restaurada, false).andExpect(status().isOk());
+        assertEquals(List.of("c", "b"), ids(abrir().itinerario()));
+    }
+
+    @Test
+    void deshacerVariasEliminacionesRestauraElOrdenYElObligatorio() throws Exception {
+        var obligatoria = new ConfiguracionItinerarioDto(config.destino(), config.disponibilidad(), "", config.preferencias(),
+                config.ritmo(), null, List.of(new SeleccionLugarDto(a.lugar(), EstadoLugar.OBLIGATORIO)));
+        viaje = escritura.guardarNuevo(usuario, new GuardarViajeDto("Restaurar obligatorio"), obligatoria, plan);
+        var anterior = abrir();
+        UUID idA = actividad(anterior, "a"), idB = actividad(anterior, "b");
+        var sinA = cambiar(iniciar(), "/visitas/" + idA + "/eliminar", new EliminarActividadDto(1L));
+        var vacio = cambiar(sinA, "/visitas/" + idB + "/eliminar", new EliminarActividadDto(1L));
+        assertEquals(2, vacio.eliminadas().size());
+        var recuperacion = mvc.perform(post(base()+"/recuperar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"revision\":1}")).andExpect(status().isOk()).andReturn();
+        assertEquals(2, json.readValue(recuperacion.getResponse().getContentAsString(),EstadoEdicionDto.class).eliminadas().size());
+        var conA = cambiar(vacio, "/visitas/" + idA + "/restaurar", new RevisionEdicionDto(1L));
+        assertTrue(conA.dias().getFirst().visitas().getFirst().obligatorio());
+        assertTrue(conA.propuesta().incidencias().stream().noneMatch(i -> i.codigo()==IncidenciaEdicionDto.Codigo.OBLIGATORIO_INCUMPLIDO));
+        var conAmbas = cambiar(conA, "/visitas/" + idB + "/restaurar", new RevisionEdicionDto(1L));
+        assertEquals(List.of("a", "b"), ids(conAmbas.propuesta().itinerario()));
+        assertEquals(List.of(idA,idB), conAmbas.dias().getFirst().visitas().stream().map(EstadoEdicionDto.VisitaEditableDto::actividadId).toList());
+        assertTrue(conAmbas.propuesta().puedeGuardar());
+    }
 
     private EstadoEdicionDto iniciar() throws Exception {
         var respuesta = mvc.perform(post(base() + "/iniciar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)

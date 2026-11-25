@@ -18,9 +18,18 @@ class MapaProtegido extends Component<{ children: ReactNode; onVerLista: () => v
   }
 }
 
+export interface EdicionItinerario {
+  fecha: string | null
+  onDia: (fecha: string) => void
+  tarjeta: (bloque: BloqueItinerario, fecha: string) => ReactNode
+  pieDia: (dia: DiaItinerario) => ReactNode
+  resumenDia: (fecha: string) => string
+  soltar: (bloque: BloqueItinerario, fecha: string, actividad: string) => void
+}
 interface Props {
   itinerario: ItinerarioGenerado
   configuracion: ConfiguracionItinerario
+  edicion?: EdicionItinerario
 }
 
 const nombresTipo: Record<BloqueItinerario['tipo'], string> = {
@@ -111,16 +120,22 @@ function Restaurante({ opcion }: { opcion: OpcionComida }) {
   </div>
 }
 
-function Bloque({ bloque, nombres, visita, seleccionada, onSeleccionar }: {
+function Bloque({ bloque, nombres, visita, seleccionada, onSeleccionar, acciones, alSoltar }: {
   bloque: BloqueItinerario
   nombres: ReadonlyMap<string, string>
   visita?: VisitaMapa
   seleccionada: boolean
   onSeleccionar: (clave: string) => void
+  acciones?: ReactNode
+  alSoltar?: (actividad: string) => void
 }) {
   const origen = bloque.origenId ? nombres.get(bloque.origenId) : null
   const destino = bloque.destinoId ? nombres.get(bloque.destinoId) : null
-  return <li data-tipo={bloque.tipo} className={`itinerario-bloque${visita ? ' itinerario-visita' : ''}${seleccionada ? ' itinerario-visita-activa' : ''}`}>
+  return <li onDragOver={evento => {
+    if (alSoltar && evento.dataTransfer.types.includes('application/x-rute-visita')) { evento.preventDefault(); evento.dataTransfer.dropEffect = 'move' }
+  }} onDrop={evento => {
+    if (alSoltar && evento.dataTransfer.types.includes('application/x-rute-visita')) { evento.preventDefault(); alSoltar(evento.dataTransfer.getData('application/x-rute-visita')) }
+  }} data-tipo={bloque.tipo} className={`itinerario-bloque${visita ? ' itinerario-visita' : ''}${seleccionada ? ' itinerario-visita-activa' : ''}`}>
     <div className="itinerario-horas"><time dateTime={bloque.inicio}>{hora(bloque.inicio)}</time><span aria-hidden="true"> – </span><time dateTime={bloque.fin}>{hora(bloque.fin)}</time></div>
     <div className="itinerario-bloque-contenido">
       <p className="itinerario-tipo">{visita && <span className="visita-numero" aria-hidden="true">{visita.numero}</span>}{nombresTipo[bloque.tipo]}
@@ -132,6 +147,7 @@ function Bloque({ bloque, nombres, visita, seleccionada, onSeleccionar }: {
         <p className="visita-direccion"><span>Dirección</span>{visita.direccion || 'Dirección no disponible'}</p>
         <p className="visita-accion">{visita.posicion ? 'Ver en el mapa ↗' : 'Ubicación no disponible en el mapa'}</p>
       </> : bloque.candidato && <h4>{bloque.candidato.lugar.nombre}</h4>}
+      {acciones}
       {bloque.descripcion && bloque.tipo !== 'COMIDA' && <p>{bloque.descripcion}</p>}
       {bloque.condicionada && bloque.tipo !== 'COMIDA' && <p className="itinerario-condicion">Propuesta condicionada: confirma el horario o la disponibilidad antes de ir.</p>}
       {visita && bloque.candidato && <SobreLugar candidato={bloque.candidato} />}
@@ -158,12 +174,13 @@ function Bloque({ bloque, nombres, visita, seleccionada, onSeleccionar }: {
   </li>
 }
 
-function ContenidoDia({ dia, nombres, visitas, seleccionada, onSeleccionar }: {
+function ContenidoDia({ dia, nombres, visitas, seleccionada, onSeleccionar, edicion }: {
   dia: DiaItinerario
   nombres: ReadonlyMap<string, string>
   visitas: VisitaMapa[]
   seleccionada: string | null
   onSeleccionar: (clave: string) => void
+  edicion?: EdicionItinerario
 }) {
   const tieneVentana = dia.inicioDisponible !== null && dia.finDisponible !== null
   const porClave = new Map(visitas.map(visita => [visita.clave, visita]))
@@ -173,15 +190,19 @@ function ContenidoDia({ dia, nombres, visitas, seleccionada, onSeleccionar }: {
       : dia.bloques.length > 0 ? <ol className="itinerario-bloques">{[...dia.bloques].sort((a, b) => a.inicio.localeCompare(b.inicio)).map((bloque, indice) => {
         const clave = bloque.tipo === 'VISITA' && bloque.candidato ? JSON.stringify([bloque.inicio, bloque.candidato.lugar.id]) : ''
         return <Bloque key={`${bloque.inicio}-${indice}`} bloque={bloque} nombres={nombres} visita={porClave.get(clave)}
-          seleccionada={clave === seleccionada} onSeleccionar={onSeleccionar} />
+          seleccionada={clave === seleccionada} onSeleccionar={onSeleccionar}
+          acciones={bloque.tipo === 'VISITA' ? edicion?.tarjeta(bloque, dia.fecha) : undefined}
+          alSoltar={bloque.tipo === 'VISITA' && edicion ? actividad => edicion.soltar(bloque, dia.fecha, actividad) : undefined} />
       })}</ol>
         : <p>No hay bloques programados para este día.</p>}
+    {edicion?.pieDia(dia)}
   </div>
 }
 
 export default function ItinerarioPorDias({
   itinerario,
   configuracion,
+  edicion,
 }: Props) {
   const destinoNombre = configuracion.destino.nombre
   const alojamiento = configuracion.alojamientoLocalizado
@@ -204,7 +225,7 @@ export default function ItinerarioPorDias({
   const lista = useRef<HTMLDivElement>(null)
   const botonMapa = useRef<HTMLButtonElement>(null)
   const id = useId()
-  const dia = itinerario.dias.find(elemento => elemento.fecha === fechaSeleccionada) ?? itinerario.dias[0]
+  const dia = itinerario.dias.find(elemento => elemento.fecha === (edicion?.fecha ?? fechaSeleccionada)) ?? itinerario.dias[0]
   const visitas = useMemo(() => dia ? visitasDelDia(dia.bloques) : [], [dia])
   // Vincular la selección al día impide reutilizarla al recibir un plan nuevo.
   const seleccionActual = seleccion?.dia === dia && visitas.some(visita => visita.clave === seleccion.clave) ? seleccion : null
@@ -256,15 +277,15 @@ export default function ItinerarioPorDias({
         <> · {alojamiento.direccion}</>
       )}
     </p>
-    {(itinerario.parcial || itinerario.advertencias.length > 0) && <aside className="itinerario-aviso itinerario-consejos" aria-label="Antes de tu viaje">
+    {!edicion && (itinerario.parcial || itinerario.advertencias.length > 0) && <aside className="itinerario-aviso itinerario-consejos" aria-label="Antes de tu viaje">
       <h3>Antes de tu viaje</h3>
       {itinerario.parcial && <p className="itinerario-plan-parcial">El plan puede dejar tiempo libre o algunos lugares fuera. Revisa las visitas de cada día.</p>}
       {itinerario.advertencias.length > 0 && <ul>{[...new Set(itinerario.advertencias)].map(aviso => <li key={aviso}>{aviso}</li>)}</ul>}
     </aside>}
     {dia ? <>
       <nav className="itinerario-navegacion" aria-label="Seleccionar día del itinerario">{itinerario.dias.map((elemento, indice) => <button type="button" key={elemento.fecha}
-        aria-pressed={elemento.fecha === dia.fecha} onClick={() => { setFechaSeleccionada(elemento.fecha); setSeleccion(null) }}>
-        Día {indice + 1}<span>{fechaLocal(elemento.fecha)}</span></button>)}</nav>
+        aria-pressed={elemento.fecha === dia.fecha} onClick={() => { setFechaSeleccionada(elemento.fecha); edicion?.onDia(elemento.fecha); setSeleccion(null) }}>
+        Día {indice + 1}<span>{fechaLocal(elemento.fecha)}</span>{edicion?.resumenDia(elemento.fecha) && <span>{edicion.resumenDia(elemento.fecha)}</span>}</button>)}</nav>
       <nav className="itinerario-vistas-movil" aria-label="Vista del día">
         <button type="button" aria-pressed={vistaMovil === 'lista'} aria-controls={`${id}-lista`} onClick={() => setVistaMovil('lista')}>Lista</button>
         <button ref={botonMapa} type="button" aria-pressed={vistaMovil === 'mapa'} aria-controls={`${id}-mapa`} onClick={() => setVistaMovil('mapa')}>Mapa</button>
@@ -275,7 +296,7 @@ export default function ItinerarioPorDias({
       <div className="itinerario-distribucion" data-vista-movil={vistaMovil}>
         <div id={`${id}-lista`} ref={lista} className="itinerario-lista-panel">
           <ContenidoDia key={dia.fecha} dia={dia} nombres={nombres} visitas={visitas} seleccionada={seleccionActual?.clave ?? null}
-            onSeleccionar={clave => seleccionar(clave, 'lista')} />
+            onSeleccionar={clave => seleccionar(clave, 'lista')} edicion={edicion} />
         </div>
         <section id={`${id}-mapa`} className="itinerario-mapa-panel" aria-labelledby={`${id}-mapa-titulo`}>
           <h3 id={`${id}-mapa-titulo`}>Visitas del {fechaLocal(dia.fecha)}</h3>

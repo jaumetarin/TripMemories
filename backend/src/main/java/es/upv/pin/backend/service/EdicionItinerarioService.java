@@ -80,8 +80,47 @@ public class EdicionItinerarioService {
         synchronized (estado) {
             var borrador = obtener(estado, usuario, viaje, propuesta, revision);
             var dia = diaDe(borrador, actividad);
-            var nueva = secuencias.eliminar(borrador.visitas.get(dia), actividad);
+            var anteriores = borrador.visitas.get(dia);
+            int posicion = java.util.stream.IntStream.range(0, anteriores.size())
+                    .filter(i -> anteriores.get(i).actividadId().equals(actividad)).findFirst().orElseThrow();
+            UUID vecinoAnterior = borrador.eliminadas.values().stream()
+                    .filter(e -> e.dia().equals(dia) && actividad.equals(e.siguiente()))
+                    .map(e -> e.visita().actividadId()).findFirst()
+                    .orElse(posicion > 0 ? anteriores.get(posicion - 1).actividadId() : null);
+            UUID vecinoSiguiente = borrador.eliminadas.values().stream()
+                    .filter(e -> e.dia().equals(dia) && actividad.equals(e.anterior()))
+                    .map(e -> e.visita().actividadId()).findFirst()
+                    .orElse(posicion + 1 < anteriores.size() ? anteriores.get(posicion + 1).actividadId() : null);
+            var eliminada = new Eliminada(dia, anteriores.get(posicion), posicion, vecinoAnterior, vecinoSiguiente);
+            var nueva = secuencias.eliminar(anteriores, actividad);
             var resultado = proponer(borrador, dia, nueva, sesion);
+            resultado.eliminadas.put(actividad, eliminada);
+            estado.borradores.put(viaje, resultado);
+            return respuesta(resultado);
+        }
+    }
+
+    public EstadoEdicionDto restaurar(UUID usuario, UUID viaje, UUID propuesta, UUID actividad,
+            long revision, HttpSession sesion) {
+        contexto.recuperar(usuario, viaje, revision);
+        var estado = estado(sesion);
+        synchronized (estado) {
+            var borrador = obtener(estado, usuario, viaje, propuesta, revision);
+            var retirada = borrador.eliminadas.get(actividad);
+            if (retirada == null) throw new IllegalArgumentException("Esta visita no se puede restaurar en la propuesta actual.");
+            if (borrador.visitas.values().stream().flatMap(List::stream).anyMatch(v ->
+                    IdentidadLugares.mismoLugar(v.candidato().lugar(), retirada.visita().candidato().lugar()))) {
+                throw new IllegalArgumentException("El lugar ya está incluido en el viaje. No se puede duplicar al deshacer.");
+            }
+            var nueva = new ArrayList<>(borrador.visitas.get(retirada.dia()));
+            int posicion = Math.min(retirada.posicion(), nueva.size());
+            for (int i = 0; i < nueva.size(); i++) {
+                if (nueva.get(i).actividadId().equals(retirada.siguiente())) { posicion = i; break; }
+                if (nueva.get(i).actividadId().equals(retirada.anterior())) posicion = i + 1;
+            }
+            nueva.add(posicion, retirada.visita());
+            var resultado = proponer(borrador, retirada.dia(), nueva, sesion);
+            resultado.eliminadas.remove(actividad);
             estado.borradores.put(viaje, resultado);
             return respuesta(resultado);
         }
@@ -219,7 +258,9 @@ public class EdicionItinerarioService {
             }
         }
         porDia.put(fecha, List.copyOf(avisos));
-        return new Borrador(anterior.usuario, anterior.base, nuevasVisitas, dias, porDia, true);
+        var resultado = new Borrador(anterior.usuario, anterior.base, nuevasVisitas, dias, porDia, true);
+        resultado.eliminadas.putAll(anterior.eliminadas);
+        return resultado;
     }
 
     private EstadoEdicionDto respuesta(Borrador borrador) {
@@ -237,7 +278,10 @@ public class EdicionItinerarioService {
                 e.getValue().stream().map(v -> new VisitaEditableDto(v.actividadId(), v.candidato(),
                         ReglasSeleccionLugares.estado(v.candidato().lugar(), borrador.base.configuracion()) == EstadoLugar.OBLIGATORIO)).toList())).toList();
         return new EstadoEdicionDto(new PropuestaEdicionDto(borrador.id,
-                borrador.base.resumen().revision(), plan, incidencias), dias, borrador.modificada);
+                borrador.base.resumen().revision(), plan, incidencias), dias, borrador.modificada,
+                borrador.eliminadas.values().stream().map(e -> new VisitaEliminadaDto(e.dia(),
+                        new VisitaEditableDto(e.visita().actividadId(), e.visita().candidato(),
+                                ReglasSeleccionLugares.estado(e.visita().candidato().lugar(), borrador.base.configuracion()) == EstadoLugar.OBLIGATORIO))).toList());
     }
 
     private List<IncidenciaEdicionDto> incidencias(Borrador borrador) {
@@ -318,6 +362,7 @@ public class EdicionItinerarioService {
 
     private static ResponseStatusException conflicto(String mensaje) { return new ResponseStatusException(HttpStatus.CONFLICT, mensaje); }
     private static class Estado { private final LinkedHashMap<UUID, Borrador> borradores = new LinkedHashMap<>(); }
+    private record Eliminada(LocalDate dia, Visita visita, int posicion, UUID anterior, UUID siguiente) {}
     private static class Borrador {
         private final UUID id = UUID.randomUUID();
         private final Instant caduca = Instant.now().plusSeconds(1800);
@@ -328,6 +373,7 @@ public class EdicionItinerarioService {
         private final Map<LocalDate, List<IncidenciaEdicionDto>> incidencias;
         private final boolean modificada;
         private final Map<UUID, List<String>> ofrecidas = new HashMap<>();
+        private final Map<UUID, Eliminada> eliminadas = new LinkedHashMap<>();
         private Borrador(UUID usuario, ViajeGuardadoDto base, Map<LocalDate, List<Visita>> visitas,
                 Map<LocalDate, DiaItinerarioDto> dias, Map<LocalDate, List<IncidenciaEdicionDto>> incidencias, boolean modificada) {
             this.usuario = usuario; this.base = base; this.visitas = visitas; this.dias = dias;

@@ -38,6 +38,13 @@ public class EdicionItinerarioController {
         return respuesta(servicio.eliminar(usuario.getId(), viajeId, propuestaId, actividadId, entrada.revision(), sesion));
     }
 
+    @PostMapping("/{propuestaId}/visitas/{actividadId}/restaurar")
+    public ResponseEntity<EstadoEdicionDto> restaurar(@PathVariable UUID viajeId, @PathVariable UUID propuestaId,
+            @PathVariable UUID actividadId, @Valid @RequestBody RevisionEdicionDto entrada,
+            @AuthenticationPrincipal UsuarioAutenticado usuario, HttpSession sesion) {
+        return respuesta(servicio.restaurar(usuario.getId(), viajeId, propuestaId, actividadId, entrada.revision(), sesion));
+    }
+
     @PostMapping("/{propuestaId}/reordenar")
     public ResponseEntity<EstadoEdicionDto> reordenar(@PathVariable UUID viajeId, @PathVariable UUID propuestaId,
             @Valid @RequestBody ReordenarActividadesDto entrada,

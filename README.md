@@ -1622,3 +1622,27 @@ Los avisos de edición se guardan también como incidencias estructuradas dentro
 JSON existente. Se conservan los de días intactos y se reemplazan los del día
 recalculado. Los viajes anteriores sin estos metadatos siguen siendo compatibles;
 sus avisos de texto se conservan para evitar perder información.
+
+
+### Editor unificado de actividades
+
+La edición se hace en las propias tarjetas del itinerario, con sus horarios,
+trayectos y mapa actualizados. **Mover** permite elegir una posición dentro del día;
+en escritorio también se puede arrastrar el control hasta otra visita del mismo día.
+Las alternativas aparecen junto a la actividad con duración, coste y diferencia de
+tiempo: **Elegir esta actividad** la aplica al borrador y **Conservar la actual**
+cierra la comparación sin sustituirla.
+
+**Eliminar** muestra una opción **Deshacer** por cada visita retirada. Restaurar
+recalcula ese día y conserva las demás sustituciones y cambios pendientes. Solo
+se restauran visitas retiradas de ese borrador, sin aceptar candidatos del navegador
+ni permitir duplicados. Los obligatorios mantienen su prioridad. El endpoint POST
+`/{propuestaId}/visitas/{actividadId}/restaurar`, bajo la ruta de edición del viaje,
+aplica autenticación, propiedad, CSRF, revisión y vigencia de la propuesta.
+
+Los conflictos aparecen junto a la visita afectada; los días señalan sus conflictos
+y las visitas sin hueco siguen disponibles para editarlas. Una barra fija reúne
+**Descartar cambios**, los avisos que requieren aceptación y **Guardar cambios**.
+Se conserva el día seleccionado al actualizar el recorrido, se anuncian los cambios
+y se devuelve el foco a la acción editada o al botón para deshacer. La interfaz
+mantiene la alternativa de mover mediante teclado y funciona en pantalla móvil.
