@@ -11,6 +11,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -211,6 +213,90 @@ class ViajeIntegrationTests extends PostgresTest {
                 .content(json.writeValueAsString(recuperado.configuracion())))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.selecciones[0].lugar.id").value("prado"));
         verifyNoInteractions(generador);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "VISITA, 200",
+            "VISITA, 201",
+            "VISITA, 250",
+            "COMIDA, 200",
+            "COMIDA, 201",
+            "COMIDA, 250"
+    })
+    void guardaYRecuperaNombresCompletos(
+            TipoBloqueItinerario tipo,
+            int longitud) throws Exception {
+
+        String nombre = "X".repeat(longitud);
+
+        var lugar = new LugarDto(
+                "lugar-prueba", nombre, "Dirección de prueba",
+                39.47, -0.37,
+                List.of(CategoriaTuristica.ARTE_MUSEOS),
+                List.of(), null);
+
+        var candidato = new CandidatoEvaluadoDto(
+                lugar, 80, 60, null, null,
+                CostLevel.UNKNOWN, null, List.of(),
+                null, null, "LOCAL",
+                CostConfidence.UNKNOWN, ScheduleStatus.UNVERIFIED,
+                null, null, null, null, null, null);
+
+        var restaurante = new OpcionComidaDto(
+                "restaurante-prueba", nombre,
+                39.47, -0.37, "Dirección de prueba");
+
+        var inicio = configuracion.disponibilidad().llegada()
+                .withHour(tipo == TipoBloqueItinerario.COMIDA ? 13 : 10);
+
+        var bloque = new BloqueItinerarioDto(
+                tipo,
+                inicio,
+                inicio.plusHours(tipo == TipoBloqueItinerario.COMIDA ? 2 : 1),
+                tipo == TipoBloqueItinerario.VISITA ? candidato : null,
+                null, null, null, null, null,
+                true,
+                "Actividad de prueba",
+                tipo == TipoBloqueItinerario.COMIDA ? restaurante : null,
+                List.of());
+
+        var dias = new ArrayList<>(plan.dias());
+        var primero = dias.getFirst();
+
+        dias.set(0, new DiaItinerarioDto(
+                primero.fecha(),
+                primero.inicioDisponible(),
+                primero.finDisponible(),
+                List.of(bloque)));
+
+        List<CandidatoEvaluadoDto> candidatos =
+                tipo == TipoBloqueItinerario.VISITA
+                        ? List.of(candidato)
+                        : List.of();
+
+        var propuesta = new ItinerarioGeneradoDto(
+                dias, List.of(), false,
+                candidatos.size(), candidatos.size(),
+                candidatos, false);
+
+        when(generador.generar(any())).thenReturn(propuesta);
+
+        UUID viaje = crear(generar(configuracion));
+
+        assertEquals(propuesta, abrir(viaje).itinerario());
+
+        String nombreGuardado = jdbc.sql("""
+                SELECT a.lugar_nombre
+                FROM actividad a
+                JOIN itinerario i ON i.id = a.itinerario_id
+                WHERE i.viaje_id = :viajeId AND i.es_actual
+                """)
+                .param("viajeId", viaje)
+                .query(String.class)
+                .single();
+
+        assertEquals(nombre, nombreGuardado);
     }
 
     private MockHttpSession entrar() throws Exception {
