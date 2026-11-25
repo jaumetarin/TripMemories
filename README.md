@@ -1528,3 +1528,35 @@ completo; repetirla tardó 0,008 s y abrirla en otra sesión 0,029 s. Son medici
 la búsqueda, no de la generación con IA,
 y no garantizan una latencia fija del proveedor. Las pruebas simulan caché, caducidad,
 concurrencia, filtros actuales, carga inicial, ampliación y reutilización por el planificador.
+
+
+## UT24: control de propiedad de viajes
+
+El propietario se obtiene del usuario autenticado en el backend. Las consultas
+y actualizaciones de viajes comprueban ese propietario; conocer el identificador
+de un viaje no concede acceso a sus datos.
+
+Se verifican los cinco endpoints de viajes: listado, consulta, creación desde
+una generación, cambio de título y actualización desde una generación.
+
+- Sin autenticación, las peticiones con CSRF válido cuando corresponde reciben 401.
+- Consultar o modificar un viaje ajeno recibe 404, sin revelar su contenido.
+- Un viaje ajeno y uno inexistente producen la misma respuesta de consulta.
+- Una generación solo puede guardarse desde la sesión que la produjo.
+- Una propuesta válida propia no permite sobrescribir un viaje ajeno.
+- Las escrituras sin CSRF o con un token incorrecto reciben 403.
+- Cerrar sesión invalida el acceso anterior. Al volver a entrar, los viajes
+  guardados siguen disponibles para su propietario.
+
+Las pruebas de integración utilizan dos cuentas almacenadas en PostgreSQL
+temporal y autenticadas mediante el login real. Comprueban que los rechazos
+conservan los datos y las versiones existentes y no crean viajes adicionales.
+El generador está simulado para evitar llamadas a proveedores externos.
+
+Ejecutar las pruebas desde `backend`, con Docker Desktop disponible:
+
+    .\mvnw.cmd test
+
+El alcance actual comprende los viajes y las propuestas de generación.
+Las operaciones de álbumes, metadatos y archivos deberán incorporar estas
+comprobaciones cuando se implementen.

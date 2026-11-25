@@ -299,20 +299,453 @@ class ViajeIntegrationTests extends PostgresTest {
         assertEquals(nombre, nombreGuardado);
     }
 
-    private MockHttpSession entrar() throws Exception {
-        var seguridad = mvc.perform(get("/api/auth/csrf")).andExpect(status().isOk()).andReturn();
-        var actual = (MockHttpSession) seguridad.getRequest().getSession(false);
-        String token = json.readTree(seguridad.getResponse().getContentAsString()).get("token").asString();
-        mvc.perform(post("/api/auth/login").session(actual).header("X-CSRF-TOKEN", token)
-                .with(r -> { r.setRemoteAddr("198.51.100." + IPS.incrementAndGet()); return r; })
-                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("correo", correo, "contrasena", CLAVE))))
+    @Test
+    void cadaCuentaSoloVeSusPropiosViajes() throws Exception {
+        UUID viajePropio = escritura.guardarNuevo(
+                usuario,
+                new GuardarViajeDto("Viaje de Ana"),
+                configuracion,
+                plan);
+
+        UUID otroUsuario = UUID.randomUUID();
+        String otroCorreo = otroUsuario + "@example.test";
+
+        jdbc.sql("""
+                INSERT INTO usuario (
+                    id, nombre, correo, password_hash, correo_verificado
+                )
+                VALUES (:id, :nombre, :correo, :hash, true)
+                """)
+                .param("id", otroUsuario)
+                .param("nombre", "Luis")
+                .param("correo", otroCorreo)
+                .param("hash", contrasenas.encode(CLAVE))
+                .update();
+
+        UUID viajeAjeno = escritura.guardarNuevo(
+                otroUsuario,
+                new GuardarViajeDto("Viaje de Luis"),
+                configuracion,
+                plan);
+
+        var otraSesion = entrar(otroCorreo);
+
+        mvc.perform(get("/api/viajes").session(sesion))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(viajePropio.toString()))
+                .andExpect(jsonPath("$[0].titulo").value("Viaje de Ana"));
+
+        mvc.perform(get("/api/viajes").session(otraSesion))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(viajeAjeno.toString()))
+                .andExpect(jsonPath("$[0].titulo").value("Viaje de Luis"));
+
+        verifyNoInteractions(generador);
+    }
+
+    @Test
+    void otraCuentaNoPuedeAbrirUnViajeAunqueConozcaSuIdentificador()
+            throws Exception {
+
+        UUID viaje = escritura.guardarNuevo(
+                usuario,
+                new GuardarViajeDto("Viaje privado de Ana"),
+                configuracion,
+                plan);
+
+        var original = abrir(viaje);
+        var otraSesion = crearSesionDeOtraCuenta();
+
+        String respuestaAjena = mvc.perform(
+                        get("/api/viajes/" + viaje).session(otraSesion))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("VIAJE_NO_ENCONTRADO"))
+                .andExpect(jsonPath("$.configuracion").doesNotExist())
+                .andExpect(jsonPath("$.itinerario").doesNotExist())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String respuestaInexistente = mvc.perform(
+                        get("/api/viajes/" + UUID.randomUUID())
+                                .session(otraSesion))
+                .andExpect(status().isNotFound())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertEquals(respuestaInexistente, respuestaAjena);
+        assertEquals(original, abrir(viaje));
+
+        verifyNoInteractions(generador);
+    }
+
+    @Test
+    void soloElPropietarioPuedeCambiarElTituloDelViaje() throws Exception {
+        UUID viaje = escritura.guardarNuevo(
+                usuario,
+                new GuardarViajeDto("Título original"),
+                configuracion,
+                plan);
+
+        var original = abrir(viaje);
+        int versionesOriginales = versiones(viaje);
+        var otraSesion = crearSesionDeOtraCuenta();
+
+        String entrada = json.writeValueAsString(
+                new ActualizarViajeDto(
+                        "Título actualizado",
+                        original.resumen().revision()));
+
+        mvc.perform(put("/api/viajes/" + viaje)
+                        .session(otraSesion)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(entrada))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("VIAJE_NO_ENCONTRADO"));
+
+        assertEquals(original, abrir(viaje));
+        assertEquals(versionesOriginales, versiones(viaje));
+
+        mvc.perform(put("/api/viajes/" + viaje)
+                        .session(sesion)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(entrada))
                 .andExpect(status().isOk());
+
+        var actualizado = abrir(viaje);
+
+        assertEquals("Título actualizado", actualizado.resumen().titulo());
+        assertEquals(
+                original.resumen().revision() + 1,
+                actualizado.resumen().revision());
+        assertEquals(original.configuracion(), actualizado.configuracion());
+        assertEquals(original.itinerario(), actualizado.itinerario());
+        assertEquals(versionesOriginales + 1, versiones(viaje));
+
+        verifyNoInteractions(generador);
+    }
+
+    @Test
+    void unaGeneracionPropiaNoPermiteSobrescribirUnViajeAjeno()
+            throws Exception {
+
+        UUID viaje = escritura.guardarNuevo(
+                usuario,
+                new GuardarViajeDto("Viaje original de Ana"),
+                configuracion,
+                plan);
+
+        var original = abrir(viaje);
+        int versionesOriginales = versiones(viaje);
+        var otraSesion = crearSesionDeOtraCuenta();
+
+        when(generador.generar(any())).thenReturn(
+                plan("Propuesta de Luis"));
+
+        UUID generacionAjena = generar(
+                conDistancia(4.0),
+                otraSesion);
+
+        mvc.perform(post("/api/viajes/" + viaje
+                                + "/desde-generacion/" + generacionAjena)
+                        .session(otraSesion)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new ActualizarViajeDto(
+                                        "Cambio de Luis",
+                                        original.resumen().revision()))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("VIAJE_NO_ENCONTRADO"));
+
+        assertEquals(original, abrir(viaje));
+        assertEquals(versionesOriginales, versiones(viaje));
+
+        mvc.perform(post("/api/viajes/desde-generacion/" + generacionAjena)
+                        .session(otraSesion)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new GuardarViajeDto("Viaje propio de Luis"))))
+                .andExpect(status().isCreated());
+
+        verify(generador, times(1)).generar(any());
+    }
+
+    @Test
+    void sinSesionNoSePuedeConsultarNiModificarLosViajes()
+            throws Exception {
+
+        UUID generacion = generar(configuracion);
+        UUID viaje = crear(generacion);
+        var original = abrir(viaje);
+        int versionesOriginales = versiones(viaje);
+
+        String creacion = json.writeValueAsString(
+                new GuardarViajeDto("Intento sin sesión"));
+
+        String actualizacion = json.writeValueAsString(
+                new ActualizarViajeDto(
+                        "Cambio sin sesión",
+                        original.resumen().revision()));
+
+        mvc.perform(get("/api/viajes"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        mvc.perform(get("/api/viajes/" + viaje))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        mvc.perform(post("/api/viajes/desde-generacion/" + generacion)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(creacion))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        mvc.perform(put("/api/viajes/" + viaje)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(actualizacion))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        mvc.perform(post("/api/viajes/" + viaje
+                                + "/desde-generacion/" + generacion)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(actualizacion))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        assertEquals(original, abrir(viaje));
+        assertEquals(versionesOriginales, versiones(viaje));
+        assertEquals(1, consultas.listarPropios(usuario).size());
+
+        verify(generador, times(1)).generar(any());
+    }
+
+    @Test
+    void cerrarSesionImpideReutilizarElAccesoAnterior() throws Exception {
+        UUID viaje = escritura.guardarNuevo(
+                usuario,
+                new GuardarViajeDto("Viaje conservado"),
+                configuracion,
+                plan);
+
+        var original = abrir(viaje);
+        int versionesOriginales = versiones(viaje);
+        var sesionAnterior = sesion;
+        String identificadorAnterior = sesionAnterior.getId();
+
+        mvc.perform(post("/api/auth/logout")
+                        .session(sesionAnterior)
+                        .with(csrf()))
+                .andExpect(status().isOk());
+
+        assertTrue(sesionAnterior.isInvalid());
+
+        mvc.perform(get("/api/viajes/" + viaje)
+                        .session(sesionAnterior))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        mvc.perform(put("/api/viajes/" + viaje)
+                        .session(sesionAnterior)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new ActualizarViajeDto(
+                                        "Cambio tras cerrar sesión",
+                                        original.resumen().revision()))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REQUERIDA"));
+
+        sesion = entrar();
+
+        assertNotEquals(identificadorAnterior, sesion.getId());
+        assertEquals(original, abrir(viaje));
+        assertEquals(versionesOriginales, versiones(viaje));
+
+        verifyNoInteractions(generador);
+    }
+
+    @Test
+    void unaCuentaNoPuedeGuardarLaGeneracionDeOtraSesion()
+            throws Exception {
+
+        UUID generacionDeAna = generar(configuracion);
+        var sesionDeLuis = crearSesionDeOtraCuenta();
+
+        UUID generacionDeLuis = generar(
+                conDistancia(4.0),
+                sesionDeLuis);
+
+        String entrada = json.writeValueAsString(
+                new GuardarViajeDto("Viaje de Luis"));
+
+        mvc.perform(post("/api/viajes/desde-generacion/" + generacionDeAna)
+                        .session(sesionDeLuis)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(entrada))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo")
+                        .value("RESULTADO_NO_DISPONIBLE"));
+
+        mvc.perform(get("/api/viajes").session(sesionDeLuis))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(post("/api/viajes/desde-generacion/" + generacionDeLuis)
+                        .session(sesionDeLuis)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(entrada))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/viajes").session(sesionDeLuis))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].titulo").value("Viaje de Luis"));
+
+        mvc.perform(get("/api/viajes").session(sesion))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(generador, times(2)).generar(any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "CREAR, false",
+            "CREAR, true",
+            "TITULO, false",
+            "TITULO, true",
+            "ACTUALIZAR, false",
+            "ACTUALIZAR, true"
+    })
+    void csrfProtegeTodasLasEscriturasDeViajes(
+            String operacion,
+            boolean tokenIncorrecto) throws Exception {
+
+        UUID generacion = generar(configuracion);
+        UUID viaje = crear(generacion);
+        var original = abrir(viaje);
+        int versionesOriginales = versiones(viaje);
+
+        var peticion = switch (operacion) {
+            case "CREAR" ->
+                    post("/api/viajes/desde-generacion/" + generacion);
+            case "TITULO" ->
+                    put("/api/viajes/" + viaje);
+            case "ACTUALIZAR" ->
+                    post("/api/viajes/" + viaje
+                            + "/desde-generacion/" + generacion);
+            default ->
+                    throw new IllegalArgumentException("Operación desconocida");
+        };
+
+        String entrada = operacion.equals("CREAR")
+                ? json.writeValueAsString(
+                        new GuardarViajeDto("Intento sin CSRF válido"))
+                : json.writeValueAsString(
+                        new ActualizarViajeDto(
+                                "Intento sin CSRF válido",
+                                original.resumen().revision()));
+
+        if (tokenIncorrecto) {
+            peticion.header("X-CSRF-TOKEN", "token-invalido");
+        }
+
+        mvc.perform(peticion
+                        .session(sesion)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(entrada))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("CSRF_INVALIDO"));
+
+        assertEquals(original, abrir(viaje));
+        assertEquals(versionesOriginales, versiones(viaje));
+        assertEquals(1, consultas.listarPropios(usuario).size());
+
+        verify(generador, times(1)).generar(any());
+    }
+    private MockHttpSession crearSesionDeOtraCuenta() throws Exception {
+        UUID otroUsuario = UUID.randomUUID();
+        String otroCorreo = otroUsuario + "@example.test";
+
+        jdbc.sql("""
+                INSERT INTO usuario (
+                    id, nombre, correo, password_hash, correo_verificado
+                )
+                VALUES (:id, :nombre, :correo, :hash, true)
+                """)
+                .param("id", otroUsuario)
+                .param("nombre", "Luis")
+                .param("correo", otroCorreo)
+                .param("hash", contrasenas.encode(CLAVE))
+                .update();
+
+        return entrar(otroCorreo);
+    }
+
+    private MockHttpSession entrar() throws Exception {
+        return entrar(correo);
+    }
+
+    private MockHttpSession entrar(String correoCuenta) throws Exception {
+        var seguridad = mvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        var actual = (MockHttpSession) seguridad.getRequest().getSession(false);
+
+        String token = json.readTree(
+                seguridad.getResponse().getContentAsString())
+                .get("token")
+                .asString();
+
+        mvc.perform(post("/api/auth/login")
+                        .session(actual)
+                        .header("X-CSRF-TOKEN", token)
+                        .with(peticion -> {
+                            peticion.setRemoteAddr(
+                                    "198.51.100." + IPS.incrementAndGet());
+                            return peticion;
+                        })
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of(
+                                "correo", correoCuenta,
+                                "contrasena", CLAVE))))
+                .andExpect(status().isOk());
+
         return actual;
     }
     private UUID generar(ConfiguracionItinerarioDto datos) throws Exception {
-        var respuesta = mvc.perform(post("/api/itinerarios/generar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(datos))).andExpect(status().isOk()).andReturn();
-        return UUID.fromString(respuesta.getResponse().getHeader("X-Itinerario-Id"));
+        return generar(datos, sesion);
+    }
+
+    private UUID generar(
+            ConfiguracionItinerarioDto datos,
+            MockHttpSession sesionCuenta) throws Exception {
+
+        var respuesta = mvc.perform(post("/api/itinerarios/generar")
+                        .session(sesionCuenta)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(datos)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return UUID.fromString(
+                respuesta.getResponse().getHeader("X-Itinerario-Id"));
     }
     private UUID crear(UUID generacion) throws Exception {
         var respuesta = mvc.perform(post("/api/viajes/desde-generacion/" + generacion).session(sesion).with(csrf())
