@@ -18,6 +18,39 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SecuenciaVisitasServiceTests {
+    @org.junit.jupiter.api.Test
+    void restauraCuatroVisitasEnCualquierOrden() {
+        var servicio = new SecuenciaVisitasService();
+        var referencia = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        comprobarPermutaciones(servicio, referencia, new ArrayList<>(), new ArrayList<>(referencia));
+    }
+
+    private void comprobarPermutaciones(SecuenciaVisitasService servicio, List<UUID> referencia,
+            List<UUID> prefijo, List<UUID> pendientes) {
+        if (pendientes.isEmpty()) {
+            var visibles = new ArrayList<UUID>();
+            for (UUID id : prefijo) visibles.add(servicio.posicionRestauracion(referencia, visibles, id), id);
+            assertEquals(referencia, visibles);
+            return;
+        }
+        for (UUID id : pendientes) {
+            var siguientes = new ArrayList<>(pendientes); siguientes.remove(id);
+            var orden = new ArrayList<>(prefijo); orden.add(id);
+            comprobarPermutaciones(servicio, referencia, orden, siguientes);
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void moverVisitasVisiblesConservaLosHuecosYElOrdenActualAlRestaurar() {
+        var servicio = new SecuenciaVisitasService();
+        UUID a=UUID.randomUUID(), b=UUID.randomUUID(), c=UUID.randomUUID(), d=UUID.randomUUID();
+        var referencia = servicio.ordenConEliminadas(List.of(a,b,c,d),List.of(d,a,c));
+        assertEquals(List.of(d,b,a,c), referencia);
+        var visibles = new ArrayList<>(List.of(d,a,c));
+        visibles.add(servicio.posicionRestauracion(referencia,visibles,b),b);
+        assertEquals(List.of(d,b,a,c),visibles);
+    }
+
     private final SecuenciaVisitasService servicio = new SecuenciaVisitasService();
     private final Visita primera = visita("primera");
     private final Visita segunda = visita("segunda");

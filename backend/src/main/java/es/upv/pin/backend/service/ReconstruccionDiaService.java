@@ -51,12 +51,17 @@ public class ReconstruccionDiaService {
             if (ventana.tipo() == Tipo.COMIDA) {
                 // Si el día empieza durante la comida, no inventamos un traslado previo.
                 if (restaurante != null && !restaurante.id().equals(anterior)) {
-                    incidencias.add(new IncidenciaEdicionDto(Nivel.CONFLICTO,
-                            Codigo.DISPONIBILIDAD_EXCEDIDA, original.fecha(), null,
-                            restaurante.id(), "No hay tiempo disponible antes de la comida "
-                                    + "para llegar al restaurante guardado."));
-                    interrumpido = true;
-                    break;
+                    var coincidencia = buscar(rutas, anterior, restaurante.id());
+                    if (!valida(coincidencia) || !"misma ubicación".equals(coincidencia.fuente())
+                            || coincidencia.distanciaMetros() != 0 || coincidencia.duracionSegundos() != 0) {
+                        incidencias.add(new IncidenciaEdicionDto(Nivel.CONFLICTO,
+                                Codigo.DISPONIBILIDAD_EXCEDIDA, original.fecha(), null,
+                                restaurante.id(), "No hay tiempo disponible antes de la comida "
+                                        + "para llegar al restaurante guardado."));
+                        interrumpido = true;
+                        break;
+                    }
+                    anterior = restaurante.id();
                 }
                 OpcionComidaDto principal = restaurante == null ? null
                         : sinTrayectoAntiguo(restaurante);

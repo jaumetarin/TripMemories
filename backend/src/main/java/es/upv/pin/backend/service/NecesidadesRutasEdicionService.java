@@ -80,7 +80,12 @@ public class NecesidadesRutasEdicionService {
             boolean hayManana = indiceComida > 0;
             boolean hayTarde = indiceComida + 1 < ventanas.size();
 
-            if (hayManana) {
+            // Si la comida abre el día, solo hace falta acreditar una ubicación idéntica.
+            boolean mismoInicio = inicio.latitud() != null && inicio.longitud() != null
+                    && puntoComida.latitud() != null && puntoComida.longitud() != null
+                    && inicio.latitud().doubleValue() == puntoComida.latitud().doubleValue()
+                    && inicio.longitud().doubleValue() == puntoComida.longitud().doubleValue();
+            if (hayManana || mismoInicio) {
                 agregar(necesarias, inicio, puntoComida);
             }
 

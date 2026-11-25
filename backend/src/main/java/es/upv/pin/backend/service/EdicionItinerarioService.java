@@ -81,17 +81,7 @@ public class EdicionItinerarioService {
             var borrador = obtener(estado, usuario, viaje, propuesta, revision);
             var dia = diaDe(borrador, actividad);
             var anteriores = borrador.visitas.get(dia);
-            int posicion = java.util.stream.IntStream.range(0, anteriores.size())
-                    .filter(i -> anteriores.get(i).actividadId().equals(actividad)).findFirst().orElseThrow();
-            UUID vecinoAnterior = borrador.eliminadas.values().stream()
-                    .filter(e -> e.dia().equals(dia) && actividad.equals(e.siguiente()))
-                    .map(e -> e.visita().actividadId()).findFirst()
-                    .orElse(posicion > 0 ? anteriores.get(posicion - 1).actividadId() : null);
-            UUID vecinoSiguiente = borrador.eliminadas.values().stream()
-                    .filter(e -> e.dia().equals(dia) && actividad.equals(e.anterior()))
-                    .map(e -> e.visita().actividadId()).findFirst()
-                    .orElse(posicion + 1 < anteriores.size() ? anteriores.get(posicion + 1).actividadId() : null);
-            var eliminada = new Eliminada(dia, anteriores.get(posicion), posicion, vecinoAnterior, vecinoSiguiente);
+            var eliminada = new Eliminada(dia, visita(borrador, dia, actividad));
             var nueva = secuencias.eliminar(anteriores, actividad);
             var resultado = proponer(borrador, dia, nueva, sesion);
             resultado.eliminadas.put(actividad, eliminada);
@@ -113,11 +103,8 @@ public class EdicionItinerarioService {
                 throw new IllegalArgumentException("El lugar ya está incluido en el viaje. No se puede duplicar al deshacer.");
             }
             var nueva = new ArrayList<>(borrador.visitas.get(retirada.dia()));
-            int posicion = Math.min(retirada.posicion(), nueva.size());
-            for (int i = 0; i < nueva.size(); i++) {
-                if (nueva.get(i).actividadId().equals(retirada.siguiente())) { posicion = i; break; }
-                if (nueva.get(i).actividadId().equals(retirada.anterior())) posicion = i + 1;
-            }
+            int posicion = secuencias.posicionRestauracion(borrador.ordenRestauracion.get(retirada.dia()),
+                    nueva.stream().map(Visita::actividadId).toList(), actividad);
             nueva.add(posicion, retirada.visita());
             var resultado = proponer(borrador, retirada.dia(), nueva, sesion);
             resultado.eliminadas.remove(actividad);
@@ -136,6 +123,8 @@ public class EdicionItinerarioService {
             if (originales == null) throw new IllegalArgumentException("El día no pertenece al viaje.");
             var nueva = secuencias.reordenar(originales, entrada.actividades());
             var resultado = proponer(borrador, entrada.dia(), nueva, sesion);
+            resultado.ordenRestauracion.put(entrada.dia(), secuencias.ordenConEliminadas(
+                    borrador.ordenRestauracion.get(entrada.dia()), nueva.stream().map(Visita::actividadId).toList()));
             estado.borradores.put(viaje, resultado);
             return respuesta(resultado);
         }
@@ -260,6 +249,7 @@ public class EdicionItinerarioService {
         porDia.put(fecha, List.copyOf(avisos));
         var resultado = new Borrador(anterior.usuario, anterior.base, nuevasVisitas, dias, porDia, true);
         resultado.eliminadas.putAll(anterior.eliminadas);
+        resultado.ordenRestauracion.putAll(anterior.ordenRestauracion);
         return resultado;
     }
 
@@ -362,7 +352,7 @@ public class EdicionItinerarioService {
 
     private static ResponseStatusException conflicto(String mensaje) { return new ResponseStatusException(HttpStatus.CONFLICT, mensaje); }
     private static class Estado { private final LinkedHashMap<UUID, Borrador> borradores = new LinkedHashMap<>(); }
-    private record Eliminada(LocalDate dia, Visita visita, int posicion, UUID anterior, UUID siguiente) {}
+    private record Eliminada(LocalDate dia, Visita visita) {}
     private static class Borrador {
         private final UUID id = UUID.randomUUID();
         private final Instant caduca = Instant.now().plusSeconds(1800);
@@ -374,10 +364,12 @@ public class EdicionItinerarioService {
         private final boolean modificada;
         private final Map<UUID, List<String>> ofrecidas = new HashMap<>();
         private final Map<UUID, Eliminada> eliminadas = new LinkedHashMap<>();
+        private final Map<LocalDate, List<UUID>> ordenRestauracion = new LinkedHashMap<>();
         private Borrador(UUID usuario, ViajeGuardadoDto base, Map<LocalDate, List<Visita>> visitas,
                 Map<LocalDate, DiaItinerarioDto> dias, Map<LocalDate, List<IncidenciaEdicionDto>> incidencias, boolean modificada) {
             this.usuario = usuario; this.base = base; this.visitas = visitas; this.dias = dias;
             this.incidencias = incidencias; this.modificada = modificada;
+            visitas.forEach((dia, lista) -> ordenRestauracion.put(dia, lista.stream().map(Visita::actividadId).toList()));
         }
     }
 }

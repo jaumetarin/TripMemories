@@ -68,6 +68,23 @@ public class SecuenciaVisitasService {
         return List.copyOf(resultado);
     }
 
+    /** Conserva los huecos de las visitas eliminadas al mover las que siguen visibles. */
+    public List<UUID> ordenConEliminadas(List<UUID> referencia, List<UUID> activas) {
+        if (new HashSet<>(activas).size() != activas.size() || !referencia.containsAll(activas)) throw ordenInvalido();
+        var visibles = new HashSet<>(activas);
+        var nuevas = activas.iterator();
+        return referencia.stream().map(id -> visibles.contains(id) ? nuevas.next() : id).toList();
+    }
+
+    public int posicionRestauracion(List<UUID> referencia, List<UUID> activas, UUID restaurada) {
+        int posicion = referencia.indexOf(restaurada);
+        if (posicion < 0 || activas.contains(restaurada) || !referencia.containsAll(activas)) throw ordenInvalido();
+        for (int i = 0; i < activas.size(); i++) {
+            if (referencia.indexOf(activas.get(i)) > posicion) return i;
+        }
+        return activas.size();
+    }
+
     private int localizar(
             List<Visita> visitas,
             UUID actividadId

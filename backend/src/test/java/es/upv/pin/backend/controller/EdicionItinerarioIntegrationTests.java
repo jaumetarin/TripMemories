@@ -432,6 +432,49 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
         assertTrue(conAmbas.propuesta().puedeGuardar());
     }
 
+    @Test
+    void deshacerTresVisitasEnOtroOrdenConservaElOrdenOriginal() throws Exception {
+        var bloques = new ArrayList<>(plan.dias().getFirst().bloques());
+        bloques.add(visita(c,15,20,16,20));
+        // Eliminar huecos del final del plan de prueba para incluir la tercera visita.
+        bloques.removeIf(x -> x.tipo()==TipoBloqueItinerario.TIEMPO_LIBRE && x.inicio().getHour()==15);
+        bloques.sort(Comparator.comparing(BloqueItinerarioDto::inicio));
+        plan = new ItinerarioGeneradoDto(List.of(new DiaItinerarioDto(fecha,fecha.atTime(10,0),fecha.atTime(18,0),bloques)),
+                List.of(),false,3,3,List.of(a,b,c),false);
+        viaje = escritura.guardarNuevo(usuario,new GuardarViajeDto("Tres visitas"),config,plan);
+        var anterior=abrir();
+        UUID idA=actividad(anterior,"a"), idB=actividad(anterior,"b"), idC=actividad(anterior,"c");
+        var estado=cambiar(iniciar(),"/visitas/"+idA+"/eliminar",new EliminarActividadDto(1L));
+        estado=cambiar(estado,"/visitas/"+idB+"/eliminar",new EliminarActividadDto(1L));
+        estado=cambiar(estado,"/visitas/"+idC+"/eliminar",new EliminarActividadDto(1L));
+        estado=cambiar(estado,"/visitas/"+idA+"/restaurar",new RevisionEdicionDto(1L));
+        estado=cambiar(estado,"/visitas/"+idC+"/restaurar",new RevisionEdicionDto(1L));
+        estado=cambiar(estado,"/visitas/"+idB+"/restaurar",new RevisionEdicionDto(1L));
+        assertEquals(List.of("a","b","c"),estado.dias().getFirst().visitas().stream().map(x->x.candidato().lugar().id()).toList());
+        assertTrue(estado.propuesta().puedeGuardar());
+        guardar(estado,false).andExpect(status().isOk());
+    }
+
+    @Test
+    void comidaAlInicioPermiteEditarCuandoCoincideConElPuntoInicial() throws Exception {
+        var r=new OpcionComidaDto("restaurante","Restaurante en el alojamiento",39.47,-0.37,"Valencia","24/7","Geoapify",null,null);
+        var comida=new BloqueItinerarioDto(TipoBloqueItinerario.COMIDA,fecha.atTime(13,30),fecha.atTime(15,0),null,
+                null,null,null,null,null,true,"Comida",r,List.of());
+        var bloques=List.of(comida,traslado("restaurante","b",15,0,15,10),visita(b,15,20,16,20));
+        plan=new ItinerarioGeneradoDto(List.of(new DiaItinerarioDto(fecha,fecha.atTime(13,30),fecha.atTime(18,0),bloques)),
+                List.of(),false,2,2,List.of(b,c),false);
+        config=new ConfiguracionItinerarioDto(config.destino(),new FechaHoraDto(fecha.atTime(13,30),fecha.atTime(18,0),1),"",config.preferencias(),config.ritmo());
+        viaje=escritura.guardarNuevo(usuario,new GuardarViajeDto("Inicio durante comida"),config,plan);
+        var anterior=abrir();
+        assertTrue(new ValidadorPlanService().validar(anterior.itinerario().dias(),config.preferencias()).incidencias().isEmpty());
+        var estado=cambiar(iniciar(),"/visitas/"+actividad(anterior,"b")+"/eliminar",new EliminarActividadDto(1L));
+        assertTrue(estado.propuesta().puedeGuardar());
+        guardar(estado,false).andExpect(status().isOk());
+        assertTrue(estado.propuesta().incidencias().isEmpty());
+        assertEquals("restaurante",abrir().itinerario().dias().getFirst().bloques().getFirst().restaurante().id());
+    }
+
+
     private EstadoEdicionDto iniciar() throws Exception {
         var respuesta = mvc.perform(post(base() + "/iniciar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"revision\":1}")).andExpect(status().isOk()).andReturn();
