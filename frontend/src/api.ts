@@ -207,7 +207,7 @@ function esDestino(valor: unknown): valor is Destino {
     && typeof destino.longitud === 'number' && Number.isFinite(destino.longitud)
 }
 
-function esConfiguracionItinerario(valor: unknown): valor is ConfiguracionItinerario {
+export function esConfiguracionItinerario(valor: unknown): valor is ConfiguracionItinerario {
   const formatoFechaHora = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?$/
   return esObjeto(valor) && esDestino(valor.destino)
     && esObjeto(valor.disponibilidad)
@@ -598,7 +598,7 @@ function esDiaItinerario(valor: unknown): valor is DiaItinerario {
     && Array.isArray(valor.bloques) && valor.bloques.every(esBloqueItinerario)
 }
 
-function esItinerarioGenerado(valor: unknown): valor is ItinerarioGenerado {
+export function esItinerarioGenerado(valor: unknown): valor is ItinerarioGenerado {
   return esObjeto(valor) && Array.isArray(valor.dias) && valor.dias.every(esDiaItinerario)
     && esListaDeTextos(valor.advertencias) && typeof valor.parcial === 'boolean'
     && typeof valor.candidatosEvaluados === 'number' && Number.isInteger(valor.candidatosEvaluados) && valor.candidatosEvaluados >= 0
@@ -639,7 +639,7 @@ export class ErrorObligatoriosPendientes extends Error {
 
 export async function generarItinerario(
   configuracion: ConfiguracionItinerario, signal: AbortSignal
-): Promise<{ itinerario: ItinerarioGenerado; reutilizado: boolean }> {
+): Promise<{ itinerario: ItinerarioGenerado; reutilizado: boolean; generacionId: string | null }> {
   const respuesta = await peticionApi('/api/itinerarios/generar', {
     method: 'POST',
     credentials: 'same-origin',
@@ -659,5 +659,6 @@ export async function generarItinerario(
   if (!esItinerarioGenerado(datos)) {
     throw new Error('El servidor ha devuelto un itinerario no válido. Vuelve a intentarlo.')
   }
-  return { itinerario: datos, reutilizado: respuesta.headers.get('X-Itinerario-Reutilizado') === 'true' }
+  return { itinerario: datos, reutilizado: respuesta.headers.get('X-Itinerario-Reutilizado') === 'true',
+    generacionId: respuesta.headers.get('X-Itinerario-Id') }
 }

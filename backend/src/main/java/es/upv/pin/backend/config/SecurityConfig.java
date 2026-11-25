@@ -95,7 +95,7 @@ public class SecurityConfig {
             String puerto = url.getPort() == -1 ? "" : ":" + url.getPort();
             config.setAllowedOrigins(List.of(url.getScheme() + "://localhost" + puerto, url.getScheme() + "://127.0.0.1" + puerto));
         } else config.setAllowedOrigins(List.of(origen));
-        config.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "OPTIONS"));
         config.setAllowedHeaders(List.of("Content-Type", "Accept", "X-CSRF-TOKEN"));
         config.setAllowCredentials(true);
         var fuente = new UrlBasedCorsConfigurationSource();
