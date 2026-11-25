@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ViajeGuardado } from '../viajes'
 import type { AlternativasEdicion, DiaEditable, EstadoEdicion, VisitaEditable } from '../edicion'
-import { eliminarVisita, guardarEdicion, iniciarEdicion, obtenerAlternativas, recalcularEdicion, reordenarVisitas, sustituirVisita } from '../edicion'
+import { eliminarVisita, guardarEdicion, iniciarEdicion, obtenerAlternativas, recalcularEdicion, recuperarEdicion, reordenarVisitas, sustituirVisita } from '../edicion'
 import ItinerarioPorDias from './ItinerarioPorDias'
 import './EditorActividades.css'
 
@@ -94,6 +94,9 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
     <p>Elimina, sube, baja o sustituye visitas dentro de cada día. El viaje guardado se conserva hasta confirmar los cambios.</p>
     <button className="boton" type="button" disabled={ocupado} onClick={cerrar}>Cancelar edición y volver</button>
     {error && <p className="viajes-error" role="alert" tabIndex={-1} ref={aviso}>{error}</p>}
+    {error && estado && <button className="boton" type="button" disabled={ocupado} onClick={() => {
+      void ejecutar(async signal => { const datos = await recuperarEdicion(viaje.resumen.id, viaje.resumen.revision, signal); if (!signal.aborted) actualizar(datos) })
+    }}>Recuperar cambios pendientes</button>}
     {ocupado && <p role="status">{estado ? 'Comprobando recorridos y horarios…' : 'Abriendo el editor…'}</p>}
     {!estado && !ocupado && <button className="boton" type="button" onClick={() => { setOcupado(true); setError(''); setReintento(v => v + 1) }}>Reintentar</button>}
     {estado && <>

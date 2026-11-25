@@ -22,6 +22,7 @@ public record IncidenciaEdicionDto(
         HORARIO_INCOMPATIBLE,
         DISPONIBILIDAD_EXCEDIDA,
         RUTA_NO_DISPONIBLE,
+        DISTANCIA_EXCEDIDA,
         CONSULTA_RUTAS_FALLIDA,
         PLAN_INCONSISTENTE
     }

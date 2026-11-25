@@ -1601,3 +1601,24 @@ Las pruebas cubren reconstrucción, horarios, comidas, caché, reutilización y 
 del proveedor. Las pruebas de integración usan PostgreSQL temporal, login y CSRF
 reales, y OpenRouteService simulado: comprueban permisos, revisiones, persistencia,
 obligatorios, alternativas y reversión de errores al guardar.
+
+
+### Correcciones de la revisión de UT25–UT27
+
+Un fallo del proveedor en rutas alternativas que no usa el recorrido final no bloquea
+un día válido. Los conflictos de otros días permanecen visibles, pero no impiden
+comparar sustituciones compatibles del día seleccionado.
+
+Si una respuesta de edición se pierde, **Recuperar cambios pendientes** consulta el
+borrador vigente sin reiniciarlo ni repetir la modificación. El endpoint POST
+`/api/viajes/{viajeId}/edicion/recuperar` exige propietario, revisión y CSRF válidos.
+Si el guardado ya se completó, hay que recargar el viaje para ver la nueva revisión.
+
+Cada traslado del día reconstruido debe respetar la distancia seleccionada, con un
+máximo de 10 km, comprobada sobre la distancia real de la ruta. Esto incluye los
+trayectos del alojamiento y del restaurante.
+
+Los avisos de edición se guardan también como incidencias estructuradas dentro del
+JSON existente. Se conservan los de días intactos y se reemplazan los del día
+recalculado. Los viajes anteriores sin estos metadatos siguen siendo compatibles;
+sus avisos de texto se conservan para evitar perder información.

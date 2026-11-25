@@ -9,4 +9,13 @@ public record ItinerarioGeneradoDto(
         int candidatosEvaluados,
         int candidatosEnMatriz,
         List<CandidatoEvaluadoDto> candidatos,
-        boolean evaluacionFallback) {}
+        boolean evaluacionFallback,
+        List<IncidenciaEdicionDto> incidenciasEdicion) {
+    public ItinerarioGeneradoDto {
+        incidenciasEdicion = incidenciasEdicion == null ? List.of() : List.copyOf(incidenciasEdicion);
+    }
+    public ItinerarioGeneradoDto(List<DiaItinerarioDto> dias, List<String> advertencias, boolean parcial,
+            int candidatosEvaluados, int candidatosEnMatriz, List<CandidatoEvaluadoDto> candidatos, boolean evaluacionFallback) {
+        this(dias, advertencias, parcial, candidatosEvaluados, candidatosEnMatriz, candidatos, evaluacionFallback, List.of());
+    }
+}

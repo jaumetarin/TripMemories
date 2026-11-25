@@ -24,6 +24,13 @@ public class EdicionItinerarioController {
         return respuesta(servicio.iniciar(usuario.getId(), viajeId, entrada.revision(), sesion));
     }
 
+    @PostMapping("/recuperar")
+    public ResponseEntity<EstadoEdicionDto> recuperar(@PathVariable UUID viajeId,
+            @Valid @RequestBody RevisionEdicionDto entrada,
+            @AuthenticationPrincipal UsuarioAutenticado usuario, HttpSession sesion) {
+        return respuesta(servicio.recuperar(usuario.getId(), viajeId, entrada.revision(), sesion));
+    }
+
     @PostMapping("/{propuestaId}/visitas/{actividadId}/eliminar")
     public ResponseEntity<EstadoEdicionDto> eliminar(@PathVariable UUID viajeId, @PathVariable UUID propuestaId,
             @PathVariable UUID actividadId, @Valid @RequestBody EliminarActividadDto entrada,

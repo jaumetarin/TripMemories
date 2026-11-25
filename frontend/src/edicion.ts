@@ -90,3 +90,7 @@ export async function guardarEdicion(viaje: string, estado: EstadoEdicion, acept
     throw new Error('No se pudo confirmar el guardado. Comprueba Mis viajes antes de volver a intentarlo.')
   return { id: datos.id, revision: datos.revision }
 }
+
+export async function recuperarEdicion(viaje: string, revision: number, signal: AbortSignal) {
+  return leerEstado(await enviar(viaje, 'recuperar', { revision }, signal))
+}

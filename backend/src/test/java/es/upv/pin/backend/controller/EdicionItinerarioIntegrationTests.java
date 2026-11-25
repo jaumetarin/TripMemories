@@ -178,7 +178,7 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
         var anterior = abrir();
         var borrador = iniciar();
         var otraSesion = entrar(crearUsuario() + "@example.test");
-        var acciones = Map.of("/visitas/" + actividad(anterior, "b") + "/eliminar", "{\"revision\":1}",
+        var acciones = Map.of("/recuperar", "{\"revision\":1}", "/visitas/" + actividad(anterior, "b") + "/eliminar", "{\"revision\":1}",
                 "/reordenar", json.writeValueAsString(new ReordenarActividadesDto(1L, fecha, anterior.actividades().stream()
                         .filter(ref -> anterior.itinerario().dias().getFirst().bloques().get(ref.orden() - 1).tipo() == TipoBloqueItinerario.VISITA)
                         .map(ViajeGuardadoDto.ReferenciaActividadDto::id).toList())),
@@ -187,7 +187,7 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
                 "/recalcular", "{\"revision\":1}",
                 "/guardar", "{\"revision\":1,\"aceptarAvisos\":true}");
         for (var accion : acciones.entrySet()) {
-            String ruta = base() + "/" + borrador.propuesta().propuestaId() + accion.getKey();
+            String ruta = accion.getKey().equals("/recuperar") ? base()+"/recuperar" : base() + "/" + borrador.propuesta().propuestaId() + accion.getKey();
             mvc.perform(post(ruta).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(accion.getValue())).andExpect(status().isUnauthorized());
             mvc.perform(post(ruta).session(sesion).contentType(MediaType.APPLICATION_JSON).content(accion.getValue())).andExpect(status().isForbidden());
             mvc.perform(post(ruta).session(otraSesion).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(accion.getValue())).andExpect(status().isNotFound());
@@ -239,6 +239,152 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
         guardar(recuperada, false).andExpect(status().isOk());
         assertEquals(List.of("b"), ids(abrir().itinerario()));
     }
+
+    @Test
+    void unFalloEnRutasNoUsadasNoBloqueaUnDiaValido() throws Exception {
+        var r = new OpcionComidaDto("restaurante", "Restaurante", 39.474, -0.374, "Valencia", "24/7", "Geoapify", null, null);
+        var bloques = new ArrayList<>(plan.dias().getFirst().bloques().subList(0, 4));
+        bloques.add(traslado("b", "restaurante", 12, 20, 12, 30));
+        bloques.add(simple(TipoBloqueItinerario.TIEMPO_LIBRE, 12, 30, 13, 0));
+        bloques.add(new BloqueItinerarioDto(TipoBloqueItinerario.COMIDA, fecha.atTime(13,0), fecha.atTime(15,0), null,
+                null,null,null,null,null,false,"Comida",r,List.of()));
+        bloques.add(simple(TipoBloqueItinerario.TIEMPO_LIBRE,15,0,18,0));
+        plan = new ItinerarioGeneradoDto(List.of(new DiaItinerarioDto(fecha,fecha.atTime(10,0),fecha.atTime(18,0),bloques)),
+                List.of(),false,6,6,plan.candidatos(),false);
+        viaje = escritura.guardarNuevo(usuario,new GuardarViajeDto("Restaurante"),config,plan);
+        doAnswer(inv -> {
+            PuntoRutaDto origen=inv.getArgument(0);
+            if (origen.id().equals("restaurante")) throw new IllegalStateException("Fallo en rutas no utilizadas");
+            List<PuntoRutaDto> destinos=inv.getArgument(1);
+            return new RespuestaMatrizOrsDto(List.of(Collections.nCopies(destinos.size(),500.0)),List.of(Collections.nCopies(destinos.size(),600.0)));
+        }).when(cliente).calcularDesde(any(),anyList());
+        var anterior=abrir();
+        var propuesta=cambiar(iniciar(),"/reordenar",new ReordenarActividadesDto(1L,fecha,List.of(actividad(anterior,"a"),actividad(anterior,"b"))));
+        assertEquals(List.of("a","b"),ids(propuesta.propuesta().itinerario()));
+        assertTrue(new ValidadorPlanService().validar(propuesta.propuesta().itinerario().dias(),config.preferencias()).incidencias().isEmpty());
+        assertTrue(propuesta.propuesta().puedeGuardar());
+        assertTrue(propuesta.propuesta().incidencias().isEmpty());
+        guardar(propuesta,false).andExpect(status().isOk());
+    }
+
+    @Test
+    void unConflictoEnOtroDiaNoOcultaAlternativas() throws Exception {
+        var d=candidato("d","Otra alternativa","24/7",39.474,-0.374,CostLevel.FREE);
+        var dia2=fecha.plusDays(1);
+        var bloque=new BloqueItinerarioDto(TipoBloqueItinerario.VISITA,dia2.atTime(10,0),dia2.atTime(11,0),c,
+                null,null,null,null,null,false,"Visita");
+        var dias=List.of(plan.dias().getFirst(),new DiaItinerarioDto(dia2,dia2.atTime(10,0),dia2.atTime(18,0),List.of(bloque)));
+        plan=new ItinerarioGeneradoDto(dias,List.of(),false,4,4,List.of(a,b,c,d),false);
+        config=new ConfiguracionItinerarioDto(config.destino(),new FechaHoraDto(fecha.atTime(10,0),dia2.atTime(18,0),2),"",config.preferencias(),config.ritmo());
+        viaje=escritura.guardarNuevo(usuario,new GuardarViajeDto("Dos dias"),config,plan);
+        var anterior=abrir();
+        var idC=anterior.actividades().stream().filter(ref->ref.dia().equals(dia2)).findFirst().orElseThrow().id();
+        var inicio=iniciar();
+        var buenas=mvc.perform(peticion(inicio,"/visitas/"+idC+"/alternativas",new RevisionEdicionDto(1L))).andExpect(status().isOk()).andReturn();
+        assertEquals(List.of("d"),json.readValue(buenas.getResponse().getContentAsString(),AlternativasEdicionDto.class).candidatos().stream().map(x->x.lugar().id()).toList());
+        var conflicto=cambiar(inicio,"/reordenar",new ReordenarActividadesDto(1L,fecha,List.of(actividad(anterior,"b"),actividad(anterior,"a"))));
+        var ocultas=mvc.perform(peticion(conflicto,"/visitas/"+idC+"/alternativas",new RevisionEdicionDto(1L))).andExpect(status().isOk()).andReturn();
+        assertEquals(List.of("d"),json.readValue(ocultas.getResponse().getContentAsString(),AlternativasEdicionDto.class).candidatos().stream().map(x->x.lugar().id()).toList());
+        assertFalse(conflicto.propuesta().puedeGuardar());
+    }
+
+
+    @Test
+    void bloqueaGuardarUnTrayectoDeDoceKilometros() throws Exception {
+        doAnswer(inv -> {
+            List<PuntoRutaDto> destinos=inv.getArgument(1);
+            return new RespuestaMatrizOrsDto(List.of(Collections.nCopies(destinos.size(),12000.0)),List.of(Collections.nCopies(destinos.size(),2400.0)));
+        }).when(cliente).calcularDesde(any(),anyList());
+        var propuesta=cambiar(iniciar(),"/visitas/"+actividad(abrir(),"a")+"/eliminar",new EliminarActividadDto(1L));
+        assertFalse(propuesta.propuesta().puedeGuardar());
+        assertTrue(propuesta.propuesta().itinerario().dias().stream().flatMap(x->x.bloques().stream())
+                .anyMatch(x->x.tipo()==TipoBloqueItinerario.TRASLADO && x.distanciaMetros()==12000.0));
+        guardar(propuesta,false).andExpect(status().isConflict());
+        assertTrue(propuesta.propuesta().incidencias().stream().anyMatch(i->i.codigo()==IncidenciaEdicionDto.Codigo.DISTANCIA_EXCEDIDA));
+    }
+
+    @Test
+    void respetaLaDistanciaElegidaAunqueSeaInferiorADiezKilometros() throws Exception {
+        doAnswer(inv -> {
+            List<PuntoRutaDto> destinos=inv.getArgument(1);
+            return new RespuestaMatrizOrsDto(List.of(Collections.nCopies(destinos.size(),3500.0)),List.of(Collections.nCopies(destinos.size(),2400.0)));
+        }).when(cliente).calcularDesde(any(),anyList());
+        var propuesta=cambiar(iniciar(),"/visitas/"+actividad(abrir(),"a")+"/eliminar",new EliminarActividadDto(1L));
+        assertFalse(propuesta.propuesta().puedeGuardar());
+        assertTrue(propuesta.propuesta().itinerario().dias().stream().flatMap(x->x.bloques().stream())
+                .anyMatch(x->x.tipo()==TipoBloqueItinerario.TRASLADO && x.distanciaMetros()==3500.0));
+        guardar(propuesta,false).andExpect(status().isConflict());
+        assertTrue(propuesta.propuesta().incidencias().stream().anyMatch(i->i.codigo()==IncidenciaEdicionDto.Codigo.DISTANCIA_EXCEDIDA));
+    }
+
+    @Test
+    void recuperaElBorradorTrasUnaRespuestaPerdida() throws Exception {
+        var anterior=abrir();
+        var inicial=iniciar();
+        // Simula que el servidor procesa el cambio pero el navegador no recibe la respuesta.
+        cambiar(inicial,"/visitas/"+actividad(anterior,"b")+"/eliminar",new EliminarActividadDto(1L));
+        mvc.perform(peticion(inicial,"/recalcular",new RevisionEdicionDto(1L))).andExpect(status().isConflict());
+        mvc.perform(peticion(inicial,"/guardar",new ConfirmarEdicionDto(1L,true))).andExpect(status().isConflict());
+        var resultado=mvc.perform(post(base()+"/recuperar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"revision\":1}")).andExpect(status().isOk()).andReturn();
+        var recuperada=json.readValue(resultado.getResponse().getContentAsString(),EstadoEdicionDto.class);
+        assertTrue(recuperada.modificada());
+        assertEquals(List.of("a"),ids(recuperada.propuesta().itinerario()));
+        guardar(recuperada,false).andExpect(status().isOk());
+    }
+
+
+    @Test
+    void conservaAvisosAntiguosSinMetadatosEnDiasIntactos() throws Exception {
+        var incierta=candidato("incierta","Horario desconocido",null,39.474,-0.374,CostLevel.FREE);
+        var dia2=fecha.plusDays(1);
+        var bloque=new BloqueItinerarioDto(TipoBloqueItinerario.VISITA,dia2.atTime(10,0),dia2.atTime(11,0),incierta,
+                null,null,null,null,null,true,"Horario pendiente de confirmar");
+        String aviso="Edición: Confirma el horario de «Horario desconocido» antes de ir.";
+        plan=new ItinerarioGeneradoDto(List.of(plan.dias().getFirst(),new DiaItinerarioDto(dia2,dia2.atTime(10,0),dia2.atTime(18,0),List.of(bloque))),
+                List.of(aviso),true,3,3,List.of(a,b,incierta),false);
+        config=new ConfiguracionItinerarioDto(config.destino(),new FechaHoraDto(fecha.atTime(10,0),dia2.atTime(18,0),2),"",config.preferencias(),config.ritmo());
+        viaje=escritura.guardarNuevo(usuario,new GuardarViajeDto("Avisos"),config,plan);
+        assertTrue(abrir().itinerario().advertencias().contains(aviso));
+        var inicial=iniciar();
+        assertTrue(inicial.propuesta().itinerario().advertencias().contains(aviso));
+        var editada=cambiar(inicial,"/visitas/"+actividad(abrir(),"b")+"/eliminar",new EliminarActividadDto(1L));
+        guardar(editada,false).andExpect(status().isOk());
+        assertTrue(abrir().itinerario().advertencias().contains(aviso));
+        assertTrue(abrir().itinerario().dias().getLast().bloques().getFirst().condicionada());
+    }
+
+
+    @Test
+    void conservaAvisosEstructuradosYLosReemplazaAlRecalcularSuDia() throws Exception {
+        var incierta=candidato("incierta","Horario desconocido",null,39.474,-0.374,CostLevel.FREE);
+        var dia2=fecha.plusDays(1);
+        var bloque=new BloqueItinerarioDto(TipoBloqueItinerario.VISITA,dia2.atTime(10,0),dia2.atTime(11,0),incierta,
+                null,null,null,null,null,true,"Horario pendiente de confirmar");
+        String aviso="Edición: Confirma el horario de «Horario desconocido» antes de ir.";
+        plan=new ItinerarioGeneradoDto(List.of(plan.dias().getFirst(),new DiaItinerarioDto(dia2,dia2.atTime(10,0),dia2.atTime(18,0),List.of(bloque))),
+                List.of(aviso),true,3,3,List.of(a,b,incierta),false,List.of(new IncidenciaEdicionDto(
+                        IncidenciaEdicionDto.Nivel.AVISO,IncidenciaEdicionDto.Codigo.HORARIO_NO_CONFIRMADO,
+                        dia2,null,"incierta",aviso.substring("Edici\u00f3n: ".length()))));
+        config=new ConfiguracionItinerarioDto(config.destino(),new FechaHoraDto(fecha.atTime(10,0),dia2.atTime(18,0),2),"",config.preferencias(),config.ritmo());
+        viaje=escritura.guardarNuevo(usuario,new GuardarViajeDto("Avisos"),config,plan);
+        assertTrue(abrir().itinerario().advertencias().contains(aviso));
+        var inicial=iniciar();
+        assertTrue(inicial.propuesta().itinerario().advertencias().contains(aviso));
+        var editada=cambiar(inicial,"/visitas/"+actividad(abrir(),"b")+"/eliminar",new EliminarActividadDto(1L));
+        guardar(editada,true).andExpect(status().isOk());
+        assertTrue(abrir().itinerario().advertencias().contains(aviso));
+        assertTrue(abrir().itinerario().dias().getLast().bloques().getFirst().condicionada());
+        assertEquals(dia2,abrir().itinerario().incidenciasEdicion().getFirst().dia());
+        var reinicio=mvc.perform(post(base()+"/iniciar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"revision\":2}")).andExpect(status().isOk()).andReturn();
+        var siguiente=json.readValue(reinicio.getResponse().getContentAsString(),EstadoEdicionDto.class);
+        UUID inciertaId=abrir().actividades().stream().filter(ref->ref.dia().equals(dia2)).findFirst().orElseThrow().id();
+        var sinVisita=cambiar(siguiente,"/visitas/"+inciertaId+"/eliminar",new EliminarActividadDto(2L));
+        assertFalse(sinVisita.propuesta().itinerario().advertencias().contains(aviso));
+        assertTrue(sinVisita.propuesta().itinerario().incidenciasEdicion().isEmpty());
+    }
+
 
     private EstadoEdicionDto iniciar() throws Exception {
         var respuesta = mvc.perform(post(base() + "/iniciar").session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)

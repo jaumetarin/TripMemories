@@ -63,6 +63,16 @@ public class EdicionItinerarioService {
         }
     }
 
+    public EstadoEdicionDto recuperar(UUID usuario, UUID viaje, long revision, HttpSession sesion) {
+        contexto.recuperar(usuario, viaje, revision);
+        var estado = estado(sesion);
+        synchronized (estado) {
+            var borrador = estado.borradores.get(viaje);
+            if (borrador == null) throw conflicto("No hay un borrador disponible. Vuelve a abrir el editor.");
+            return respuesta(obtener(estado, usuario, viaje, borrador.id, revision));
+        }
+    }
+
     public EstadoEdicionDto eliminar(UUID usuario, UUID viaje, UUID propuesta, UUID actividad,
             long revision, HttpSession sesion) {
         contexto.recuperar(usuario, viaje, revision);
@@ -109,7 +119,10 @@ public class EdicionItinerarioService {
             for (var candidato : candidatos) {
                 var nueva = secuencias.sustituir(borrador.visitas.get(dia), actividad, candidato);
                 var prueba = proponer(borrador, dia, nueva, sesion);
-                var incidencias = incidencias(prueba);
+                var incidencias = new ArrayList<>(prueba.incidencias.getOrDefault(dia, List.of()));
+                validador.validar(List.of(prueba.dias.get(dia)), prueba.base.configuracion().preferencias())
+                        .incidencias().forEach(m -> incidencias.add(new IncidenciaEdicionDto(
+                                Nivel.CONFLICTO, Codigo.PLAN_INCONSISTENTE, dia, null, null, m)));
                 if (incidencias.stream().anyMatch(i -> i.codigo() == Codigo.CONSULTA_RUTAS_FALLIDA)) {
                     borrador.ofrecidas.put(actividad, opciones.stream().map(c -> c.lugar().id()).toList());
                     return new AlternativasEdicionDto(List.copyOf(opciones),
@@ -194,9 +207,17 @@ public class EdicionItinerarioService {
         dias.put(fecha, reconstruido.dia());
         var porDia = new LinkedHashMap<>(anterior.incidencias);
         var avisos = new ArrayList<>(reconstruido.incidencias());
-        if (calculadas.consultaFallida()) avisos.add(new IncidenciaEdicionDto(Nivel.CONFLICTO,
+        if (calculadas.consultaFallida() && avisos.stream().anyMatch(i ->
+                i.codigo() == Codigo.RUTA_NO_DISPONIBLE || i.codigo() == Codigo.DISPONIBILIDAD_EXCEDIDA)) avisos.add(new IncidenciaEdicionDto(Nivel.CONFLICTO,
                 Codigo.CONSULTA_RUTAS_FALLIDA, fecha, null, null,
                 "El servicio de rutas no respondió correctamente. No se puede confirmar la viabilidad; reintenta la edición."));
+        double limiteKm = Math.min(10.0, anterior.base.configuracion().preferencias().distanciaKm());
+        for (var bloque : reconstruido.dia().bloques()) {
+            if (bloque.tipo() == TipoBloqueItinerario.TRASLADO && bloque.distanciaMetros() > limiteKm * 1000) {
+                avisos.add(new IncidenciaEdicionDto(Nivel.CONFLICTO, Codigo.DISTANCIA_EXCEDIDA,
+                        fecha, null, bloque.destinoId(), "Un trayecto supera la distancia máxima de " + limiteKm + " km. Cambia el orden o la visita."));
+            }
+        }
         porDia.put(fecha, List.copyOf(avisos));
         return new Borrador(anterior.usuario, anterior.base, nuevasVisitas, dias, porDia, true);
     }
@@ -205,11 +226,13 @@ public class EdicionItinerarioService {
         var incidencias = incidencias(borrador);
         var base = borrador.base.itinerario();
         var advertencias = new LinkedHashSet<String>();
-        base.advertencias().stream().filter(a -> !a.startsWith("Edición: ")).forEach(advertencias::add);
+        // Los textos antiguos sin metadatos se conservan para no perder avisos.
+        var anteriores = base.incidenciasEdicion().stream().map(i -> "Edici\u00f3n: " + i.mensaje()).toList();
+        base.advertencias().stream().filter(a -> !anteriores.contains(a)).forEach(advertencias::add);
         incidencias.forEach(i -> advertencias.add("Edición: " + i.mensaje()));
         var plan = new ItinerarioGeneradoDto(List.copyOf(borrador.dias.values()), List.copyOf(advertencias),
                 base.parcial() || !incidencias.isEmpty(), base.candidatosEvaluados(), base.candidatosEnMatriz(),
-                base.candidatos(), base.evaluacionFallback());
+                base.candidatos(), base.evaluacionFallback(), incidencias);
         var dias = borrador.visitas.entrySet().stream().map(e -> new DiaEditableDto(e.getKey(),
                 e.getValue().stream().map(v -> new VisitaEditableDto(v.actividadId(), v.candidato(),
                         ReglasSeleccionLugares.estado(v.candidato().lugar(), borrador.base.configuracion()) == EstadoLugar.OBLIGATORIO)).toList())).toList();
@@ -219,6 +242,9 @@ public class EdicionItinerarioService {
 
     private List<IncidenciaEdicionDto> incidencias(Borrador borrador) {
         var resultado = new ArrayList<IncidenciaEdicionDto>();
+        borrador.base.itinerario().incidenciasEdicion().stream()
+                .filter(i -> i.dia() != null && !borrador.incidencias.containsKey(i.dia()))
+                .forEach(resultado::add);
         borrador.incidencias.values().forEach(resultado::addAll);
         var validacion = validador.validar(List.copyOf(borrador.dias.values()), borrador.base.configuracion().preferencias());
         for (String mensaje : validacion.incidencias()) {
