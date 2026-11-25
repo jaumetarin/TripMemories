@@ -1438,12 +1438,29 @@ que se ha cumplido la selección.
 `CriteriosItinerario` conserva turnos por categoría desde la muestra de IA hasta el
 itinerario final. Los obligatorios y preferidos no consumen los turnos automáticos.
 Cada lugar compartido se cuenta una sola vez, reservándolo para el interés con menos
-alternativas en caso de empate. Con varios intereses explícitos, las visitas automáticas
-de una categoría no superan en más de una a las de otra. Si la categoría pendiente
-abre más tarde, se puede esperar; si no encaja, se deja tiempo libre con un aviso en
-vez de rellenar con otra categoría. El recuento se mantiene entre días. Las señales
+alternativas en caso de empate. Se priorizan los intereses menos representados entre
+los que aún tienen visitas alcanzables y compatibles ese día. Una categoría agotada,
+cerrada o sin ruta deja de bloquear las demás. Si abre más tarde ese mismo día, se
+puede reservar su turno y esperar. El recuento se mantiene entre días. Las señales
 documentales y la relevancia estimada orientan la representatividad, sin certificarla
 ni añadir llamadas o lotes de Gemini a los límites existentes.
+
+`RepartoVisitas` reserva visitas para los días posteriores según las ventanas y los
+horarios interpretables. Recalcula el objetivo diario con los candidatos pendientes,
+distribuyendo primero los que tienen menos fechas compatibles y teniendo en cuenta
+la duración y la pausa para comer. Primero busca una visita distinta para cada día,
+recolocando reservas cuando sus fechas se solapan; después reparte las visitas extra.
+No reserva candidatos sin un camino desde el origen. El objetivo es orientativo:
+protege la reserva de cada día y no aplaza visitas cuya última fecha posible sea hoy.
+Los obligatorios flexibles también se reparten, manteniendo su prioridad y la
+comprobación final de que todos están incluidos. Las rutas, márgenes, descansos y horarios reales se comprueban
+al insertar cada visita, y el resultado pasa por el validador del plan.
+
+Con suficientes candidatos compatibles se evita consumirlos todos al principio y
+dejar los últimos días vacíos. Si faltan candidatos de un interés se explica y se
+ajusta el reparto a los disponibles; no se inventan visitas, horarios ni rutas. Un
+día que realmente no pueda recibir visitas incluye una explicación con su fecha.
+La corrección se aplica al generar planes nuevos; los viajes guardados se conservan.
 Los evitados y sus alias quedan fuera de visitas y propuestas gastronómicas.
 Cambiar las selecciones invalida la confirmación y la clave de reutilización de UT17.
 
@@ -1641,8 +1658,10 @@ ni permitir duplicados. Los obligatorios mantienen su prioridad. El endpoint POS
 aplica autenticación, propiedad, CSRF, revisión y vigencia de la propuesta.
 
 Los conflictos aparecen junto a la visita afectada; los días señalan sus conflictos
-y las visitas sin hueco siguen disponibles para editarlas. Una barra fija reúne
-**Descartar cambios**, los avisos que requieren aceptación y **Guardar cambios**.
+y las visitas sin hueco siguen disponibles para editarlas. Una barra compacta encima
+del itinerario reúne **Descartar** y **Guardar cambios**. **Revisar avisos** abre los
+detalles y la aceptación dentro de la página, sin un panel flotante sobre el mapa.
+En móvil la barra permanece en el flujo de la página para no tapar las tarjetas.
 Se conserva el día seleccionado al actualizar el recorrido, se anuncian los cambios
 y se devuelve el foco a la acción editada o al botón para deshacer. La interfaz
 mantiene la alternativa de mover mediante teclado y funciona en pantalla móvil.

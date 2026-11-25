@@ -16,6 +16,7 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [aceptarAvisos, setAceptarAvisos] = useState(false)
+  const [revisandoAvisos, setRevisandoAvisos] = useState(false)
   const [opciones, setOpciones] = useState<(AlternativasEdicion & { actividad: string }) | null>(null)
   const [moviendo, setMoviendo] = useState<{ actividad: string; posicion: number } | null>(null)
   const [fecha, setFecha] = useState<string | null>(null)
@@ -25,9 +26,15 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
   const titulo = useRef<HTMLHeadingElement>(null)
   const zona = useRef<HTMLElement>(null)
   const tituloAlternativas = useRef<HTMLHeadingElement>(null)
+  const revisionAvisos = useRef<HTMLElement>(null)
   const focoTrasCambio = useRef<string | null>(null)
   useEffect(() => { titulo.current?.focus() }, [])
   useEffect(() => { if (opciones) tituloAlternativas.current?.focus() }, [opciones])
+  useEffect(() => {
+    if (!revisandoAvisos) return
+    revisionAvisos.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    revisionAvisos.current?.focus({ preventScroll: true })
+  }, [revisandoAvisos])
   useEffect(() => {
     if (!focoTrasCambio.current || ocupado) return
     const destino = [...(zona.current?.querySelectorAll<HTMLButtonElement>('[data-editor-id]') ?? [])]
@@ -191,7 +198,6 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
   const conflictos = incidencias.filter(i => i.nivel === 'CONFLICTO')
   const advertencias = incidencias.filter(i => i.nivel === 'AVISO')
   const consejos = estado?.propuesta.itinerario.advertencias.filter(a => !incidencias.some(i => a === `Edición: ${i.mensaje}`)) ?? []
-  const globales = incidencias.filter(i => !i.dia && !estado?.dias.some(d => d.visitas.some(v => deVisita(i, v))))
   return <section ref={zona} className="editor-actividades" aria-labelledby="editor-titulo">
     <p className="antetitulo">TU VIAJE, A TU MANERA</p>
     <h1 id="editor-titulo" tabIndex={-1} ref={titulo}>{viaje.resumen.titulo}</h1>
@@ -205,6 +211,27 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
     {!estado && !ocupado && <button className="boton" type="button" onClick={() => { setOcupado(true); setError(''); setReintento(v => v + 1) }}>Reintentar</button>}
     {estado && <>
       {consejos.length > 0 && <details className="itinerario-aviso"><summary>Consejos de tu viaje</summary><ul>{consejos.map((consejo, indice) => <li key={indice}>{consejo}</li>)}</ul></details>}
+      <aside className="editor-barra" aria-label="Cambios del itinerario" data-pendiente={pendiente}>
+        <div className="editor-barra-resumen"><strong title={ocupado ? operacion : undefined}>{ocupado ? operacion : pendiente ? 'Cambios sin guardar' : 'Tu viaje está guardado'}</strong></div>
+        <div className="editor-barra-acciones">
+          {incidencias.length > 0 && <button className="boton editor-revisar" type="button"
+            aria-expanded={revisandoAvisos} aria-controls="editor-revision-avisos" onClick={() => setRevisandoAvisos(v => !v)}>
+            {revisandoAvisos ? 'Ocultar avisos' : conflictos.length ? `Revisar conflictos (${conflictos.length})` : `Revisar avisos (${advertencias.length})`}
+          </button>}
+          <button className="boton" type="button" disabled={ocupado} onClick={cerrar} aria-label={pendiente ? 'Descartar cambios' : 'Volver a Mis viajes'}>{pendiente ? 'Descartar' : 'Volver'}</button>
+          <button className="boton boton-primario" type="button" disabled={ocupado || !pendiente || conflictos.length > 0 || advertencias.length > 0 && !aceptarAvisos} onClick={guardar}>Guardar cambios</button>
+        </div>
+      </aside>
+      <section id="editor-revision-avisos" ref={revisionAvisos} className="editor-revision" hidden={!revisandoAvisos || incidencias.length === 0} tabIndex={-1} aria-labelledby="editor-revision-titulo">
+        <h2 id="editor-revision-titulo">Antes de guardar</h2>
+        <p className="editor-ayuda">{conflictos.length ? 'Resuelve los conflictos señalados para poder guardar.' : 'Revisa estos avisos y confirma que quieres conservar los cambios.'}</p>
+        {avisos(incidencias)}
+        {conflictos.length > 0 && <div className="editor-dias-conflictos">{[...new Set(conflictos.flatMap(i => i.dia ? [i.dia] : []))].map(dia => <button className="boton" type="button" key={dia} onClick={() => { setFecha(dia); zona.current?.querySelector('.itinerario-navegacion')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}>Revisar {formatoFecha(dia)}</button>)}</div>}
+        {incidencias.some(i => ['CONSULTA_RUTAS_FALLIDA', 'RUTA_NO_DISPONIBLE'].includes(i.codigo)) && <button className="boton" type="button" disabled={ocupado} onClick={() => {
+          void ejecutar('Reintentando los recorridos…', async signal => { const datos = await recalcularEdicion(viaje.resumen.id, estado, signal); if (!signal.aborted) actualizar(datos, 'Recorridos comprobados de nuevo.') })
+        }}>Reintentar recorridos</button>}
+        {advertencias.length > 0 && <label className="editor-aceptacion"><input type="checkbox" checked={aceptarAvisos} disabled={ocupado} onChange={e => setAceptarAvisos(e.target.checked)} />He revisado los avisos y acepto guardar, incluidos los obligatorios incumplidos si los hay.</label>}
+      </section>
       <ItinerarioPorDias itinerario={estado.propuesta.itinerario} configuracion={viaje.configuracion} edicion={{
         fecha, onDia: nueva => { setFecha(nueva); setMoviendo(null); setOpciones(null) }, tarjeta, pieDia,
         resumenDia: fechaDia => {
@@ -218,21 +245,6 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
           if (dia) mover(dia, actividad, posicion)
         },
       }} />
-      <aside className="editor-barra" aria-label="Cambios del itinerario">
-        <div className="editor-barra-resumen"><strong>{ocupado ? operacion : pendiente ? 'Cambios sin guardar' : 'Tu viaje está guardado'}</strong>
-          <span>{conflictos.length ? `${conflictos.length} ${conflictos.length === 1 ? 'conflicto pendiente' : 'conflictos pendientes'}. Revisa las visitas señaladas.` : pendiente ? 'Revisa el resultado y guarda cuando esté listo.' : 'Haz un cambio en cualquier visita para empezar.'}</span>
-        </div>
-        {globales.length > 0 && <div className="editor-globales">{avisos(globales)}</div>}
-        {conflictos.length > 0 && <div className="editor-dias-conflictos">{[...new Set(conflictos.flatMap(i => i.dia ? [i.dia] : []))].map(dia => <button className="boton" type="button" key={dia} onClick={() => { setFecha(dia); zona.current?.querySelector('.itinerario-navegacion')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}>Revisar {formatoFecha(dia)}</button>)}</div>}
-        {advertencias.length > 0 && <label className="editor-aceptacion"><input type="checkbox" checked={aceptarAvisos} disabled={ocupado} onChange={e => setAceptarAvisos(e.target.checked)} />He revisado los avisos y acepto guardar, incluidos los obligatorios incumplidos si los hay.</label>}
-        <div className="editor-barra-acciones">
-          <button className="boton" type="button" disabled={ocupado} onClick={cerrar}>{pendiente ? 'Descartar cambios' : 'Volver a Mis viajes'}</button>
-          {incidencias.some(i => ['CONSULTA_RUTAS_FALLIDA', 'RUTA_NO_DISPONIBLE'].includes(i.codigo)) && <button className="boton" type="button" disabled={ocupado} onClick={() => {
-            void ejecutar('Reintentando los recorridos…', async signal => { const datos = await recalcularEdicion(viaje.resumen.id, estado, signal); if (!signal.aborted) actualizar(datos, 'Recorridos comprobados de nuevo.') })
-          }}>Reintentar recorridos</button>}
-          <button className="boton boton-primario" type="button" disabled={ocupado || !pendiente || conflictos.length > 0 || advertencias.length > 0 && !aceptarAvisos} onClick={guardar}>Guardar cambios</button>
-        </div>
-      </aside>
     </>}
     {!estado && <button className="boton" type="button" onClick={onCerrar}>Volver a Mis viajes</button>}
   </section>
