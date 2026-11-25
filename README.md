@@ -1438,12 +1438,29 @@ que se ha cumplido la selección.
 `CriteriosItinerario` conserva turnos por categoría desde la muestra de IA hasta el
 itinerario final. Los obligatorios y preferidos no consumen los turnos automáticos.
 Cada lugar compartido se cuenta una sola vez, reservándolo para el interés con menos
-alternativas en caso de empate. Con varios intereses explícitos, las visitas automáticas
-de una categoría no superan en más de una a las de otra. Si la categoría pendiente
-abre más tarde, se puede esperar; si no encaja, se deja tiempo libre con un aviso en
-vez de rellenar con otra categoría. El recuento se mantiene entre días. Las señales
+alternativas en caso de empate. Se priorizan los intereses menos representados entre
+los que aún tienen visitas alcanzables y compatibles ese día. Una categoría agotada,
+cerrada o sin ruta deja de bloquear las demás. Si abre más tarde ese mismo día, se
+puede reservar su turno y esperar. El recuento se mantiene entre días. Las señales
 documentales y la relevancia estimada orientan la representatividad, sin certificarla
 ni añadir llamadas o lotes de Gemini a los límites existentes.
+
+`RepartoVisitas` reserva visitas para los días posteriores según las ventanas y los
+horarios interpretables. Recalcula el objetivo diario con los candidatos pendientes,
+distribuyendo primero los que tienen menos fechas compatibles y teniendo en cuenta
+la duración y la pausa para comer. Primero busca una visita distinta para cada día,
+recolocando reservas cuando sus fechas se solapan; después reparte las visitas extra.
+No reserva candidatos sin un camino desde el origen. El objetivo es orientativo:
+protege la reserva de cada día y no aplaza visitas cuya última fecha posible sea hoy.
+Los obligatorios flexibles también se reparten, manteniendo su prioridad y la
+comprobación final de que todos están incluidos. Las rutas, márgenes, descansos y horarios reales se comprueban
+al insertar cada visita, y el resultado pasa por el validador del plan.
+
+Con suficientes candidatos compatibles se evita consumirlos todos al principio y
+dejar los últimos días vacíos. Si faltan candidatos de un interés se explica y se
+ajusta el reparto a los disponibles; no se inventan visitas, horarios ni rutas. Un
+día que realmente no pueda recibir visitas incluye una explicación con su fecha.
+La corrección se aplica al generar planes nuevos; los viajes guardados se conservan.
 Los evitados y sus alias quedan fuera de visitas y propuestas gastronómicas.
 Cambiar las selecciones invalida la confirmación y la clave de reutilización de UT17.
 
@@ -1560,3 +1577,91 @@ Ejecutar las pruebas desde `backend`, con Docker Desktop disponible:
 El alcance actual comprende los viajes y las propuestas de generación.
 Las operaciones de álbumes, metadatos y archivos deberán incorporar estas
 comprobaciones cuando se implementen.
+
+## UT25–UT27: editar las actividades de un viaje guardado
+
+En **Mis viajes → Abrir viaje → Editar actividades** puedes eliminar visitas,
+subirlas o bajarlas dentro del mismo día y sustituirlas por alternativas compatibles.
+El editor muestra una propuesta con el recorrido y los horarios recalculados;
+el viaje guardado no cambia hasta pulsar **Guardar cambios del itinerario**.
+Cancelar conserva la versión anterior. La navegación avisa si quedan cambios pendientes.
+
+Los conflictos de horarios, recorridos o disponibilidad bloquean el guardado.
+Los avisos requieren aceptación explícita. Eliminar una visita obligatoria pide
+confirmación y conserva su prioridad, indicando que queda incumplida. Una visita
+obligatoria puede reordenarse, pero no sustituirse automáticamente.
+
+Las alternativas proceden de los candidatos ya guardados: se filtran por preferencias,
+exclusiones, gasto, duplicados y proximidad de hasta 10 km a la visita original.
+Se comparan hasta seis candidatos y se ofrecen hasta tres que encajen en el día.
+Elegir una opción exige confirmar; cancelar la selección no modifica el recorrido.
+La búsqueda de alternativas no vuelve a consultar Gemini ni Geoapify.
+
+Se reutilizan recorridos guardados con coordenadas coincidentes y una caché por
+sesión de hasta 512 pares dirigidos durante 15 minutos. Solo los trayectos que faltan
+se consultan a OpenRouteService, agrupados por origen y hasta 50 destinos por petición.
+Los fallos no se cachean; **Recalcular recorridos** permite reintentarlos.
+
+Todas las operaciones comprueban autenticación, propietario, CSRF y revisión del viaje.
+Cada modificación renueva el identificador de propuesta para rechazar acciones obsoletas.
+Los borradores viven en la sesión, caducan a los 30 minutos y se limitan a tres viajes.
+El guardado utiliza la actualización atómica existente y conserva las versiones anteriores;
+un fallo de escritura revierte la operación completa. No requiere nuevas tablas ni claves.
+
+Los endpoints POST están bajo `/api/viajes/{viajeId}/edicion`: `/iniciar` y,
+con `/{propuestaId}`, `/reordenar`, `/recalcular`, `/guardar`,
+`/visitas/{actividadId}/eliminar`, `/visitas/{actividadId}/alternativas` y
+`/visitas/{actividadId}/sustituir`. El servidor conserva y valida la propuesta;
+no acepta un itinerario arbitrario enviado por el navegador.
+
+Las pruebas cubren reconstrucción, horarios, comidas, caché, reutilización y errores
+del proveedor. Las pruebas de integración usan PostgreSQL temporal, login y CSRF
+reales, y OpenRouteService simulado: comprueban permisos, revisiones, persistencia,
+obligatorios, alternativas y reversión de errores al guardar.
+
+
+### Correcciones de la revisión de UT25–UT27
+
+Un fallo del proveedor en rutas alternativas que no usa el recorrido final no bloquea
+un día válido. Los conflictos de otros días permanecen visibles, pero no impiden
+comparar sustituciones compatibles del día seleccionado.
+
+Si una respuesta de edición se pierde, **Recuperar cambios pendientes** consulta el
+borrador vigente sin reiniciarlo ni repetir la modificación. El endpoint POST
+`/api/viajes/{viajeId}/edicion/recuperar` exige propietario, revisión y CSRF válidos.
+Si el guardado ya se completó, hay que recargar el viaje para ver la nueva revisión.
+
+Cada traslado del día reconstruido debe respetar la distancia seleccionada, con un
+máximo de 10 km, comprobada sobre la distancia real de la ruta. Esto incluye los
+trayectos del alojamiento y del restaurante.
+
+Los avisos de edición se guardan también como incidencias estructuradas dentro del
+JSON existente. Se conservan los de días intactos y se reemplazan los del día
+recalculado. Los viajes anteriores sin estos metadatos siguen siendo compatibles;
+sus avisos de texto se conservan para evitar perder información.
+
+
+### Editor unificado de actividades
+
+La edición se hace en las propias tarjetas del itinerario, con sus horarios,
+trayectos y mapa actualizados. **Mover** permite elegir una posición dentro del día;
+en escritorio también se puede arrastrar el control hasta otra visita del mismo día.
+Las alternativas aparecen junto a la actividad con duración, coste y diferencia de
+tiempo: **Elegir esta actividad** la aplica al borrador y **Conservar la actual**
+cierra la comparación sin sustituirla.
+
+**Eliminar** muestra una opción **Deshacer** por cada visita retirada. Restaurar
+recalcula ese día y conserva las demás sustituciones y cambios pendientes. Solo
+se restauran visitas retiradas de ese borrador, sin aceptar candidatos del navegador
+ni permitir duplicados. Los obligatorios mantienen su prioridad. El endpoint POST
+`/{propuestaId}/visitas/{actividadId}/restaurar`, bajo la ruta de edición del viaje,
+aplica autenticación, propiedad, CSRF, revisión y vigencia de la propuesta.
+
+Los conflictos aparecen junto a la visita afectada; los días señalan sus conflictos
+y las visitas sin hueco siguen disponibles para editarlas. Una barra compacta encima
+del itinerario reúne **Descartar** y **Guardar cambios**. **Revisar avisos** abre los
+detalles y la aceptación dentro de la página, sin un panel flotante sobre el mapa.
+En móvil la barra permanece en el flujo de la página para no tapar las tarjetas.
+Se conserva el día seleccionado al actualizar el recorrido, se anuncian los cambios
+y se devuelve el foco a la acción editada o al botón para deshacer. La interfaz
+mantiene la alternativa de mover mediante teclado y funciona en pantalla móvil.

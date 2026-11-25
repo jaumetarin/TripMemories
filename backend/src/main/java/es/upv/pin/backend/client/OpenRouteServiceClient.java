@@ -89,6 +89,95 @@ public class OpenRouteServiceClient {
 
         return respuesta;
     }
+    public RespuestaMatrizOrsDto calcularDesde(
+            PuntoRutaDto origen,
+            List<PuntoRutaDto> destinos
+    ) {
+        if (!coordenadasValidas(origen)
+                || destinos == null
+                || destinos.isEmpty()
+                || destinos.size()
+                        > LimitesItinerario.MAXIMO_PUNTOS_RUTA - 1) {
+            throw new IllegalArgumentException(
+                    "Indica un origen y entre 1 y "
+                            + (LimitesItinerario.MAXIMO_PUNTOS_RUTA - 1)
+                            + " destinos con coordenadas válidas.");
+        }
+
+        List<List<Double>> coordenadas = new ArrayList<>();
+        coordenadas.add(List.of(origen.longitud(), origen.latitud()));
+
+        List<String> indicesDestinos = new ArrayList<>();
+
+        for (PuntoRutaDto destino : destinos) {
+            if (!coordenadasValidas(destino)) {
+                throw new IllegalArgumentException(
+                        "Todos los destinos deben tener coordenadas válidas.");
+            }
+
+            indicesDestinos.add(Integer.toString(coordenadas.size()));
+            coordenadas.add(List.of(destino.longitud(), destino.latitud()));
+        }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "La clave de openrouteservice no está configurada.");
+        }
+
+        Map<String, Object> cuerpo = Map.of(
+                "locations", coordenadas,
+                "sources", List.of("0"),
+                "destinations", indicesDestinos,
+                "metrics", List.of("distance", "duration"),
+                "units", "m");
+
+        RespuestaMatrizOrsDto respuesta;
+
+        try {
+            respuesta = restClient.post()
+                    .uri("/v2/matrix/foot-walking")
+                    .header("Authorization", apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(cuerpo)
+                    .retrieve()
+                    .body(RespuestaMatrizOrsDto.class);
+        } catch (RestClientException exception) {
+            throw new IllegalStateException(
+                    "No se ha podido consultar el servicio de desplazamientos.");
+        }
+
+        if (respuesta == null
+                || !filaValida(respuesta.distances(), destinos.size())
+                || !filaValida(respuesta.durations(), destinos.size())) {
+            throw new IllegalStateException(
+                    "El servicio de desplazamientos ha devuelto "
+                            + "una respuesta no válida.");
+        }
+
+        return respuesta;
+    }
+
+    private static boolean filaValida(
+            List<List<Double>> matriz,
+            int numeroDestinos
+    ) {
+        if (matriz == null
+                || matriz.size() != 1
+                || matriz.getFirst() == null
+                || matriz.getFirst().size() != numeroDestinos) {
+            return false;
+        }
+
+        for (Double valor : matriz.getFirst()) {
+            if (valor != null
+                    && (!Double.isFinite(valor) || valor < 0)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static boolean matrizValida(
             List<List<Double>> matriz, int numeroPuntos) {
 

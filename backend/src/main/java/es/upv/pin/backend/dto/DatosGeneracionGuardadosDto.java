@@ -11,8 +11,16 @@ public record DatosGeneracionGuardadosDto(
         int candidatosEvaluados,
         int candidatosEnMatriz,
         List<CandidatoEvaluadoDto> candidatos,
-        boolean evaluacionFallback
+        boolean evaluacionFallback,
+        List<IncidenciaEdicionDto> incidenciasEdicion
 ) {
+    public DatosGeneracionGuardadosDto {
+        incidenciasEdicion = incidenciasEdicion == null ? List.of() : List.copyOf(incidenciasEdicion);
+    }
+    public DatosGeneracionGuardadosDto(List<DisponibilidadDiaDto> dias, List<String> advertencias, boolean parcial,
+            int candidatosEvaluados, int candidatosEnMatriz, List<CandidatoEvaluadoDto> candidatos, boolean evaluacionFallback) {
+        this(dias, advertencias, parcial, candidatosEvaluados, candidatosEnMatriz, candidatos, evaluacionFallback, List.of());
+    }
 
     public static DatosGeneracionGuardadosDto de(
             ItinerarioGeneradoDto itinerario
@@ -32,7 +40,8 @@ public record DatosGeneracionGuardadosDto(
                 itinerario.candidatosEvaluados(),
                 itinerario.candidatosEnMatriz(),
                 List.copyOf(itinerario.candidatos()),
-                itinerario.evaluacionFallback()
+                itinerario.evaluacionFallback(),
+                itinerario.incidenciasEdicion()
         );
     }
 

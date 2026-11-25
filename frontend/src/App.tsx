@@ -32,6 +32,12 @@ function App() {
   const cierreEnCurso = useRef(false)
   const usuarioActual = useRef<UsuarioCuenta | null>(null)
   const contenido = useRef<HTMLElement>(null)
+  const edicionPendiente = useRef(false)
+  useEffect(() => {
+    const actualizar = (evento: Event) => { edicionPendiente.current = (evento as CustomEvent<boolean>).detail === true }
+    window.addEventListener('rute-edicion-pendiente', actualizar)
+    return () => window.removeEventListener('rute-edicion-pendiente', actualizar)
+  }, [])
   useEffect(() => { usuarioActual.current = usuario }, [usuario])
 
   const perderSesion = useCallback(() => {
@@ -98,6 +104,8 @@ function App() {
 
   function navegar(destino: Pantalla) {
     if (cerrando) return
+    if (destino !== pantalla && edicionPendiente.current
+      && !window.confirm('Hay cambios del itinerario pendientes. ¿Salir del editor sin guardarlos?')) return
     if (!usuario && destino !== 'inicio' && destino !== 'cuenta') {
       destinoPendiente.current = destino
       setModoCuenta('login')
@@ -114,6 +122,7 @@ function App() {
 
   async function salir() {
     if (cierreEnCurso.current) return
+    if (edicionPendiente.current && !window.confirm('Hay cambios del itinerario pendientes. ¿Cerrar sesión sin guardarlos?')) return
     cierreEnCurso.current = true
     versionSesion.current++
     setCerrando(true)

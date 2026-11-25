@@ -524,7 +524,7 @@ function esNumeroONulo(valor: unknown): valor is number | null {
   return valor === null || typeof valor === 'number' && Number.isFinite(valor) && valor >= 0
 }
 
-function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado {
+export function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado {
   return esObjeto(valor) && esLugar(valor.lugar)
     && typeof valor.afinidad === 'number' && Number.isFinite(valor.afinidad)
     && (valor.relevancia == null || typeof valor.relevancia === 'number'
