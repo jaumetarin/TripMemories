@@ -10,10 +10,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ControlGeneracionService {
@@ -64,8 +66,14 @@ public class ControlGeneracionService {
             Instant ahora = reloj.instant();
             actualizar(estado, ahora);
             // Consultar el último resultado sigue permitido incluso sin cuota restante.
-            if (estado.resultado != null && configuracion.equals(estado.configuracion))
-                return new Resultado(estado.resultado, true, estado.vigenteHasta);
+            if (estado.resultado != null && configuracion.equals(estado.configuracion)) {
+                return new Resultado(
+                        estado.resultado,
+                        true,
+                        estado.vigenteHasta,
+                        estado.guardable.id()
+                );
+            }
             if (estado.enCurso) throw new ControlGeneracionException(HttpStatus.CONFLICT,
                     "Ya estamos preparando un itinerario en esta sesión. Espera a que termine y vuelve a intentarlo.", 2);
             if (estado.usadas >= limite) throw new ControlGeneracionException(HttpStatus.TOO_MANY_REQUESTS,
@@ -83,12 +91,43 @@ public class ControlGeneracionService {
                 estado.configuracion = configuracion;
                 estado.resultado = resultado;
                 estado.vigenteHasta = reloj.instant().plus(vigencia);
-                return new Resultado(resultado, false, estado.vigenteHasta);
+                estado.guardable = new GeneracionGuardable(
+                        UUID.randomUUID(),
+                        configuracion,
+                        resultado
+                );
+                return new Resultado(
+                        resultado,
+                        false,
+                        estado.vigenteHasta,
+                        estado.guardable.id()
+                );
             }
         } finally {
             // Un fallo no deja la sesión bloqueada ni borra un resultado anterior.
             // La ejecución admitida cuenta: puede haber consumido proveedores.
             synchronized (estado) { estado.enCurso = false; }
+        }
+    }
+
+    public GeneracionGuardable obtenerParaGuardar(
+            UUID generacionId,
+            HttpSession sesion
+    ) {
+        EstadoSesion estado = estadoDe(sesion);
+
+        synchronized (estado) {
+            if (estado.guardable == null
+                    || !estado.guardable.id().equals(generacionId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Este resultado ya no está disponible para guardar "
+                                + "en esta sesión. Comprueba el último "
+                                + "itinerario generado."
+                );
+            }
+
+            return estado.guardable;
         }
     }
 
@@ -128,7 +167,18 @@ public class ControlGeneracionService {
                 configuracion.selecciones());
     }
 
-    public record Resultado(ItinerarioGeneradoDto itinerario, boolean reutilizado, Instant vigenteHasta) {}
+    public record GeneracionGuardable(
+            UUID id,
+            ConfiguracionItinerarioDto configuracion,
+            ItinerarioGeneradoDto itinerario
+    ) {}
+
+    public record Resultado(
+            ItinerarioGeneradoDto itinerario,
+            boolean reutilizado,
+            Instant vigenteHasta,
+            UUID generacionId
+    ) {}
 
     private static class EstadoSesion {
         private Instant inicioPeriodo;
@@ -137,5 +187,6 @@ public class ControlGeneracionService {
         private ConfiguracionItinerarioDto configuracion;
         private ItinerarioGeneradoDto resultado;
         private Instant vigenteHasta;
+        private GeneracionGuardable guardable;
     }
 }

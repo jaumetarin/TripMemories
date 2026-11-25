@@ -217,6 +217,28 @@ class ControlGeneracionServiceTests {
     }
 
     @Test
+    void identificadorEstableAlReutilizarYGuardableTrasCaducarLaCache() {
+        var primero = control.generar(viaje("A"), sesion);
+        assertEquals(primero.generacionId(), control.generar(viaje("A"), sesion).generacionId());
+        ahora.set(ahora.get().plusSeconds(901));
+        control.consultar(sesion);
+        assertSame(plan, control.obtenerParaGuardar(primero.generacionId(), sesion).itinerario());
+        verify(generacion, times(1)).generar(any());
+    }
+
+    @Test
+    void noRecuperaParaGuardarUnResultadoSustituidoONiDeOtraSesion() {
+        var primero = control.generar(viaje("A"), sesion);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> control.obtenerParaGuardar(primero.generacionId(), new MockHttpSession()));
+        var segundo = control.generar(viaje("B"), sesion);
+        assertNotEquals(primero.generacionId(), segundo.generacionId());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> control.obtenerParaGuardar(primero.generacionId(), sesion));
+        assertEquals(segundo.generacionId(), control.obtenerParaGuardar(segundo.generacionId(), sesion).id());
+    }
+
+    @Test
     void cambiarDeAlojamientoAunqueTengaElMismoNombreNoReutilizaElPlan() {
         var entrada = viaje("Hotel");
 

@@ -156,11 +156,58 @@ reales y no se consumen sus créditos. Las pruebas cubren validación, duplicado
 persistencia, enlace caducado/reutilizado, CSRF, límites, renovación de sesión y
 logout. El envío real debe comprobarse después de configurar el remitente y la clave.
 
-La creación de cuentas no añade todavía el guardado de viajes o archivos. Las
-pantallas privadas existentes conservan su alcance; sus futuras consultas deberán
-filtrar siempre por el usuario autenticado del backend, no por un ID enviado por
-el navegador. Los planes en memoria siguen perteneciendo a la sesión y se pierden
-al cerrarla; las cuentas sí permanecen guardadas en PostgreSQL.
+Los borradores y las propuestas sin guardar pertenecen a la sesión y se pierden
+al cerrarla. Las cuentas y los viajes guardados permanecen en PostgreSQL.
+El guardado de archivos y recuerdos queda fuera de esta entrega.
+
+## UT23: guardar, recuperar y actualizar viajes propios
+
+Después de generar una propuesta se puede indicar un título y guardarla. **Mis viajes**
+lista únicamente los viajes del usuario autenticado y permite abrirlos después de
+cerrar sesión, cambiar el título sin regenerar o editar la configuración y guardar
+una nueva propuesta sobre el mismo viaje. Editar o generar no modifica lo guardado:
+la actualización solo se confirma al pulsar **Guardar cambios** y completar la transacción.
+
+El servidor conserva la configuración y los datos generales como JSONB versionado,
+y cada bloque del itinerario como actividad con fecha, orden, tipo, inicio y fin.
+Los detalles de visitas, restaurantes, alternativas y recorridos se conservan en
+JSONB. La lectura reconstruye el plan guardado, incluidos los días sin actividades,
+sin consultar a los proveedores ni consumir otra generación. Al reabrir se restauran
+las selecciones guardadas en el catálogo de sesión para poder seguir editándolas.
+
+Todos los endpoints requieren sesión. Las escrituras requieren además CSRF:
+
+- `GET /api/viajes`: listado propio por último guardado.
+- `GET /api/viajes/{id}`: configuración, itinerario y referencias de actividades.
+- `POST /api/viajes/desde-generacion/{generacionId}`: crea con `{titulo}` y devuelve 201.
+- `POST /api/viajes/{id}/desde-generacion/{generacionId}`: actualiza con `{titulo, revision}`.
+- `PUT /api/viajes/{id}`: cambia el título con `{titulo, revision}`, conservando el plan.
+
+La propuesta se identifica mediante `X-Itinerario-Id`, obtenido al generar. El backend
+solo acepta la última generación correcta de esa sesión; el navegador no envía un
+itinerario arbitrario para persistirlo. Una generación fallida no elimina la anterior.
+Este resultado guardable dura hasta la siguiente generación correcta o el fin de la
+sesión, independientemente de los 15 minutos de caché de reutilización.
+
+Las consultas y actualizaciones filtran por el usuario del backend. Un viaje ajeno
+y uno inexistente responden igual con 404. Cada actualización comprueba la revisión
+esperada e incrementa su valor: dos ediciones concurrentes no se sobrescriben y la
+desactualizada recibe 409. Se conserva la versión anterior del itinerario y sus
+actividades; no se ofrece todavía una pantalla de historial. Cualquier fallo durante
+la escritura revierte toda la operación. La interfaz conserva los cambios pendientes
+y solo muestra éxito tras recibir la confirmación del servidor.
+
+Flyway aplica `V3__persistencia_viajes.sql` y `V4__ampliar_nombre_destino.sql` al
+arrancar el backend. No se modifican las migraciones anteriores. Los itinerarios
+antiguos sin los datos completos de este formato no se inventan ni regeneran:
+su recuperación devuelve un error controlado.
+
+La suite del backend incluye pruebas con PostgreSQL temporal para creación,
+recuperación tras volver a entrar, actualización, permisos, CSRF, revisiones
+concurrentes y fallo SQL a mitad del guardado con recuperación de la versión anterior.
+Se ejecuta con `.\mvnw.cmd test` desde `backend`, con Docker disponible.
+El frontend se verifica con `npm run build`, `npm run lint` y el recorrido de edición
+y guardado en el navegador. Las pruebas usan proveedores simulados.
 
 ## Tecnologías
 

@@ -3,6 +3,8 @@ import { Icon } from './assets/Icon'
 import { Home } from './pages/Home'
 import { CrearItinerario } from './pages/CrearItinerario'
 import { Cuenta } from './pages/Cuenta'
+import { MisViajes } from './pages/MisViajes'
+import type { ViajeGuardado } from './viajes'
 import type { ModoCuenta } from './pages/Cuenta'
 import { cerrarSesion, obtenerSesion, olvidarCsrf } from './sesion'
 import type { UsuarioCuenta } from './sesion'
@@ -21,6 +23,7 @@ function App() {
   const [modoCuenta, setModoCuenta] = useState<ModoCuenta>(vieneDeVerificacion ? 'verificar' : 'login')
   const [tokenVerificacion, setTokenVerificacion] = useState(tokenInicial)
   const [usuario, setUsuario] = useState<UsuarioCuenta | null>(null)
+  const [edicionViaje, setEdicionViaje] = useState<{ usuarioId: string; viaje: ViajeGuardado } | null>(null)
   const [comprobandoSesion, setComprobandoSesion] = useState(true)
   const [mensajeSesion, setMensajeSesion] = useState('')
   const [cerrando, setCerrando] = useState(false)
@@ -38,6 +41,7 @@ function App() {
     const teniaUsuario = usuarioActual.current !== null
     usuarioActual.current = null
     setUsuario(null)
+    setEdicionViaje(null)
     setComprobandoSesion(false)
     if (!teniaUsuario) return
     setPantalla('cuenta')
@@ -106,7 +110,7 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
 
-  const crearItinerario = () => navegar('crear')
+  const crearItinerario = () => { setEdicionViaje(null); navegar('crear') }
 
   async function salir() {
     if (cierreEnCurso.current) return
@@ -117,7 +121,7 @@ function App() {
       await cerrarSesion()
       versionSesion.current++
       usuarioActual.current = null
-      setUsuario(null); setPantalla('inicio'); setModoCuenta('login'); setMensajeSesion('Has cerrado sesión.')
+      setUsuario(null); setEdicionViaje(null); setPantalla('inicio'); setModoCuenta('login'); setMensajeSesion('Has cerrado sesión.')
       const canal = new BroadcastChannel('rute-sesion'); canal.postMessage('cerrada'); canal.close()
     } catch { setMensajeSesion('No hemos podido cerrar la sesión en el servidor. Vuelve a intentarlo.') }
     finally { cierreEnCurso.current = false; setCerrando(false) }
@@ -169,19 +173,25 @@ function App() {
         )}
 
         {pantalla === 'crear' && usuario && (
-          <CrearItinerario onVolver={() => navegar('inicio')} />
+          <CrearItinerario key={usuario.id + ':' + (edicionViaje?.usuarioId === usuario.id ? edicionViaje.viaje.resumen.id + ':' + edicionViaje.viaje.resumen.revision : 'nuevo')}
+            viajeInicial={edicionViaje?.usuarioId === usuario.id ? edicionViaje.viaje : undefined}
+            onVerViajes={() => navegar('viajes')}
+            onVolver={() => navegar(edicionViaje?.usuarioId === usuario.id ? 'viajes' : 'inicio')} />
         )}
 
-        {(pantalla === 'viajes' || pantalla === 'recuerdos') && usuario && (
+        {pantalla === 'viajes' && usuario && <MisViajes key={usuario.id} onCrear={crearItinerario} onEditar={viaje => {
+          setEdicionViaje({ usuarioId: usuario.id, viaje }); navegar('crear')
+        }} />}
+        {pantalla === 'recuerdos' && usuario && (
           <section className="vista-lista" aria-labelledby="titulo-lista">
             <button className="boton-volver" type="button" onClick={() => navegar('inicio')}>← Volver al inicio</button>
             <p className="antetitulo">TU COLECCIÓN PERSONAL</p>
-            <h1 id="titulo-lista">{pantalla === 'viajes' ? 'Mis viajes.' : 'Mis recuerdos.'}</h1>
-            <p className="subtitulo">{pantalla === 'viajes' ? 'Lugares por descubrir. Historias por escribir.' : 'Hay momentos que merecen quedarse.'}</p>
+            <h1 id="titulo-lista">Mis recuerdos.</h1>
+            <p className="subtitulo">Hay momentos que merecen quedarse.</p>
             <div className="estado-vacio">
-              <span className={`ilustracion-vacia${pantalla === 'recuerdos' ? ' icono-ambar' : ''}`}><Icon name={pantalla === 'viajes' ? 'mapa' : 'album'} /></span>
-              <h2>{pantalla === 'viajes' ? 'Tu primer destino te espera.' : 'El principio de muchos recuerdos.'}</h2>
-              <p>{pantalla === 'viajes' ? 'Aquí tendrás tus próximos viajes y los que ya forman parte de tu historia.' : 'Tus fotos y vídeos se reunirán aquí, organizados en álbumes de cada viaje.'}</p>
+              <span className="ilustracion-vacia icono-ambar"><Icon name="album" /></span>
+              <h2>El principio de muchos recuerdos.</h2>
+              <p>Tus fotos y vídeos se reunirán aquí, organizados en álbumes de cada viaje.</p>
               <button className="boton boton-primario" type="button" onClick={crearItinerario}>Crear un itinerario <Icon name="flecha" /></button>
             </div>
           </section>

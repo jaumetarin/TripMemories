@@ -34,6 +34,7 @@ public class GeneracionItinerarioController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header("X-Itinerario-Reutilizado", Boolean.toString(resultado.reutilizado()))
                 .header("X-Itinerario-Vigente-Hasta", resultado.vigenteHasta().toString())
+                .header("X-Itinerario-Id", resultado.generacionId().toString())
                 .body(resultado.itinerario());
     }
 

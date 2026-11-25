@@ -73,6 +73,18 @@ public class CatalogoLugaresService {
         }
     }
 
+    /** Solo recibe la configuración persistida de un viaje cuya propiedad ya se comprobó. */
+    public void restaurarSeleccionGuardada(java.util.UUID viajeId, long revision,
+            ConfiguracionItinerarioDto configuracion, HttpSession sesion) {
+        if (configuracion.selecciones() == null || configuracion.selecciones().isEmpty()) return;
+        var catalogo = catalogo(sesion, configuracion.destino().id());
+        var lugares = configuracion.selecciones().stream().map(SeleccionLugarDto::lugar).toList();
+        var protegidos = lugares.stream().map(LugarDto::id).collect(java.util.stream.Collectors.toSet());
+        synchronized (catalogo) {
+            cargar(catalogo, "viaje-guardado:" + viajeId + ":" + revision, () -> lugares, protegidos);
+        }
+    }
+
     public CatalogoLugaresDto cambiar(CambioSeleccionLugarDto cambio, HttpSession sesion) {
         if (cambio == null || cambio.lugarId() == null || cambio.lugarId().isBlank())
             throw new IllegalArgumentException("Indica el lugar que quieres modificar.");

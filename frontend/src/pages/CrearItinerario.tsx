@@ -13,10 +13,14 @@ import { PreferenciasGasto } from './PreferenciasGasto'
 import { RevisarPlan } from './RevisarPlan'
 import { ElegirLugares } from './ElegirLugares'
 import type { CampoPlan } from './RevisarPlan'
+import { GuardarViaje } from '../components/GuardarViaje'
+import type { DestinoGuardado, ViajeGuardado } from '../viajes'
 import './CrearItinerario.css'
 
 type CrearItinerarioProps = {
   onVolver: () => void
+  onVerViajes: () => void
+  viajeInicial?: ViajeGuardado
 }
 
 const etapas = ['Destino y disponibilidad', 'Preferencias y gasto', 'Elegir lugares', 'Revisar y generar', 'Tu itinerario']
@@ -47,27 +51,30 @@ const selectoresEdicion: Record<CampoPlan, string> = {
   lugares: '#buscar-lugar',
 }
 
-export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
-  const [destinoSeleccionado, setDestinoSeleccionado] = useState<Destino | null>(null)
-  const [fechaLlegada, setFechaLlegada] = useState('')
-  const [horaLlegada, setHoraLlegada] = useState('10:00')
-  const [fechaSalida, setFechaSalida] = useState('')
-  const [horaSalida, setHoraSalida] = useState('18:00')
-  const [alojamiento, setAlojamiento] = useState('')
+export function CrearItinerario({ onVolver, onVerViajes, viajeInicial }: CrearItinerarioProps) {
+  const inicial = viajeInicial?.configuracion
+  const [destinoGuardado, setDestinoGuardado] = useState<DestinoGuardado | undefined>(viajeInicial
+    ? { id: viajeInicial.resumen.id, revision: viajeInicial.resumen.revision, titulo: viajeInicial.resumen.titulo } : undefined)
+  const [destinoSeleccionado, setDestinoSeleccionado] = useState<Destino | null>(inicial?.destino ?? null)
+  const [fechaLlegada, setFechaLlegada] = useState(inicial?.disponibilidad.llegada.slice(0, 10) ?? '')
+  const [horaLlegada, setHoraLlegada] = useState(inicial?.disponibilidad.llegada.slice(11, 16) ?? '10:00')
+  const [fechaSalida, setFechaSalida] = useState(inicial?.disponibilidad.salida.slice(0, 10) ?? '')
+  const [horaSalida, setHoraSalida] = useState(inicial?.disponibilidad.salida.slice(11, 16) ?? '18:00')
+  const [alojamiento, setAlojamiento] = useState(inicial?.alojamiento ?? '')
   const [alojamientoLocalizado, setAlojamientoLocalizado] =
-    useState<Alojamiento | null>(null)
-  const [disponibilidad, setDisponibilidad] = useState<FechaHora | null>(null)
+    useState<Alojamiento | null>(inicial?.alojamientoLocalizado ?? null)
+  const [disponibilidad, setDisponibilidad] = useState<FechaHora | null>(inicial?.disponibilidad ?? null)
   const [paso, setPaso] = useState<'destino' | 'preferencias' | 'lugares' | 'resumen' | 'resultado'>('destino')
-  const [selecciones, setSelecciones] = useState<SeleccionLugar[]>([])
+  const [selecciones, setSelecciones] = useState<SeleccionLugar[]>(inicial?.selecciones ?? [])
   const [avisosSeleccion, setAvisosSeleccion] = useState<string[]>([])
   const [errorSeleccion, setErrorSeleccion] = useState('')
   const [revisandoSeleccion, setRevisandoSeleccion] = useState(false)
   const revisionSeleccion = useRef<AbortController | null>(null)
-  const [preferencias, setPreferencias] = useState<Preferencias>({
+  const [preferencias, setPreferencias] = useState<Preferencias>(inicial?.preferencias ?? {
     intereses: [], categoriasExcluidas: [], subcategoriasExcluidas: [],
     nivelGasto: null, distanciaKm: null,
   })
-  const [ritmo, setRitmo] = useState<RitmoDiario>({
+  const [ritmo, setRitmo] = useState<RitmoDiario>(inicial?.ritmo ?? {
     comidaInicio: '13:00', comidaFin: '15:00',
     descansoCadaMinutos: 120, descansoDuracionMinutos: 15, margenMinutos: 10,
   })
@@ -94,6 +101,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
   const [errorConsumo, setErrorConsumo] = useState('')
   const [reintentoConsumo, setReintentoConsumo] = useState(0)
   const [resultadoReutilizado, setResultadoReutilizado] = useState(false)
+  const [generacionId, setGeneracionId] = useState<string | null>(null)
   const peticion = useRef<AbortController | null>(null)
   const peticionConfirmacion = useRef<AbortController | null>(null)
   const peticionGeneracion = useRef<AbortController | null>(null)
@@ -247,6 +255,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     if (peticionConfirmacion.current || peticionGeneracion.current) return
     setConfiguracionConfirmada(null)
     setItinerario(null)
+    setGeneracionId(null)
     setErrorConfirmacion('')
     setErrorGeneracion('')
     setEditandoResumen(true)
@@ -277,6 +286,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
     if (avisos.length) setAvisosSeleccion(avisos)
     setConfiguracionConfirmada(null)
     setItinerario(null)
+    setGeneracionId(null)
     setErrorConfirmacion('')
     setErrorGeneracion('')
     setProblemasObligatorios([])
@@ -360,6 +370,7 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
       const generado = await generarItinerario(configuracionConfirmada, controlador.signal)
       if (controlador.signal.aborted || peticionGeneracion.current !== controlador) return
       setItinerario(generado.itinerario)
+      setGeneracionId(generado.generacionId)
       setResultadoReutilizado(generado.reutilizado)
       setVistaResultado('plan')
       setPaso('resultado')
@@ -386,7 +397,8 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
 
   return (
     <section className={`crear-viaje${paso === 'preferencias' ? ' crear-viaje-preferencias' : paso === 'lugares' ? ' crear-viaje-lugares' : paso === 'resumen' ? ' crear-viaje-revision' : paso === 'resultado' ? ' crear-viaje-resultado' : ''}`} aria-labelledby="crear-titulo">
-      <button className="boton-volver" type="button" onClick={onVolver} disabled={confirmando || generando}>← Volver al inicio</button>
+      <button className="boton-volver" type="button" onClick={onVolver} disabled={confirmando || generando}>← {viajeInicial ? 'Volver a Mis viajes' : 'Volver al inicio'}</button>
+      {viajeInicial && <p className="resultado-nota">Estás preparando cambios para «{viajeInicial.resumen.titulo}». El viaje guardado no cambiará hasta que pulses Guardar cambios en el resultado.</p>}
       <nav className="acompanamiento" aria-label="Etapas del itinerario">
         <ol className="pasos">
           {etapas.map((etapa, indice) => {
@@ -512,7 +524,11 @@ export function CrearItinerario({ onVolver }: CrearItinerarioProps) {
           <p className="resultado-nota" role="status">{resultadoReutilizado
             ? 'Hemos recuperado tu último itinerario vigente. Esta consulta no consume otra generación.'
             : 'Tu itinerario está listo. Puedes volver a consultarlo sin gastar otra generación mientras siga vigente.'}
-            {' '}Esta propuesta es temporal y no se guarda de forma permanente.</p>
+            {' '}Guárdala en tu cuenta para conservarla.</p>
+          <GuardarViaje key={generacionId ?? 'sin-identificador'} generacionId={generacionId}
+            tituloInicial={destinoGuardado?.titulo ?? `Viaje a ${configuracionConfirmada.destino.nombre}`}
+            destino={destinoGuardado} onGuardado={setDestinoGuardado}
+            onVerViajes={onVerViajes} />
           <nav className="resultado-vistas" aria-label="Vistas del resultado">
             <button type="button" aria-current={vistaResultado === 'plan' ? 'page' : undefined}
               onClick={() => setVistaResultado('plan')}>Itinerario por días</button>
