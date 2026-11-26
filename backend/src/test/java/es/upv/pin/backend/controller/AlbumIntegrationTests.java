@@ -110,6 +110,31 @@ class AlbumIntegrationTests extends PostgresTest {
         subir(album,imagen).andExpect(status().isCreated());
     }
 
+    @Test
+    void rechazaBorrarRecuerdosDesdeUnaVistaAntiguaDelViaje() throws Exception {
+        var foto = subir();
+        long cuotaAnterior = albumes.bytesUsados(propietario.getId());
+
+        eliminarViaje(false).andExpect(status().isNoContent());
+
+        clearInvocations(archivos);
+
+        eliminarViaje(true).andExpect(status().isConflict());
+
+        assertTrue(albumes.propio(propietario.getId(), album).isPresent());
+        assertTrue(albumes.fotoPropia(propietario.getId(), foto.id()).isPresent());
+        assertEquals(cuotaAnterior, albumes.bytesUsados(propietario.getId()));
+
+        verify(archivos, never()).borrar(anyString());
+
+        mvc.perform(get("/api/fotos/" + foto.id() + "/contenido")
+                .with(user(propietario)))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(imagen));
+
+        eliminarViaje(false).andExpect(status().isNoContent());
+    }
+
     @Test void eliminaAutomaticamenteElAlbumVacio() throws Exception {
         eliminarViaje(false).andExpect(status().isNoContent());
         assertTrue(albumes.listar(propietario.getId()).isEmpty());

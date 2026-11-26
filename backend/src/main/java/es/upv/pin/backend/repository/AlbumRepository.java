@@ -90,6 +90,21 @@ public class AlbumRepository {
                 r.getLong("bytes_original"),r.getLong("bytes_miniatura"),r.getObject("ancho",Integer.class),
                 r.getObject("alto",Integer.class),r.getString("estado"),r.getObject("subido_en",OffsetDateTime.class).toInstant());
     }
+    public boolean existeAlbumDelViaje(UUID usuario, UUID viaje) {
+        return jdbc.sql("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM album a
+                    JOIN viaje v ON v.id = a.viaje_id
+                    WHERE v.usuario_id = :usuario AND v.id = :viaje
+                )
+                """)
+                .param("usuario", usuario)
+                .param("viaje", viaje)
+                .query(Boolean.class)
+                .single();
+    }
+
     public List<ArchivoDelViaje> archivosDelViaje(UUID usuario, UUID viaje) {
         return jdbc.sql("""
                 SELECT f.id,f.ruta_privada,f.ruta_miniatura FROM archivo_multimedia f

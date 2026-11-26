@@ -33,7 +33,18 @@ public class EliminarViajeService {
             albumes.bloquearCuenta(usuario);
             var estado=viajes.bloquearParaEliminar(usuario,viaje).orElseThrow(() ->
                     new ResponseStatusException(HttpStatus.NOT_FOUND,"No se ha encontrado el viaje."));
-            if (estado.eliminado()) return List.of(); // Reintento tras una respuesta perdida.
+            if (estado.eliminado()) {
+                if (entrada.eliminarRecuerdos()
+                        && albumes.existeAlbumDelViaje(usuario, viaje)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "El viaje ya fue eliminado conservando su álbum. "
+                                    + "Actualiza Mis viajes. Para borrar los recuerdos, "
+                                    + "elimina el álbum desde Mis recuerdos."
+                    );
+                }
+                return List.of();
+            }
             if (estado.revision()!=entrada.revision()) throw new RevisionViajeException();
             if (estado.eliminandoRecuerdos() && !entrada.eliminarRecuerdos())
                 throw new ResponseStatusException(HttpStatus.CONFLICT,"Ya se inició el borrado de los recuerdos. Reintenta marcando también su eliminación.");
