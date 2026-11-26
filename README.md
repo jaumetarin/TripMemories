@@ -677,6 +677,11 @@ Este comando conserva el volumen con los datos de PostgreSQL.
 
 ## Candidatos reales de lugares — UT 07
 
+Esta sección conserva el diseño histórico de UT07–UT11. En UT33 se retiraron los
+endpoints HTTP independientes de candidatos, evaluación y desplazamientos porque
+no tienen clientes externos. Los servicios internos siguen funcionando dentro del
+flujo actual de creación de itinerarios y edición.
+
 El backend consulta Geoapify Places para recuperar candidatos del destino
 seleccionado. La clave se obtiene de `GEOAPIFY_API_KEY`, igual que en el
 autocompletado, y permanece fuera del código y del frontend.
@@ -1170,14 +1175,18 @@ Para comprobar manualmente la interacción:
 6. Revisar un día vacío o una visita sin coordenadas: la explicación y el itinerario
    textual deben seguir disponibles.
 
-## UT17: control de generaciones por sesión
+## UT17: control de generaciones por sesión (histórico)
+
+Esta sección describe la implementación inicial de UT17. UT33 la sustituye por
+cuotas persistentes por cuenta; consulta la sección «UT32–UT34: planes, cuotas y
+oferta» al final de este documento para conocer el comportamiento vigente.
 
 El endpoint `POST /api/itinerarios/generar` aplica un control de sesión antes de
 entrar al generador y, por tanto, antes de llamar a proveedores. Se utiliza
 `HttpSession` y su cookie `JSESSIONID`, sin cuentas ni tablas nuevas. La versión
 inicial mantiene únicamente el último resultado por sesión en memoria.
 
-Valores iniciales y variables de entorno opcionales:
+Valores y variables de entorno de aquella implementación, retirados en UT33:
 
 | Variable | Valor inicial | Significado |
 | --- | --- | --- |
@@ -1728,7 +1737,7 @@ Se sube una imagen cada vez. Límites predeterminados configurables:
 | Formatos reales | JPEG y PNG | — |
 | Tamaño por original | 10 MiB (10.485.760 bytes) | `FOTOS_MAX_ARCHIVO_BYTES` |
 | Fotos por álbum | 100 | `FOTOS_MAX_POR_ALBUM` |
-| Cuota por cuenta | 500 MiB, originales **y miniaturas** | `FOTOS_CUOTA_BYTES` |
+| Cuota por cuenta | Free: 500 MiB; Premium: 2 GiB, originales **y miniaturas** | Plan de la cuenta (UT33) |
 | Dimensiones decodificadas | 40 millones de píxeles | `FOTOS_MAX_PIXELES` |
 | Solicitud multipart completa | 11 MiB, incluido su envoltorio | `FOTOS_MAX_SOLICITUD_BYTES` |
 | Descarte de subidas rechazadas por Tomcat | Hasta 12 MiB | `FOTOS_MAX_DESCARTE_BYTES` |
@@ -1828,3 +1837,56 @@ y el proceso puede completarse después. No se modifican otros álbumes ni viaje
 El álbum eliminado no se recrea al abrir o renombrar el viaje. El acceso desde
 **Mis viajes** informa de que ese viaje ya no tiene álbum. El borrado no puede
 retirar copias que el usuario haya descargado previamente a su dispositivo.
+
+## UT32–UT34: planes, cuotas por cuenta y oferta Premium
+
+Las cuentas nuevas empiezan en **Free**. Flyway V9 añade el plan a `usuario`;
+Flyway V10 guarda el consumo de generaciones por cuenta en PostgreSQL. El backend
+lee el plan vigente de la base de datos al aplicar un permiso o una cuota: una
+sesión abierta no conserva un plan antiguo después de cambiarlo.
+
+| Límite | Free | Premium |
+| --- | ---: | ---: |
+| Generaciones nuevas por mes natural | 5 | 20 |
+| Generaciones nuevas por ventana móvil de 60 minutos | 3 | 5 |
+| Almacenamiento privado de fotos | 500 MiB | 2 GiB |
+
+El mes se renueva el día 1 a las 00:00 en la zona `Europe/Madrid`. La ventana
+horaria empieza con la primera generación admitida y dura 60 minutos. Una
+configuración inválida no consume; una ejecución iniciada cuenta aunque falle un
+proveedor, porque pudo haberlo consultado. La última respuesta compatible se
+reutiliza desde la sesión durante 15 minutos sin gastar otra generación. Dos
+sesiones de la misma cuenta comparten los límites, y la reserva en PostgreSQL
+impide que dos peticiones simultáneas los superen.
+
+`GET /api/itinerarios/consumo` sigue siendo informativo y no gasta cuota. Devuelve
+`limite`, `restantes` y `reinicio` para la ventana horaria;
+`limiteMensual`, `restantesMensuales` y `reinicioMensual` para el mes, además de
+`enCurso` para la petición de esta sesión. El POST de generación decide de forma
+atómica y responde `429` con `Retry-After` si se agota cualquiera de los límites.
+Consultar o editar viajes y leer o borrar fotos no consume generaciones.
+
+La cuota de fotos suma original y miniatura de todos los álbumes de la cuenta.
+Al pasar de Premium a Free no se borra ninguna foto ni se bloquea su lectura o
+descarga. Si la cuenta usa más de 500 MiB, nuevas subidas se rechazan hasta que
+se libere espacio o vuelva a Premium. Los topes de 10 MiB por archivo, 100 fotos
+por álbum y 40 megapíxeles permanecen iguales en ambos planes.
+
+La oferta se puede consultar sin iniciar sesión en `GET /api/planes/oferta` y en
+la pantalla **Planes**. `GET /api/planes/actual` exige sesión y devuelve el plan
+actual, sus límites y si el cambio de demostración está habilitado. Para probar
+ambos planes, la pantalla ofrece un botón que llama a
+`POST /api/planes/demo/cambiar` con `{ "plan": "FREE" }` o
+`{ "plan": "PREMIUM" }`; exige sesión y CSRF, actualiza la base de datos y solo
+se muestra cuando `demoHabilitada` es verdadera. La propiedad
+`PLANES_DEMO_HABILITADA` controla este modo; vale `true` en el entorno local de
+esta entrega y debe configurarse a `false` cuando el cambio de plan dependa del
+checkout. No hay precio ni cobro en el sprint 2. Variantes, enlaces compartidos y
+contratación corresponden al sprint 3.
+
+Además del contador de generaciones, las rutas activas de consulta y edición que
+pueden usar proveedores tienen un límite técnico de 120 peticiones por hora y
+cuenta. Las cargas nuevas del catálogo de lugares tienen un máximo independiente
+de 20 por hora y cuenta; reutilizar el catálogo de la sesión no lo consume. Estos
+contadores evitan un consumo ilimitado de proveedores por rutas auxiliares y no
+modifican las generaciones incluidas en Free o Premium.

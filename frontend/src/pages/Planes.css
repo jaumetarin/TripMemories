@@ -1,0 +1,7 @@
+﻿.planes { max-width: 900px; margin: 0 auto; }
+.planes > p { margin: 16px 0; color: var(--secundario); }
+.planes-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin: 28px 0; }
+.plan-tarjeta { background: white; border: 1px solid #dce9df; border-radius: 22px; padding: 28px; }
+.plan-tarjeta h2 { margin: 0 0 12px; }
+.plan-tarjeta ul { padding-left: 22px; line-height: 1.8; margin: 18px 0; }
+.plan-actual { color: var(--primario); font-weight: 700; }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from './assets/Icon'
 import { Home } from './pages/Home'
+import { Planes } from './pages/Planes'
 import { CrearItinerario } from './pages/CrearItinerario'
 import { Cuenta } from './pages/Cuenta'
 import { MisViajes } from './pages/MisViajes'
@@ -11,7 +12,7 @@ import { cerrarSesion, obtenerSesion, olvidarCsrf } from './sesion'
 import type { UsuarioCuenta } from './sesion'
 import './App.css'
 
-type Pantalla = 'inicio' | 'crear' | 'viajes' | 'recuerdos' | 'perfil' | 'cuenta'
+type Pantalla = 'inicio' | 'crear' | 'viajes' | 'recuerdos' | 'perfil' | 'cuenta' | 'planes'
 
 // Se captura antes de montar React; no se guarda el token en almacenamiento persistente.
 const fragmentoInicial = new URLSearchParams(window.location.hash.slice(1))
@@ -108,7 +109,7 @@ function App() {
     if (cerrando) return
     if (destino !== pantalla && edicionPendiente.current
       && !window.confirm('Hay cambios del itinerario pendientes. ¿Salir del editor sin guardarlos?')) return
-    if (!usuario && destino !== 'inicio' && destino !== 'cuenta') {
+    if (!usuario && destino !== 'inicio' && destino !== 'cuenta' && destino !== 'planes') {
       destinoPendiente.current = destino
       setModoCuenta('login')
       setPantalla('cuenta')
@@ -149,6 +150,7 @@ function App() {
           </button>
           <nav className="navegacion" aria-label="Navegación principal">
             <button type="button" onClick={() => navegar('inicio')} aria-current={pantalla === 'inicio' ? 'page' : undefined}>Inicio</button>
+            <button type="button" onClick={() => navegar('planes')} aria-current={pantalla === 'planes' ? 'page' : undefined}>Planes</button>
             <button type="button" onClick={() => navegar('viajes')} aria-current={pantalla === 'viajes' ? 'page' : undefined}>Mis viajes</button>
             <button type="button" onClick={() => { setAlbumInicial(null); navegar('recuerdos') }} aria-current={pantalla === 'recuerdos' ? 'page' : undefined}>Mis recuerdos</button>
           </nav>
@@ -175,6 +177,7 @@ function App() {
           <dl><dt>Nombre</dt><dd>{usuario.nombre}</dd><dt>Correo verificado</dt><dd>{usuario.correo}</dd></dl>
           <button className="boton boton-primario" type="button" onClick={crearItinerario}>Crear mi itinerario <Icon name="flecha" /></button>
         </section>}
+        {pantalla === 'planes' && <Planes key={usuario?.id ?? 'visitante'} usuarioId={usuario?.id} onEntrar={() => { destinoPendiente.current = 'planes'; setModoCuenta('login'); setPantalla('cuenta') }} />}
         {pantalla === 'inicio' && (
           <Home
             onCrearItinerario={crearItinerario}
