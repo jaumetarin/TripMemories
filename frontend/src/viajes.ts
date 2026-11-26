@@ -10,6 +10,7 @@ export interface ResumenViaje {
   fechaFin: string | null
   actualizadoEn: string
   revision: number
+  eliminandoRecuerdos?: boolean
 }
 export interface ViajeGuardado {
   resumen: ResumenViaje
@@ -35,6 +36,7 @@ function esResumen(valor: unknown): valor is ResumenViaje {
     && (valor.fechaInicio === null || typeof valor.fechaInicio === 'string' && fecha.test(valor.fechaInicio))
     && (valor.fechaFin === null || typeof valor.fechaFin === 'string' && fecha.test(valor.fechaFin))
     && typeof valor.actualizadoEn === 'string' && Number.isFinite(Date.parse(valor.actualizadoEn)) && revision(valor.revision)
+    && (valor.eliminandoRecuerdos === undefined || typeof valor.eliminandoRecuerdos === 'boolean')
 }
 function esViaje(valor: unknown): valor is ViajeGuardado {
   if (!objeto(valor) || !esResumen(valor.resumen) || !esConfiguracionItinerario(valor.configuracion)
@@ -76,6 +78,9 @@ export async function actualizarViaje(generacionId: string, viaje: DestinoGuarda
 }
 export async function actualizarTitulo(viaje: ResumenViaje, titulo: string, signal: AbortSignal): Promise<ViajeActualizado> {
   return leerActualizacion(await solicitar('/' + encodeURIComponent(viaje.id), signal, { titulo, revision: viaje.revision }, 'PUT'))
+}
+export async function eliminarViaje(viaje: ResumenViaje, eliminarRecuerdos: boolean, signal: AbortSignal): Promise<void> {
+  await solicitar('/' + encodeURIComponent(viaje.id),signal,{ revision: viaje.revision,eliminarRecuerdos },'DELETE')
 }
 function leerActualizacion(datos: unknown): ViajeActualizado {
   if (!objeto(datos) || !identificador(datos.id) || !revision(datos.revision))

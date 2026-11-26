@@ -66,6 +66,7 @@ public class ViajeService {
             );
 
             guardarItinerario(viajeId, configuracionJson, datosGeneracionJson, itinerario);
+            viajes.crearAlbumInicial(viajeId);
 
             return viajeId;
         });

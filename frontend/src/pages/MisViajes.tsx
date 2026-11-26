@@ -5,11 +5,12 @@ import type { ResumenViaje, ViajeGuardado } from '../viajes'
 import ItinerarioPorDias from '../components/ItinerarioPorDias'
 import { CandidatosLugares } from '../components/CandidatosLugares'
 import { EditorActividades } from '../components/EditorActividades'
+import { EliminarViaje } from '../components/EliminarViaje'
 import './MisViajes.css'
 
-type Props = { onCrear: () => void; onEditar: (viaje: ViajeGuardado) => void }
+type Props = { onCrear: () => void; onEditar: (viaje: ViajeGuardado) => void; onVerAlbum: (viajeId: string) => void }
 function fechaLocal(valor: string | null) { return valor ? valor.split('-').reverse().join('/') : 'Sin fecha' }
-export function MisViajes({ onCrear, onEditar }: Props) {
+export function MisViajes({ onCrear, onEditar, onVerAlbum }: Props) {
   const [lista, setLista] = useState<ResumenViaje[]>([])
   const [cargando, setCargando] = useState(true)
   const [reintento, setReintento] = useState(0)
@@ -21,12 +22,17 @@ export function MisViajes({ onCrear, onEditar }: Props) {
   const [mensaje, setMensaje] = useState('')
   const [vista, setVista] = useState<'plan' | 'candidatos'>('plan')
   const [editandoActividades, setEditandoActividades] = useState(false)
+  const [eliminando, setEliminando] = useState<ResumenViaje | null>(null)
   const peticion = useRef<AbortController | null>(null)
   const cabecera = useRef<HTMLHeadingElement>(null)
   const errores = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
     const controlador = new AbortController()
-    listarViajes(controlador.signal).then(datos => { if (!controlador.signal.aborted) setLista(datos) })
+    listarViajes(controlador.signal).then(datos => {
+      if (controlador.signal.aborted) return
+      setLista(datos)
+      setViaje(actual => actual && !datos.some(v => v.id === actual.resumen.id && !v.eliminandoRecuerdos) ? null : actual)
+    })
       .catch(fallo => { if (!controlador.signal.aborted) setError(fallo instanceof Error ? fallo.message : 'No se puede consultar Mis viajes.') })
       .finally(() => { if (!controlador.signal.aborted) setCargando(false) })
     return () => controlador.abort()
@@ -68,6 +74,13 @@ export function MisViajes({ onCrear, onEditar }: Props) {
   }
   function recargarListado() { setCargando(true); setError(''); setReintento(v => v + 1) }
   function volver() { peticion.current?.abort(); peticion.current = null; setViaje(null); setAbriendo(null); setMensaje(''); recargarListado() }
+  function viajeEliminado(recuerdos: boolean) {
+    const id = eliminando?.id
+    setEliminando(null); setViaje(null); setLista(actual => actual.filter(v => v.id !== id))
+    recargarListado()
+    setMensaje(recuerdos ? 'Viaje, álbum y fotos eliminados.' : 'Viaje eliminado. Si tenía fotos, su álbum sigue disponible en Mis recuerdos.')
+    requestAnimationFrame(() => cabecera.current?.focus({ preventScroll: true }))
+  }
   if (viaje && editandoActividades) return <EditorActividades viaje={viaje}
     onCerrar={() => setEditandoActividades(false)}
     onGuardado={() => { setEditandoActividades(false); volver(); setMensaje('Cambios del itinerario guardados correctamente. Ya puedes abrir la versión actualizada.') }} />
@@ -79,11 +92,13 @@ export function MisViajes({ onCrear, onEditar }: Props) {
     {mensaje && <p className="viajes-confirmacion" role="status">{mensaje}</p>}
     {viaje ? <>
       <div className="viajes-acciones">
+        <button className="boton" type="button" onClick={() => onVerAlbum(viaje.resumen.id)}>Ver álbum del viaje</button>
         <button className="boton" type="button" disabled={guardando} onClick={volver}>← Volver a Mis viajes</button>
         <button className="boton boton-primario" type="button" disabled={guardando || !!abriendo}
           onClick={() => onEditar({ ...viaje, resumen: { ...viaje.resumen, titulo: titulo.trim() || viaje.resumen.titulo } })}>Editar configuración</button>
         <button className="boton boton-primario" type="button" disabled={guardando || !!abriendo || titulo.trim() !== viaje.resumen.titulo}
           onClick={() => setEditandoActividades(true)}>Editar actividades</button>
+        <button className="boton viaje-boton-eliminar" type="button" disabled={guardando || !!abriendo} onClick={() => setEliminando(viaje.resumen)}>Eliminar viaje</button>
       </div>
       <p>Guardado en tu cuenta. Esta consulta no genera otra propuesta ni consume una generación.</p>
       {titulo.trim() !== viaje.resumen.titulo && <p>Guarda o descarta el título pendiente antes de editar las actividades.</p>}
@@ -118,10 +133,13 @@ export function MisViajes({ onCrear, onEditar }: Props) {
         : <ul className="viajes-listado">{lista.map(resumen => <li key={resumen.id} className="viaje-tarjeta">
           <h2>{resumen.titulo}</h2><p>{resumen.destino}</p><p>{fechaLocal(resumen.fechaInicio)} — {fechaLocal(resumen.fechaFin)}</p>
           <p className="viaje-fecha">Último guardado: {new Date(resumen.actualizadoEn).toLocaleString('es-ES')}</p>
-          <button className="boton boton-primario" type="button" disabled={!!abriendo} onClick={() => void abrir(resumen.id)}>
+          {resumen.eliminandoRecuerdos && <p className="viajes-error">La eliminación de recuerdos está pendiente. Reintenta para completarla.</p>}
+          <div className="viajes-acciones"><button className="boton boton-primario" type="button" disabled={!!abriendo || resumen.eliminandoRecuerdos} onClick={() => void abrir(resumen.id)}>
             {abriendo === resumen.id ? 'Abriendo…' : 'Abrir viaje'}
-          </button>
+          </button><button className="boton viaje-boton-eliminar" type="button" disabled={!!abriendo} onClick={() => setEliminando(resumen)}>
+            {resumen.eliminandoRecuerdos ? 'Completar eliminación' : 'Eliminar viaje'}</button></div>
         </li>)}</ul>}
     </>}
+    {eliminando && <EliminarViaje key={eliminando.id} viaje={eliminando} onCancelar={() => { setEliminando(null); recargarListado() }} onEliminado={viajeEliminado} />}
   </section>
 }

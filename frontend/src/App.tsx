@@ -4,6 +4,7 @@ import { Home } from './pages/Home'
 import { CrearItinerario } from './pages/CrearItinerario'
 import { Cuenta } from './pages/Cuenta'
 import { MisViajes } from './pages/MisViajes'
+import { MisRecuerdos } from './pages/MisRecuerdos'
 import type { ViajeGuardado } from './viajes'
 import type { ModoCuenta } from './pages/Cuenta'
 import { cerrarSesion, obtenerSesion, olvidarCsrf } from './sesion'
@@ -24,6 +25,7 @@ function App() {
   const [tokenVerificacion, setTokenVerificacion] = useState(tokenInicial)
   const [usuario, setUsuario] = useState<UsuarioCuenta | null>(null)
   const [edicionViaje, setEdicionViaje] = useState<{ usuarioId: string; viaje: ViajeGuardado } | null>(null)
+  const [albumInicial, setAlbumInicial] = useState<{ usuarioId: string; viajeId: string } | null>(null)
   const [comprobandoSesion, setComprobandoSesion] = useState(true)
   const [mensajeSesion, setMensajeSesion] = useState('')
   const [cerrando, setCerrando] = useState(false)
@@ -148,7 +150,7 @@ function App() {
           <nav className="navegacion" aria-label="Navegación principal">
             <button type="button" onClick={() => navegar('inicio')} aria-current={pantalla === 'inicio' ? 'page' : undefined}>Inicio</button>
             <button type="button" onClick={() => navegar('viajes')} aria-current={pantalla === 'viajes' ? 'page' : undefined}>Mis viajes</button>
-            <button type="button" onClick={() => navegar('recuerdos')} aria-current={pantalla === 'recuerdos' ? 'page' : undefined}>Mis recuerdos</button>
+            <button type="button" onClick={() => { setAlbumInicial(null); navegar('recuerdos') }} aria-current={pantalla === 'recuerdos' ? 'page' : undefined}>Mis recuerdos</button>
           </nav>
           <div className="acciones-cabecera">
             <button className="boton boton-cabecera" type="button" onClick={crearItinerario} aria-label="Crear itinerario" aria-current={pantalla === 'crear' ? 'page' : undefined}>
@@ -177,7 +179,7 @@ function App() {
           <Home
             onCrearItinerario={crearItinerario}
             onVerViajes={() => navegar('viajes')}
-            onVerRecuerdos={() => navegar('recuerdos')}
+            onVerRecuerdos={() => { setAlbumInicial(null); navegar('recuerdos') }}
           />
         )}
 
@@ -188,23 +190,12 @@ function App() {
             onVolver={() => navegar(edicionViaje?.usuarioId === usuario.id ? 'viajes' : 'inicio')} />
         )}
 
-        {pantalla === 'viajes' && usuario && <MisViajes key={usuario.id} onCrear={crearItinerario} onEditar={viaje => {
+        {pantalla === 'viajes' && usuario && <MisViajes key={usuario.id} onCrear={crearItinerario}
+          onVerAlbum={viajeId => { setAlbumInicial({ usuarioId:usuario.id,viajeId }); navegar('recuerdos') }} onEditar={viaje => {
           setEdicionViaje({ usuarioId: usuario.id, viaje }); navegar('crear')
         }} />}
-        {pantalla === 'recuerdos' && usuario && (
-          <section className="vista-lista" aria-labelledby="titulo-lista">
-            <button className="boton-volver" type="button" onClick={() => navegar('inicio')}>← Volver al inicio</button>
-            <p className="antetitulo">TU COLECCIÓN PERSONAL</p>
-            <h1 id="titulo-lista">Mis recuerdos.</h1>
-            <p className="subtitulo">Hay momentos que merecen quedarse.</p>
-            <div className="estado-vacio">
-              <span className="ilustracion-vacia icono-ambar"><Icon name="album" /></span>
-              <h2>El principio de muchos recuerdos.</h2>
-              <p>Tus fotos y vídeos se reunirán aquí, organizados en álbumes de cada viaje.</p>
-              <button className="boton boton-primario" type="button" onClick={crearItinerario}>Crear un itinerario <Icon name="flecha" /></button>
-            </div>
-          </section>
-        )}
+        {pantalla === 'recuerdos' && usuario && <MisRecuerdos key={usuario.id + ':' + (albumInicial?.usuarioId === usuario.id ? albumInicial.viajeId : 'todos')}
+          viajeInicialId={albumInicial?.usuarioId === usuario.id ? albumInicial.viajeId : undefined} onVerViajes={() => navegar('viajes')} />}
       </main>
       <footer className="pie-pagina"><span>Rute</span><span>Planea. Viaja. Recuerda.</span></footer>
     </>

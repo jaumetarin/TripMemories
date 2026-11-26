@@ -1,6 +1,7 @@
 package es.upv.pin.backend.controller;
 
 import es.upv.pin.backend.dto.GuardarViajeDto;
+import es.upv.pin.backend.dto.EliminarViajeDto;
 import es.upv.pin.backend.dto.ActualizarViajeDto;
 import es.upv.pin.backend.dto.ViajeActualizadoDto;
 import es.upv.pin.backend.dto.ResumenViajeDto;
@@ -11,6 +12,7 @@ import es.upv.pin.backend.service.ConsultaViajeService;
 import es.upv.pin.backend.service.CatalogoLugaresService;
 import es.upv.pin.backend.service.ControlGeneracionService;
 import es.upv.pin.backend.service.ViajeService;
+import es.upv.pin.backend.service.EliminarViajeService;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -29,17 +31,28 @@ public class ViajeController {
     private final ViajeService viajes;
     private final ConsultaViajeService consultas;
     private final CatalogoLugaresService lugares;
+    private final EliminarViajeService eliminacion;
 
     public ViajeController(
             ControlGeneracionService generaciones,
             ViajeService viajes,
             ConsultaViajeService consultas,
-            CatalogoLugaresService lugares
+            CatalogoLugaresService lugares,
+            EliminarViajeService eliminacion
     ) {
         this.generaciones = generaciones;
         this.viajes = viajes;
         this.consultas = consultas;
         this.lugares = lugares;
+        this.eliminacion = eliminacion;
+    }
+
+    @DeleteMapping("/{viajeId}")
+    public ResponseEntity<Void> eliminar(@PathVariable UUID viajeId,
+            @Valid @RequestBody EliminarViajeDto entrada,
+            @AuthenticationPrincipal UsuarioAutenticado usuario) {
+        eliminacion.eliminar(usuario.getId(),viajeId,entrada);
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
     @GetMapping
