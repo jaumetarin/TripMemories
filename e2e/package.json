@@ -1,0 +1,12 @@
+{
+  "name": "rute-e2e-selenium",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pruebas E2E automatizadas con Selenium WebDriver para Rute (TripMemories)",
+  "scripts": {
+    "test:e2e": "node test-rute.js"
+  },
+  "dependencies": {
+    "selenium-webdriver": "^4.27.0"
+  }
+}

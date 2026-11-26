@@ -34,3 +34,6 @@ build/
 
 # Originales y miniaturas privados: nunca se suben a Git.
 .rute-data/
+
+# Caché local de semillas de jqwik.
+.jqwik-database
