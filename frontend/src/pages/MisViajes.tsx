@@ -104,7 +104,8 @@ export function MisViajes({ onCrear, onEditar }: Props) {
         <button type="button" aria-current={vista === 'plan' ? 'page' : undefined} onClick={() => setVista('plan')}>Itinerario por días</button>
         <button type="button" aria-current={vista === 'candidatos' ? 'page' : undefined} onClick={() => setVista('candidatos')}>Lugares considerados</button>
       </nav>
-      {vista === 'plan' ? <ItinerarioPorDias key={viaje.resumen.id + ':' + viaje.resumen.revision} itinerario={viaje.itinerario} configuracion={viaje.configuracion} />
+      {vista === 'plan' ? <ItinerarioPorDias key={viaje.resumen.id + ':' + viaje.resumen.revision} itinerario={viaje.itinerario} configuracion={viaje.configuracion}
+        origenTrazados={{ tipo: 'viaje', id: viaje.resumen.id, revision: viaje.resumen.revision }} />
         : <CandidatosLugares candidatos={viaje.itinerario.candidatos} fallback={viaje.itinerario.evaluacionFallback} programados={programados} />}
     </> : <>
       <p className="subtitulo">Tus planes, listos para volver a abrirlos.</p>

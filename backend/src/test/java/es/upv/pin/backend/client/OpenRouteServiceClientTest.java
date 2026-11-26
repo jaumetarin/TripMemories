@@ -32,6 +32,35 @@ import es.upv.pin.backend.dto.RespuestaMatrizOrsDto;
 
 class OpenRouteServiceClientTest {
 
+    @Test void recuperaGeojsonPeatonalSinInstruccionesYNuncaInvierteLongitudLatitud() {
+        var builder = RestClient.builder().baseUrl("https://api.heigit.org/openrouteservice");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new OpenRouteServiceClient(builder.build(), "clave-prueba");
+        servidor.expect(requestTo("https://api.heigit.org/openrouteservice/v2/directions/foot-walking/geojson"))
+                .andExpect(method(HttpMethod.POST)).andExpect(header("Authorization", "clave-prueba"))
+                .andExpect(content().json("{\"coordinates\":[[-3.7,40.4],[-3.6,40.5]],\"instructions\":false}", JsonCompareMode.STRICT))
+                .andRespond(withSuccess("{\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[-3.7,40.4],[-3.65,40.45],[-3.6,40.5]]}}]}", MediaType.APPLICATION_JSON));
+        var resultado = cliente.calcularGeometria(new PuntoRutaDto("a", 40.4, -3.7), new PuntoRutaDto("b", 40.5, -3.6));
+        assertEquals(List.of(-3.65, 40.45), resultado.coordenadas().get(1));
+        assertEquals("openrouteservice", resultado.fuente());
+        servidor.verify();
+    }
+
+    @ParameterizedTest @ValueSource(strings = {
+        "{}", "{\"features\":[]}",
+        "{\"features\":[{\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]}}]}",
+        "{\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[190,2],[1,2]]}}]}"
+    })
+    void unaGeometriaInvalidaNoSeConvierteEnCaminoConfirmado(String cuerpo) {
+        var builder = RestClient.builder().baseUrl("https://api.heigit.org/openrouteservice");
+        var servidor = MockRestServiceServer.bindTo(builder).build();
+        var cliente = new OpenRouteServiceClient(builder.build(), "clave-prueba");
+        servidor.expect(requestTo("https://api.heigit.org/openrouteservice/v2/directions/foot-walking/geojson"))
+                .andRespond(withSuccess(cuerpo, MediaType.APPLICATION_JSON));
+        assertThrows(IllegalStateException.class, () -> cliente.calcularGeometria(new PuntoRutaDto("a", 40.4, -3.7), new PuntoRutaDto("b", 40.5, -3.6)));
+        servidor.verify();
+    }
+
     @Test
     void admiteCincuentaLugaresMasElOrigen() {
         var constructor = RestClient.builder().baseUrl("https://api.heigit.org/openrouteservice");

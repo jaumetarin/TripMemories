@@ -73,6 +73,19 @@ class ControlGeneracionServiceTests {
         verifyNoInteractions(generacion);
     }
 
+    @Test void losTrazadosSeConservanEnElResultadoGuardableSinConsumirOtraGeneracion() {
+        var resultado = control.generar(viaje(""), sesion);
+        var geometria = new GeometriaTramoDto(List.of(List.of(-3.7, 40.4), List.of(-3.71, 40.41)), "openrouteservice");
+        var trazados = java.util.Map.of("tramo-prueba", geometria);
+        control.conservarTrazados(resultado.generacionId(), trazados, sesion);
+        assertEquals(trazados, control.obtenerParaGuardar(resultado.generacionId(), sesion).itinerario().trazados());
+        assertEquals(trazados, control.generar(viaje(""), sesion).itinerario().trazados());
+        assertEquals(2, control.consultar(sesion).restantes());
+        verify(generacion, times(1)).generar(any());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () ->
+                control.conservarTrazados(java.util.UUID.randomUUID(), trazados, sesion));
+    }
+
     @Test
     void cambiarPrioridadNoReutilizaUnPlanConLaSeleccionAnterior() {
         var base = viaje("");

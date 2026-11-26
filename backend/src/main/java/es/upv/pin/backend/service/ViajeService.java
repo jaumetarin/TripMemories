@@ -111,6 +111,12 @@ public class ViajeService {
         }
     }
 
+    public void conservarTrazados(UUID usuario, UUID viaje, long revision,
+            java.util.Map<String, es.upv.pin.backend.dto.GeometriaTramoDto> trazados) {
+        if (!viajes.guardarTrazados(usuario, viaje, revision, json.writeValueAsString(trazados)))
+            throw new RevisionViajeException();
+    }
+
     private String validarTitulo(String titulo) {
         if (titulo == null || titulo.isBlank() || titulo.length() > 160)
             throw new IllegalArgumentException("Introduce un título de entre 1 y 160 caracteres.");

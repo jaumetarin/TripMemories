@@ -18,6 +18,8 @@ import java.util.Map;
 import es.upv.pin.backend.dto.PuntoRutaDto;
 import es.upv.pin.backend.dto.RespuestaMatrizOrsDto;
 import es.upv.pin.backend.model.LimitesItinerario;
+import es.upv.pin.backend.dto.GeometriaTramoDto;
+import tools.jackson.databind.JsonNode;
 
 @Component
 public class OpenRouteServiceClient {
@@ -34,6 +36,37 @@ public class OpenRouteServiceClient {
     OpenRouteServiceClient(RestClient restClient, String apiKey) {
         this.restClient = restClient;
         this.apiKey = apiKey;
+    }
+    public GeometriaTramoDto calcularGeometria(PuntoRutaDto origen, PuntoRutaDto destino) {
+        if (!coordenadasValidas(origen) || !coordenadasValidas(destino))
+            throw new IllegalArgumentException("El trazado necesita dos ubicaciones válidas.");
+        if (apiKey == null || apiKey.isBlank()) throw new IllegalStateException("La clave de openrouteservice no está configurada.");
+        try {
+            var respuesta = restClient.post().uri("/v2/directions/foot-walking/geojson")
+                    .header("Authorization", apiKey).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("coordinates", List.of(List.of(origen.longitud(), origen.latitud()),
+                            List.of(destino.longitud(), destino.latitud())), "instructions", false))
+                    .retrieve().body(JsonNode.class);
+            if (respuesta == null || !respuesta.path("features").isArray() || respuesta.path("features").size() != 1)
+                throw new IllegalStateException("El proveedor no ha devuelto un trazado válido.");
+            var geometria = respuesta.path("features").path(0).path("geometry");
+            var coordenadas = geometria.path("coordinates");
+            if (!"LineString".equals(geometria.path("type").asText()) || !coordenadas.isArray()
+                    || coordenadas.size() < 2 || coordenadas.size() > 20000)
+                throw new IllegalStateException("El proveedor no ha devuelto un trazado válido.");
+            List<List<Double>> puntos = new ArrayList<>();
+            for (var punto : coordenadas) {
+                if (!punto.isArray() || punto.size() < 2 || !punto.path(0).isNumber() || !punto.path(1).isNumber())
+                    throw new IllegalStateException("El proveedor ha devuelto coordenadas inválidas.");
+                double lon = punto.path(0).asDouble(), lat = punto.path(1).asDouble();
+                if (!Double.isFinite(lon) || !Double.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90)
+                    throw new IllegalStateException("El proveedor ha devuelto coordenadas inválidas.");
+                puntos.add(List.of(lon, lat));
+            }
+            return new GeometriaTramoDto(puntos, "openrouteservice");
+        } catch (RestClientException e) {
+            throw new IllegalStateException("No se ha podido obtener el trazado a pie.");
+        }
     }
     public RespuestaMatrizOrsDto calcularMatriz(List<PuntoRutaDto> puntos) {
         if (puntos == null || puntos.size() < 2

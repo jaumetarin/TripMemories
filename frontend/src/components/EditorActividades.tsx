@@ -232,7 +232,8 @@ export function EditorActividades({ viaje, onCerrar, onGuardado }: Props) {
         }}>Reintentar recorridos</button>}
         {advertencias.length > 0 && <label className="editor-aceptacion"><input type="checkbox" checked={aceptarAvisos} disabled={ocupado} onChange={e => setAceptarAvisos(e.target.checked)} />He revisado los avisos y acepto guardar, incluidos los obligatorios incumplidos si los hay.</label>}
       </section>
-      <ItinerarioPorDias itinerario={estado.propuesta.itinerario} configuracion={viaje.configuracion} edicion={{
+      <ItinerarioPorDias itinerario={estado.propuesta.itinerario} configuracion={viaje.configuracion}
+        origenTrazados={{ tipo: 'edicion', id: viaje.resumen.id, revision: estado.propuesta.revisionBase, propuestaId: estado.propuesta.propuestaId }} edicion={{
         fecha, onDia: nueva => { setFecha(nueva); setMoviendo(null); setOpciones(null) }, tarjeta, pieDia,
         resumenDia: fechaDia => {
           const cantidad = conflictos.filter(i => i.dia === fechaDia).length

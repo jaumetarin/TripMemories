@@ -256,6 +256,7 @@ public class EdicionItinerarioService {
         }
         porDia.put(fecha, List.copyOf(avisos));
         var resultado = new Borrador(anterior.usuario, anterior.base, nuevasVisitas, dias, porDia, true);
+        resultado.trazados.putAll(anterior.trazados);
         resultado.eliminadas.putAll(anterior.eliminadas);
         resultado.ordenRestauracion.putAll(anterior.ordenRestauracion);
         return resultado;
@@ -272,6 +273,9 @@ public class EdicionItinerarioService {
         var plan = new ItinerarioGeneradoDto(List.copyOf(borrador.dias.values()), List.copyOf(advertencias),
                 base.parcial() || !incidencias.isEmpty(), base.candidatosEvaluados(), base.candidatosEnMatriz(),
                 base.candidatos(), base.evaluacionFallback(), incidencias);
+        var geometrias = new LinkedHashMap<>(base.trazados());
+        geometrias.putAll(borrador.trazados);
+        plan = plan.conTrazados(TramosPlan.vigentes(borrador.base.configuracion(), plan, geometrias));
         var dias = borrador.visitas.entrySet().stream().map(e -> new DiaEditableDto(e.getKey(),
                 e.getValue().stream().map(v -> new VisitaEditableDto(v.actividadId(), v.candidato(),
                         ReglasSeleccionLugares.estado(v.candidato().lugar(), borrador.base.configuracion()) == EstadoLugar.OBLIGATORIO)).toList())).toList();
@@ -307,6 +311,22 @@ public class EdicionItinerarioService {
                     + "» ya no está incluido. Su prioridad se conserva; confirma este incumplimiento si deseas guardar."));
         }
         return List.copyOf(resultado);
+    }
+
+    public ViajeGuardadoDto paraTrazados(UUID usuario, UUID viaje, UUID propuesta, long revision, HttpSession sesion) {
+        contexto.recuperar(usuario, viaje, revision);
+        var estado = estado(sesion);
+        synchronized (estado) {
+            var borrador = obtener(estado, usuario, viaje, propuesta, revision);
+            return new ViajeGuardadoDto(borrador.base.resumen(), borrador.base.configuracion(),
+                    respuesta(borrador).propuesta().itinerario(), borrador.base.actividades());
+        }
+    }
+    public void conservarTrazados(UUID usuario, UUID viaje, UUID propuesta, long revision,
+            Map<String, GeometriaTramoDto> trazados, HttpSession sesion) {
+        contexto.recuperar(usuario, viaje, revision);
+        var estado = estado(sesion);
+        synchronized (estado) { obtener(estado, usuario, viaje, propuesta, revision).trazados.putAll(trazados); }
     }
 
     private boolean compatible(Borrador borrador, Visita original, CandidatoEvaluadoDto candidato) {
@@ -371,6 +391,7 @@ public class EdicionItinerarioService {
         private final Map<LocalDate, List<IncidenciaEdicionDto>> incidencias;
         private final boolean modificada;
         private final Map<UUID, List<String>> ofrecidas = new HashMap<>();
+        private final Map<String, GeometriaTramoDto> trazados = new LinkedHashMap<>();
         private final Map<UUID, Eliminada> eliminadas = new LinkedHashMap<>();
         private final Map<LocalDate, List<UUID>> ordenRestauracion = new LinkedHashMap<>();
         private Borrador(UUID usuario, ViajeGuardadoDto base, Map<LocalDate, List<Visita>> visitas,

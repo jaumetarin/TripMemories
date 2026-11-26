@@ -41,3 +41,8 @@
   outline: 3px solid #1d1d1f;
   outline-offset: 4px;
 }
+.mapa-recorrido { min-width: 0; }
+.mapa-recorrido .mapa-aviso p { margin: 0 0 8px; }
+.mapa-recorrido .mapa-aviso details { margin: 8px 0; }
+.mapa-recorrido .mapa-aviso .boton { min-height: 34px; padding: 7px 12px; font-size: .75rem; }
+.mapa-recorrido-fuente { color: #5d6c63; font-size: .7rem; margin: 8px 0; }
