@@ -1,0 +1,11 @@
+.eliminar-viaje-dialogo { box-sizing: border-box; width: 520px; max-width: calc(100vw - 28px); max-height: calc(100dvh - 32px); padding: 26px; border: 1px solid #dce4df; border-radius: 22px; background: #fcfdfc; color: #283d31; }
+.eliminar-viaje-dialogo::backdrop { background: #172820bb; backdrop-filter: blur(4px); }
+.eliminar-viaje-dialogo h2 { margin: 0 0 16px; font-size: 1.4rem; }
+.eliminar-viaje-dialogo p { font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
+.eliminar-viaje-opcion { display: flex; align-items: flex-start; gap: 10px; padding: 15px; border: 1px solid #ddd; border-radius: 12px; font-size: .9rem; line-height: 1.5; }
+.eliminar-viaje-opcion input { flex: 0 0 auto; margin-top: 4px; accent-color: #9d362a; }
+.eliminar-viaje-aviso { background: #fff3ee; color: #90382c; border-radius: 10px; padding: 12px; }
+.eliminar-viaje-dialogo .eliminar-viaje-confirmar { background: #a34133; color: white; }
+.mis-viajes .viaje-boton-eliminar { color: #963d31; background: #fff4ef; }
+.eliminar-viaje-dialogo button:focus-visible { outline: 3px solid #598c74; outline-offset: 3px; }
+@media (max-width: 600px) { .eliminar-viaje-dialogo { padding: 20px; } }

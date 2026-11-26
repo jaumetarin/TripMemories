@@ -158,7 +158,7 @@ logout. El envío real debe comprobarse después de configurar el remitente y la
 
 Los borradores y las propuestas sin guardar pertenecen a la sesión y se pierden
 al cerrarla. Las cuentas y los viajes guardados permanecen en PostgreSQL.
-El guardado de archivos y recuerdos queda fuera de esta entrega.
+Los recuerdos se consultan en **Mis recuerdos**: cada viaje guardado dispone de un álbum privado.
 
 ## UT23: guardar, recuperar y actualizar viajes propios
 
@@ -1574,9 +1574,9 @@ Ejecutar las pruebas desde `backend`, con Docker Desktop disponible:
 
     .\mvnw.cmd test
 
-El alcance actual comprende los viajes y las propuestas de generación.
-Las operaciones de álbumes, metadatos y archivos deberán incorporar estas
-comprobaciones cuando se implementen.
+El alcance comprende viajes, propuestas de generación y álbumes privados.
+Las consultas y operaciones sobre fotografías también comprueban sesión,
+propiedad y CSRF cuando modifican datos.
 
 ## UT25–UT27: editar las actividades de un viaje guardado
 
@@ -1707,3 +1707,124 @@ las líneas de la versión anterior, cancela la solicitud anterior e ignora resp
 atrasadas. Las pruebas cubren GeoJSON inválido, errores parciales, deduplicación de
 peticiones, persistencia entre sesiones, permisos, revisiones y retirada de trazados
 después de eliminar actividades.
+
+### UT29–UT31 · Álbumes privados y fotografías
+
+Cada viaje guardado crea automáticamente **un único álbum privado**. La migración
+V6 crea también los álbumes de los viajes anteriores. En **Mis recuerdos** se ve
+la etiqueta **Viaje: …**, el destino y el número de fotos. Desde el detalle de
+**Mis viajes** se puede abrir directamente el álbum correspondiente. Cambiar el
+nombre del viaje actualiza su etiqueta sin crear otro álbum.
+
+La relación es **foto → álbum → viaje**. No se pide ni guarda una asociación de
+la foto con un lugar o una visita. Las antiguas columnas opcionales de lugares
+permanecen en el esquema por compatibilidad, pero esta funcionalidad no las usa.
+Los registros de ejemplo `demo://` siguen siendo marcadores, no fotos disponibles.
+
+Se sube una imagen cada vez. Límites predeterminados configurables:
+
+| Límite | Valor | Variable de entorno |
+| --- | --- | --- |
+| Formatos reales | JPEG y PNG | — |
+| Tamaño por original | 10 MiB (10.485.760 bytes) | `FOTOS_MAX_ARCHIVO_BYTES` |
+| Fotos por álbum | 100 | `FOTOS_MAX_POR_ALBUM` |
+| Cuota por cuenta | 500 MiB, originales **y miniaturas** | `FOTOS_CUOTA_BYTES` |
+| Dimensiones decodificadas | 40 millones de píxeles | `FOTOS_MAX_PIXELES` |
+| Solicitud multipart completa | 11 MiB, incluido su envoltorio | `FOTOS_MAX_SOLICITUD_BYTES` |
+| Descarte de subidas rechazadas por Tomcat | Hasta 12 MiB | `FOTOS_MAX_DESCARTE_BYTES` |
+
+Si se aumenta el tamaño por foto, hay que ampliar también el límite de la
+solicitud multipart y de descarte. La interfaz detecta tamaños excesivos usando el
+límite que proporciona el backend; el servidor lo vuelve a comprobar. El backend comprueba extensión, contenido real, tamaño,
+decodificación y dimensiones; no confía en el MIME declarado por el navegador.
+La cuota se reserva bajo bloqueo de la cuenta para que dos subidas simultáneas
+no superen el límite. También cuentan las subidas pendientes de limpiar.
+
+Las fotos se almacenan fuera de `static` y de `public`, en la carpeta privada
+`backend/.rute-data/fotos` al arrancar desde `backend`. Está excluida de Git.
+`RUTE_FOTOS_DIRECTORIO` permite usar otra carpeta, preferiblemente absoluta.
+PostgreSQL guarda metadatos y claves opacas; no guarda los bytes de las imágenes.
+El original se conserva para la descarga y se genera una miniatura JPEG de hasta
+480 píxeles para la galería. No se descargan todos los originales al abrirla.
+
+`AlmacenamientoFotos` separa las operaciones de archivos del resto del código;
+`AlmacenamientoFotosLocal` es su implementación actual. Al desplegar habrá que
+configurar un disco persistente privado o añadir otra implementación, por ejemplo
+Supabase Storage. **El almacenamiento local no sincroniza las fotos entre equipos**:
+la base de datos y la carpeta deben corresponder al mismo entorno. No se ha
+implementado todavía el almacenamiento en la nube.
+
+Endpoints protegidos por sesión y comprobación de propietario en cada petición:
+
+- `GET /api/albumes` y `GET /api/albumes/{id}`: listado y contenido propio.
+- `POST /api/albumes/{id}/fotos`: multipart con un único campo archivo `foto`.
+- `GET /api/fotos/{id}/miniatura`, `/contenido` y `/descargar`: miniatura, visor y original.
+- `DELETE /api/fotos/{id}`: borrado confirmado de los dos archivos y sus metadatos.
+
+POST y DELETE requieren CSRF. No se publican rutas físicas ni URLs públicas;
+los archivos se sirven con `Cache-Control: no-store, private`. Cerrar sesión,
+acceder desde otra cuenta o intentar usar la URL tras eliminar no da acceso.
+Una copia que el usuario ya haya descargado no se puede retirar de su dispositivo.
+
+Una foto solo pasa de `PENDIENTE` a `DISPONIBLE` después de almacenar original y
+miniatura. Si falla, se intenta limpiar ambos; si la limpieza falla, queda `ERROR`,
+sin imagen accesible y conservando la reserva de cuota hasta retirarla. Una subida
+interrumpida en `PENDIENTE` se puede retirar pasados diez minutos, para no interferir
+con una subida activa. El borrado usa `ELIMINANDO`: si falla, no se anuncia éxito y
+se ofrece reintentar. La cuota solo se libera cuando se completa la limpieza.
+
+La galería ofrece un estado vacío, visor con anterior/siguiente, descarga del
+original y eliminación con confirmación. Cancelar conserva la foto. Ante un fallo
+se mantiene el aviso y se vuelve a consultar el álbum para no mostrar éxito falso.
+
+Las pruebas usan PostgreSQL efímero y fotos sintéticas. Cubren formatos inválidos,
+imagen corrupta, tamaño y píxeles, cuota compartida, concurrencia, permisos,
+correspondencia entre originales y miniaturas, fallos preparados de almacenamiento,
+reintentos de borrado y pérdida de acceso a las URLs eliminadas.
+
+### Eliminar viajes conservando recuerdos
+
+**Mis viajes** ofrece **Eliminar viaje** en cada tarjeta y en el detalle. La
+confirmación conserva el álbum y sus fotos por defecto; si el álbum no contiene
+archivos, se retira automáticamente. El álbum conservado sigue en **Mis recuerdos**
+con la etiqueta **Viaje eliminado: …**, su título, destino y fechas. Se pueden
+seguir añadiendo o descargando fotos de ese álbum.
+
+La opción **Eliminar también el álbum y todas sus fotos** está desmarcada por
+defecto y advierte de la eliminación permanente de los archivos en Rute. Cancelar
+no envía ninguna solicitud de eliminación. Los archivos ya descargados al equipo
+del usuario no se modifican.
+
+`DELETE /api/viajes/{id}` recibe `{ "revision": 1, "eliminarRecuerdos": false }`.
+Exige sesión, propiedad, CSRF, revisión vigente y una elección explícita. La
+migración V7 añade la eliminación lógica del viaje: su referencia se conserva
+en PostgreSQL, pero ya no se lista ni se puede abrir, editar o enriquecer con
+trazados. Esto mantiene la asociación del álbum sin duplicar los datos del viaje.
+No es una función de borrado definitivo de todos los registros históricos del viaje.
+
+Al eliminar también los recuerdos se bloquea primero su acceso. No se admiten
+nuevas subidas mientras dura la operación y una subida activa impide iniciarla.
+El servicio retira los originales y miniaturas antes de eliminar sus metadatos,
+el álbum y la reserva de cuota. Si falla el disco o la confirmación en PostgreSQL,
+no se devuelve éxito: el viaje muestra **Completar eliminación**, los archivos
+permanecen inaccesibles y se puede reintentar. Los reintentos tras un borrado ya
+confirmado son seguros. No se consulta ningún proveedor externo.
+
+### Eliminar un álbum y todas sus fotos
+
+En **Mis recuerdos** aparece **Eliminar álbum**, tanto en la tarjeta como dentro
+del álbum. La confirmación advierte que el álbum y **todas sus fotos se borrarán
+permanentemente** y que no se puede deshacer. **Cancelar** no envía ninguna
+petición de borrado. El viaje permanece guardado.
+
+`DELETE /api/albumes/{id}` exige sesión, propietario y CSRF. La migración V8
+incorpora el estado `eliminando` del álbum. Antes de borrar archivos se bloquean
+sus fotos y nuevas subidas; si hay una subida activa, se pide esperar. Solo se
+confirma cuando se han eliminado originales, miniaturas, metadatos y el álbum,
+liberando la cuota correspondiente. Si falla el disco o PostgreSQL, no se anuncia
+éxito: aparece **Reintentar eliminación**, los archivos permanecen inaccesibles
+y el proceso puede completarse después. No se modifican otros álbumes ni viajes.
+
+El álbum eliminado no se recrea al abrir o renombrar el viaje. El acceso desde
+**Mis viajes** informa de que ese viaje ya no tiene álbum. El borrado no puede
+retirar copias que el usuario haya descargado previamente a su dispositivo.

@@ -29,9 +29,9 @@ public class ViajeRepository {
         return jdbc.sql("""
                 SELECT id, titulo, destino,
                        fecha_inicio, fecha_fin,
-                       actualizado_en, revision
+                       actualizado_en, revision, eliminando_recuerdos
                 FROM viaje
-                WHERE usuario_id = :usuarioId
+                WHERE usuario_id = :usuarioId AND eliminado_en IS NULL
                 ORDER BY actualizado_en DESC, id
                 """)
                 .param("usuarioId", usuarioId)
@@ -46,7 +46,7 @@ public class ViajeRepository {
         return jdbc.sql("""
                 SELECT v.id, v.titulo, v.destino,
                        v.fecha_inicio, v.fecha_fin,
-                       v.actualizado_en, v.revision,
+                       v.actualizado_en, v.revision, v.eliminando_recuerdos,
                        i.id AS itinerario_id,
                        i.formato,
                        i.configuracion,
@@ -57,6 +57,7 @@ public class ViajeRepository {
                     AND i.es_actual = true
                 WHERE v.id = :viajeId
                     AND v.usuario_id = :usuarioId
+                    AND v.eliminado_en IS NULL AND NOT v.eliminando_recuerdos
                 """)
                 .param("viajeId", viajeId)
                 .param("usuarioId", usuarioId)
@@ -86,6 +87,7 @@ public class ViajeRepository {
                 WHERE i.id = :itinerarioId
                     AND i.es_actual = true
                     AND v.usuario_id = :usuarioId
+                    AND v.eliminado_en IS NULL AND NOT v.eliminando_recuerdos
                 ORDER BY a.dia, a.orden
                 """)
                 .param("itinerarioId", itinerarioId)
@@ -172,6 +174,14 @@ public class ViajeRepository {
                 .single();
     }
 
+    public void crearAlbumInicial(UUID viajeId) {
+        jdbc.sql("""
+                INSERT INTO album(viaje_id,titulo)
+                SELECT id, left('Recuerdos de ' || COALESCE(destino,titulo),160)
+                FROM viaje WHERE id=:id ON CONFLICT(viaje_id) DO NOTHING
+                """).param("id",viajeId).update();
+    }
+
     public UUID insertarActividad(
             UUID itinerarioId,
             LocalDate dia,
@@ -251,6 +261,7 @@ public class ViajeRepository {
                     fecha_inicio = :fechaInicio, fecha_fin = :fechaFin,
                     actualizado_en = now(), revision = revision + 1
                 WHERE id = :viajeId AND usuario_id = :usuarioId AND revision = :revision
+                    AND eliminado_en IS NULL AND NOT eliminando_recuerdos
                 """)
                 .param("viajeId", viajeId).param("usuarioId", usuarioId).param("revision", revision)
                 .param("titulo", titulo).param("destino", destino)
@@ -272,6 +283,7 @@ public class ViajeRepository {
         return jdbc.sql("""
                 WITH propio AS (
                     SELECT id FROM viaje WHERE id = :viaje AND usuario_id = :usuario
+                        AND eliminado_en IS NULL AND NOT eliminando_recuerdos
                         AND revision = :revision FOR UPDATE
                 )
                 UPDATE itinerario i SET datos_generacion = jsonb_set(i.datos_generacion, '{trazados}',
@@ -281,6 +293,30 @@ public class ViajeRepository {
                 """).param("viaje", viaje).param("usuario", usuario).param("revision", revision)
                 .param("trazados", trazadosJson).update() == 1;
     }
+    /** La eliminación tiene que poder reintentarse aunque los recuerdos estén bloqueados. */
+    public Optional<EstadoEliminacion> bloquearParaEliminar(UUID usuario, UUID viaje) {
+        return jdbc.sql("""
+                SELECT revision, eliminado_en IS NOT NULL AS eliminado, eliminando_recuerdos
+                FROM viaje WHERE id=:viaje AND usuario_id=:usuario FOR UPDATE
+                """).param("viaje",viaje).param("usuario",usuario)
+                .query((r,n) -> new EstadoEliminacion(r.getLong("revision"),r.getBoolean("eliminado"),r.getBoolean("eliminando_recuerdos"))).optional();
+    }
+
+    public void bloquearRecuerdos(UUID usuario, UUID viaje) {
+        jdbc.sql("UPDATE viaje SET eliminando_recuerdos=true WHERE id=:viaje AND usuario_id=:usuario")
+                .param("viaje",viaje).param("usuario",usuario).update();
+    }
+
+    public void marcarEliminado(UUID usuario, UUID viaje) {
+        jdbc.sql("""
+                UPDATE viaje SET eliminado_en=now(), eliminando_recuerdos=false,
+                    actualizado_en=now(), revision=revision+1
+                WHERE id=:viaje AND usuario_id=:usuario AND eliminado_en IS NULL
+                """).param("viaje",viaje).param("usuario",usuario).update();
+    }
+
+    public record EstadoEliminacion(long revision, boolean eliminado, boolean eliminandoRecuerdos) {}
+
     private ResumenViajeDto leerResumen(
             ResultSet rs
     ) throws SQLException {
@@ -294,7 +330,7 @@ public class ViajeRepository {
                         "actualizado_en",
                         OffsetDateTime.class
                 ).toInstant(),
-                rs.getLong("revision")
+                rs.getLong("revision"), rs.getBoolean("eliminando_recuerdos")
         );
     }
 

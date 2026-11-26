@@ -1,0 +1,59 @@
+.mis-recuerdos { max-width: 1120px; margin: 0 auto; }
+.mis-recuerdos h1 { overflow-wrap: anywhere; }
+.mis-recuerdos h1:focus { outline: none; }
+.recuerdos-herramientas { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 24px 0; }
+.recuerdos-acciones { display: flex; flex-wrap: wrap; gap: 10px; }
+.recuerdos-albumes > li { display: flex; flex-direction: column; min-width: 0; }
+.recuerdos-albumes .album-tarjeta { height: auto; flex: 1; }
+.album-borrar { align-self: flex-end; margin-top: 10px; font-size: .8rem; }
+.recuerdo-privado { color: #577064; font-size: .78rem; }
+.recuerdos-albumes, .recuerdos-galeria { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; list-style: none; padding: 0; }
+.album-tarjeta { display: block; width: 100%; height: 100%; padding: 0; text-align: left; overflow: hidden; background: white; border: 1px solid #dfe6e2; border-radius: 22px; transition: box-shadow .15s,transform .15s; }
+.album-tarjeta:hover { transform: translateY(-2px); box-shadow: 0 10px 28px #183d3010; }
+.album-portada { display: grid; place-items: center; aspect-ratio: 16/10; background: linear-gradient(135deg,#e2eeea,#f1f3ee); color: #4c8371; overflow: hidden; }
+.album-portada > .icono { width: 56px; height: 56px; opacity: .65; }
+.album-portada img { width: 100%; height: 100%; object-fit: cover; }
+.album-descripcion { padding: 20px; }
+.album-descripcion h2 { font-size: 1.05rem; line-height: 1.4; margin: 0 0 12px; overflow-wrap: anywhere; }
+.album-descripcion p { color: #4f665a; font-size: .86rem; margin: 12px 0 8px; }
+.album-descripcion > span:last-child { color: #768178; font-size: .75rem; }
+.etiqueta-viaje { display: inline-block; max-width: 100%; padding: 6px 10px; border-radius: 8px; background: #edf5f1; color: #27644f; font-size: .74rem; font-weight: 550; overflow-wrap: anywhere; }
+.recuerdo-viaje { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 18px 0; }
+.recuerdo-viaje > span:last-child { font-size: .8rem; color: #66756c; }
+.recuerdo-subida { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; padding: 24px; margin: 24px 0 30px; border: 1px solid #d8e5de; border-radius: 22px; background: white; }
+.recuerdo-subida > div { flex: 1 1 100%; }
+.recuerdo-subida h2 { margin: 0 0 10px; font-size: 1.1rem; }
+.recuerdo-subida p { color: #617268; font-size: .8rem; line-height: 1.6; margin: 4px 0; }
+.recuerdo-selector { display: grid; gap: 9px; flex: 1 1 260px; min-width: 0; font-size: .8rem; font-weight: 600; }
+.recuerdo-selector input { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 9px; border: 1px dashed #b9cfc4; border-radius: 10px; background: #f6faf8; font: inherit; font-weight: 400; }
+.recuerdo-selector input::file-selector-button { padding: 8px 12px; margin-right: 9px; border: 0; border-radius: 8px; color: #23644f; background: #e4f0e9; cursor: pointer; }
+.recuerdo-subida .recuerdo-seleccionada { flex-basis: 100%; overflow-wrap: anywhere; }
+.recuerdos-vacio { display: grid; justify-items: center; text-align: center; gap: 14px; padding: 55px 24px; border: 1px dashed #cfddd5; border-radius: 24px; background: #f9fbf9; }
+.recuerdos-vacio > .icono { width: 45px; height: 45px; color: #769786; }
+.recuerdos-vacio h2 { font-size: 1.25rem; margin: 0; }.recuerdos-vacio p { color: #68776d; line-height: 1.65; max-width: 450px; margin: 0; }
+.foto-miniatura { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; overflow: hidden; border: 1px solid #dce5df; border-radius: 17px; background: white; text-align: left; }
+.foto-miniatura img { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #e9f0ec; }
+.foto-miniatura > span:last-child { padding: 13px 15px; font-size: .8rem; color: #3d5548; overflow-wrap: anywhere; }
+.recuerdo-sin-imagen { display: grid; place-items: center; min-height: 130px; background: #f2f4f2; font-size: .8rem; color: #6b736d; }
+.recuerdos-error, .recuerdos-confirmacion { padding: 15px 18px; margin: 20px 0; border: 1px solid #edc9c2; border-radius: 13px; background: #fff5f2; color: #8b3e30; font-size: .84rem; line-height: 1.6; }
+.recuerdos-confirmacion { border-color: #c0ddce; background: #eef7f1; color: #276447; }
+.recuerdos-carga { padding: 35px; color: #607368; }
+.recuerdos-pendientes { display: grid; gap: 12px; margin-bottom: 24px; }
+.recuerdos-pendientes > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 17px; border: 1px solid #e8d5aa; border-radius: 13px; background: #fffaf0; font-size: .8rem; }
+.recuerdos-pendientes p { margin: 7px 0; line-height: 1.5; color: #795b29; }
+.recuerdo-visor, .recuerdo-confirmacion { box-sizing: border-box; border: 1px solid #dce6df; border-radius: 22px; padding: 22px; max-width: min(960px,calc(100vw - 28px)); max-height: calc(100dvh - 30px); background: #fafcfb; color: #233d30; }
+.recuerdo-visor { width: 960px; }.recuerdo-confirmacion { width: 460px; }
+.recuerdo-visor::backdrop, .recuerdo-confirmacion::backdrop { background: #18251ee0; backdrop-filter: blur(4px); }
+.visor-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+.visor-cabecera h2 { font-size: 1.03rem; overflow-wrap: anywhere; }
+.visor-imagen { display: grid; place-items: center; min-height: 200px; background: #18241d; color: white; border-radius: 13px; overflow: hidden; }
+.visor-imagen img { display: block; width: 100%; max-height: 65dvh; object-fit: contain; }
+.visor-imagen p { padding: 25px; text-align: center; line-height: 1.5; }
+.visor-acciones { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 17px; }
+.visor-acciones .boton { min-height: 40px; padding: 9px 15px; font-size: .8rem; }
+.recuerdo-peligro { color: #a13b2c; margin-left: auto; }.recuerdo-borrar { background: #a44032; color: white; }
+.recuerdo-confirmacion h2 { margin: 0 0 18px; font-size: 1.3rem; }.recuerdo-confirmacion p { font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
+.recuerdo-mensaje { min-height: 20px; font-size: .8rem; color: #456c57; }
+.mis-recuerdos :is(button,input):focus-visible, .recuerdo-visor button:focus-visible, .recuerdo-confirmacion button:focus-visible { outline: 3px solid #579d83; outline-offset: 3px; }
+@media (max-width: 800px) { .recuerdos-albumes,.recuerdos-galeria { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; } }
+@media (max-width: 480px) { .recuerdos-albumes { grid-template-columns: 1fr; }.recuerdo-subida { padding: 18px; }.recuerdo-subida > .boton { width: 100%; }.recuerdo-visor { padding: 14px; }.visor-acciones .boton { flex: 1 1 40%; }.recuerdo-peligro { margin-left: 0; }.recuerdos-herramientas { flex-wrap: wrap; } }
