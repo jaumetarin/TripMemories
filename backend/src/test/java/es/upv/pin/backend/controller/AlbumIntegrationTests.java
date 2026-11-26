@@ -432,4 +432,137 @@ class AlbumIntegrationTests extends PostgresTest {
         assertEquals(1,albumes.numeroFotos(album));
         assertEquals(bytes,albumes.bytesUsados(propietario.getId()));
     }
+
+    @Test void borrarAlbumDuranteSubidaAntiguaNoDejaOriginalHuerfano() throws Exception {
+        comprobarBorradoDuranteSubidaAntigua(false,"/original");
+    }
+
+    @Test void borrarAlbumDuranteSubidaAntiguaNoDejaMiniaturaHuerfana() throws Exception {
+        comprobarBorradoDuranteSubidaAntigua(false,"/miniatura");
+    }
+
+    @Test void borrarViajeConRecuerdosDuranteSubidaAntiguaNoDejaArchivosHuerfanos() throws Exception {
+        comprobarBorradoDuranteSubidaAntigua(true,"/original");
+    }
+
+    @Test void borrarAlbumEnCursoNoConfirmaNiConservaUnaSubidaAntigua() throws Exception {
+        comprobarBorradoEnCursoDuranteSubidaAntigua("album");
+    }
+
+    @Test void borrarViajeEnCursoNoConfirmaNiConservaUnaSubidaAntigua() throws Exception {
+        comprobarBorradoEnCursoDuranteSubidaAntigua("viaje");
+    }
+
+    @Test void borrarFotoEnCursoNoConservaUnaSubidaAntigua() throws Exception {
+        comprobarBorradoEnCursoDuranteSubidaAntigua("foto");
+    }
+
+    private void comprobarBorradoDuranteSubidaAntigua(boolean borrarViaje, String pausaEn) throws Exception {
+        var escrituraPausada = new CountDownLatch(1);
+        var continuarEscritura = new CountDownLatch(1);
+        doAnswer(invocacion -> {
+            if (((String) invocacion.getArgument(0)).endsWith(pausaEn)) {
+                escrituraPausada.countDown();
+                if (!continuarEscritura.await(30, TimeUnit.SECONDS))
+                    throw new IllegalStateException("La subida tardó demasiado en reanudarse.");
+            }
+            return invocacion.callRealMethod();
+        }).when(archivos).guardar(anyString(),any(byte[].class));
+
+        UUID fotoId = null;
+        try (var hilos = Executors.newVirtualThreadPerTaskExecutor()) {
+            var subida = hilos.submit(() -> subir(album,imagen).andReturn().getResponse().getStatus());
+            try {
+                assertTrue(escrituraPausada.await(20,TimeUnit.SECONDS));
+                fotoId = jdbc.sql("SELECT id FROM archivo_multimedia WHERE album_id=:album AND estado='PENDIENTE'")
+                        .param("album",album).query(UUID.class).single();
+                // Simula una escritura aún activa que superó el plazo de recuperación de diez minutos.
+                jdbc.sql("UPDATE archivo_multimedia SET subido_en=now()-interval '11 minutes' WHERE id=:id")
+                        .param("id",fotoId).update();
+                if (borrarViaje) eliminarViaje(true).andExpect(status().isNoContent());
+                else mvc.perform(delete("/api/albumes/"+album).with(user(propietario)).with(csrf()))
+                        .andExpect(status().isNoContent());
+            } finally {
+                continuarEscritura.countDown();
+            }
+            assertEquals(503,subida.get(20,TimeUnit.SECONDS));
+            assertTrue(albumes.fotoPropia(propietario.getId(),fotoId).isEmpty());
+            assertEquals(0,albumes.bytesUsados(propietario.getId()));
+            assertFalse(Files.exists(CARPETA.resolve(fotoId.toString())),
+                    "La subida debe limpiar los archivos que escribió tras eliminarse su registro.");
+        } finally {
+            if (fotoId != null) {
+                var carpetaFoto = CARPETA.resolve(fotoId.toString());
+                Files.deleteIfExists(carpetaFoto.resolve("original"));
+                Files.deleteIfExists(carpetaFoto.resolve("miniatura"));
+                Files.deleteIfExists(carpetaFoto);
+            }
+        }
+    }
+
+    private void comprobarBorradoEnCursoDuranteSubidaAntigua(String tipoBorrado) throws Exception {
+        var escrituraPausada = new CountDownLatch(1);
+        var continuarEscritura = new CountDownLatch(1);
+        var borradoPausado = new CountDownLatch(1);
+        var continuarBorrado = new CountDownLatch(1);
+        var primeraLimpieza = new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(invocacion -> {
+            escrituraPausada.countDown();
+            if (!continuarEscritura.await(30,TimeUnit.SECONDS))
+                throw new IllegalStateException("La subida tardó demasiado en reanudarse.");
+            return invocacion.callRealMethod();
+        }).when(archivos).guardar(endsWith("/original"),any(byte[].class));
+        doAnswer(invocacion -> {
+            var resultado = invocacion.callRealMethod();
+            if (((String) invocacion.getArgument(0)).endsWith("/original")
+                    && primeraLimpieza.compareAndSet(false,true)) {
+                borradoPausado.countDown();
+                if (!continuarBorrado.await(30,TimeUnit.SECONDS))
+                    throw new IllegalStateException("El borrado tardó demasiado en reanudarse.");
+            }
+            return resultado;
+        }).when(archivos).borrar(anyString());
+
+        UUID fotoId = null;
+        try (var hilos = Executors.newVirtualThreadPerTaskExecutor()) {
+            var subida = hilos.submit(() -> subir(album,imagen).andReturn().getResponse().getStatus());
+            try {
+                assertTrue(escrituraPausada.await(20,TimeUnit.SECONDS));
+                fotoId = jdbc.sql("SELECT id FROM archivo_multimedia WHERE album_id=:album AND estado='PENDIENTE'")
+                        .param("album",album).query(UUID.class).single();
+                jdbc.sql("UPDATE archivo_multimedia SET subido_en=now()-interval '11 minutes' WHERE id=:id")
+                        .param("id",fotoId).update();
+                UUID idFoto = fotoId;
+                var borrado = hilos.submit(() -> {
+                    if (tipoBorrado.equals("viaje")) return eliminarViaje(true).andReturn().getResponse().getStatus();
+                    if (tipoBorrado.equals("foto")) return mvc.perform(delete("/api/fotos/"+idFoto)
+                            .with(user(propietario)).with(csrf())).andReturn().getResponse().getStatus();
+                    return mvc.perform(delete("/api/albumes/"+album).with(user(propietario)).with(csrf()))
+                            .andReturn().getResponse().getStatus();
+                });
+                try {
+                    assertTrue(borradoPausado.await(20,TimeUnit.SECONDS));
+                    continuarEscritura.countDown();
+                    assertEquals(503,subida.get(20,TimeUnit.SECONDS));
+                } finally {
+                    continuarEscritura.countDown();
+                    continuarBorrado.countDown();
+                }
+                assertEquals(204,borrado.get(20,TimeUnit.SECONDS));
+                assertTrue(albumes.fotoPropia(propietario.getId(),fotoId).isEmpty());
+                assertEquals(0,albumes.bytesUsados(propietario.getId()));
+                assertFalse(Files.exists(CARPETA.resolve(fotoId.toString())));
+            } finally {
+                continuarEscritura.countDown();
+                continuarBorrado.countDown();
+            }
+        } finally {
+            if (fotoId != null) {
+                var carpetaFoto = CARPETA.resolve(fotoId.toString());
+                Files.deleteIfExists(carpetaFoto.resolve("original"));
+                Files.deleteIfExists(carpetaFoto.resolve("miniatura"));
+                Files.deleteIfExists(carpetaFoto);
+            }
+        }
+    }
 }
