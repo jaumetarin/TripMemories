@@ -13,7 +13,8 @@ import static org.mockito.ArgumentMatchers.*;
 class SeleccionLugaresServiceTests {
     private final PreparacionCandidatosService preparacion = mock(PreparacionCandidatosService.class);
     private final ConfiguracionItinerarioService configuraciones = new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService());
-    private final CatalogoLugaresService servicio = new CatalogoLugaresService(preparacion, configuraciones, new MuestraLugaresService());
+    private final LimiteProveedorService limite = mock(LimiteProveedorService.class);
+    private final CatalogoLugaresService servicio = new CatalogoLugaresService(preparacion, configuraciones, new MuestraLugaresService(), limite);
     private final MockHttpSession sesion = new MockHttpSession();
     private final LugarDto museo = lugar("museo", "Museo del Prado", CategoriaTuristica.ARTE_MUSEOS);
     private final LugarDto parque = lugar("parque", "Parque del Retiro", CategoriaTuristica.NATURALEZA_PARQUES);
@@ -30,6 +31,24 @@ class SeleccionLugaresServiceTests {
     private void cargar() {
         when(preparacion.muestraInicial(any())).thenReturn(List.of(museo, parque));
         servicio.buscar(new BusquedaLugaresDto(viaje(List.of()), "", false), sesion);
+    }
+
+    @Test void limiteExternoSoloCuentaCacheMissYBloqueaProveedor() {
+        var usuario = mock(UsuarioAutenticado.class);
+        var id = java.util.UUID.randomUUID();
+        when(usuario.getId()).thenReturn(id);
+        var contexto = org.springframework.security.core.context.SecurityContextHolder.getContext();
+        contexto.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(usuario, null));
+        try {
+            cargar();
+            servicio.buscar(new BusquedaLugaresDto(viaje(List.of()), "Prado", false), sesion);
+            verify(limite, times(1)).reservar(id, "lugares", 20);
+            when(limite.reservar(id, "lugares", 20)).thenReturn(60L);
+            var error = assertThrows(es.upv.pin.backend.exception.ControlGeneracionException.class,
+                    () -> servicio.buscar(new BusquedaLugaresDto(viaje(List.of()), "Reina", true), sesion));
+            assertEquals(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, error.getEstado());
+            verify(preparacion, never()).buscar(any(), any());
+        } finally { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
     }
 
     @Test void unEstadoVigenteSinDuplicarYCambioYRetirada() {

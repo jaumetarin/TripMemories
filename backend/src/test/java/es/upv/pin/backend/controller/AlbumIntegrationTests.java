@@ -411,7 +411,8 @@ class AlbumIntegrationTests extends PostgresTest {
         subir(album,imagen).andExpect(status().isConflict());
         UUID segundoViaje = viaje(propietario.getId());
         UUID segundoAlbum = albumes.listar(propietario.getId()).stream().filter(a -> a.viajeId().equals(segundoViaje)).findFirst().orElseThrow().id();
-        doReturn(new LimitesDto(normal.formatos(),normal.maxArchivoBytes(),100,foto.bytesOriginal()+foto.bytesMiniatura()+1,normal.maxPixeles())).when(validador).limites();
+        doReturn(normal).when(validador).limites();
+        jdbc.sql("UPDATE archivo_multimedia SET bytes_original=:bytes WHERE id=:id").param("bytes",Plan.FREE.cuotaBytes()).param("id",foto.id()).update();
         subir(segundoAlbum,imagen).andExpect(status().isConflict());
         assertEquals(0,albumes.numeroFotos(segundoAlbum));
     }
@@ -419,7 +420,9 @@ class AlbumIntegrationTests extends PostgresTest {
     @Test void dosSubidasSimultaneasNoPuedenSuperarLaCuota() throws Exception {
         var normal = validador.limites();
         long bytes = validador.preparar(new MockMultipartFile("foto","foto.png","image/png",imagen)).bytesTotales();
-        doReturn(new LimitesDto(normal.formatos(),normal.maxArchivoBytes(),100,bytes+bytes/2,normal.maxPixeles())).when(validador).limites();
+        var anterior = subir();
+        jdbc.sql("UPDATE archivo_multimedia SET bytes_original=:bytes WHERE id=:id")
+                .param("bytes",Plan.FREE.cuotaBytes()-bytes-bytes/2-anterior.bytesMiniatura()).param("id",anterior.id()).update();
         try (var hilos = Executors.newVirtualThreadPerTaskExecutor()) {
             var resultados = hilos.invokeAll(List.of(
                     () -> subir(album,imagen).andReturn().getResponse().getStatus(),
@@ -429,8 +432,25 @@ class AlbumIntegrationTests extends PostgresTest {
             estados.sort(Integer::compareTo);
             assertEquals(List.of(201,409),estados);
         }
-        assertEquals(1,albumes.numeroFotos(album));
-        assertEquals(bytes,albumes.bytesUsados(propietario.getId()));
+        assertEquals(2,albumes.numeroFotos(album));
+        assertTrue(albumes.bytesUsados(propietario.getId()) <= Plan.FREE.cuotaBytes());
+    }
+
+    @Test void descensoConservaFotosYBloqueaNuevasHastaLiberarEspacio() throws Exception {
+        jdbc.sql("UPDATE usuario SET plan='PREMIUM' WHERE id=:id").param("id",propietario.getId()).update();
+        var foto = subir();
+        jdbc.sql("UPDATE archivo_multimedia SET bytes_original=:bytes WHERE id=:id")
+                .param("bytes",Plan.FREE.cuotaBytes()).param("id",foto.id()).update();
+        mvc.perform(post("/api/planes/demo/cambiar").with(user(propietario)).with(csrf())
+                .contentType("application/json").content("{\"plan\":\"FREE\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/albumes/"+album).with(user(propietario))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.limites.cuotaBytes").value(Plan.FREE.cuotaBytes()))
+                .andExpect(jsonPath("$.fotos.length()").value(1));
+        subir(album,imagen).andExpect(status().isConflict());
+        assertTrue(albumes.fotoPropia(propietario.getId(),foto.id()).isPresent());
+        mvc.perform(delete("/api/fotos/"+foto.id()).with(user(propietario)).with(csrf())).andExpect(status().isNoContent());
+        subir(album,imagen).andExpect(status().isCreated());
     }
 
     @Test void borrarAlbumDuranteSubidaAntiguaNoDejaOriginalHuerfano() throws Exception {

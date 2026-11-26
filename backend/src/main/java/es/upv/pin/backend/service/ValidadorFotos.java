@@ -2,6 +2,7 @@ package es.upv.pin.backend.service;
 
 import es.upv.pin.backend.dto.ContenidoAlbumDto.LimitesDto;
 import es.upv.pin.backend.model.FotoPreparada;
+import es.upv.pin.backend.model.Plan;
 import java.awt.Color;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -19,11 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class ValidadorFotos {
     private final LimitesDto limites;
     public ValidadorFotos(@Value("${fotos.max-archivo-bytes}") long maxArchivo,
-            @Value("${fotos.max-por-album}") int maxFotos, @Value("${fotos.cuota-bytes}") long cuota,
+            @Value("${fotos.max-por-album}") int maxFotos,
             @Value("${fotos.max-pixeles}") long pixeles) {
-        if (maxArchivo < 1 || maxArchivo > 100 * 1024 * 1024 || maxFotos < 1 || cuota < 1 || pixeles < 1 || pixeles > 40000000)
+        if (maxArchivo < 1 || maxArchivo > 100 * 1024 * 1024 || maxFotos < 1 || pixeles < 1 || pixeles > 40000000)
             throw new IllegalArgumentException("Límites de fotos no válidos.");
-        limites = new LimitesDto(List.of("JPEG", "PNG"), maxArchivo, maxFotos, cuota, pixeles);
+        limites = new LimitesDto(List.of("JPEG", "PNG"), maxArchivo, maxFotos, Plan.FREE.cuotaBytes(), pixeles);
     }
     public LimitesDto limites() { return limites; }
     public FotoPreparada preparar(MultipartFile archivo) {

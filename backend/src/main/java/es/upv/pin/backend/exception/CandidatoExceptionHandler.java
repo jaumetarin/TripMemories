@@ -7,13 +7,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import es.upv.pin.backend.controller.CandidatoController;
-import es.upv.pin.backend.controller.PreparacionCandidatosController;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
-@RestControllerAdvice(assignableTypes = {CandidatoController.class, PreparacionCandidatosController.class,
-        es.upv.pin.backend.controller.EvaluacionCandidatosController.class, es.upv.pin.backend.controller.SeleccionLugaresController.class})
+@RestControllerAdvice(assignableTypes = es.upv.pin.backend.controller.SeleccionLugaresController.class)
 public class CandidatoExceptionHandler {
+
+    @ExceptionHandler(ControlGeneracionException.class)
+    public ResponseEntity<Map<String, String>> limite(ControlGeneracionException error) {
+        return ResponseEntity.status(error.getEstado()).header("Retry-After", Long.toString(error.getEsperaSegundos()))
+                .cacheControl(org.springframework.http.CacheControl.noStore()).body(Map.of("mensaje", error.getMessage()));
+    }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, String>> formatoInvalido() {

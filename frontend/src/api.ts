@@ -304,26 +304,6 @@ export function cambiarSeleccionLugar(configuracion: ConfiguracionItinerario, lu
   return consultarLugares('seleccion', { configuracion, lugarId, estado }, signal)
 }
 
-export async function prepararCandidatos(
-  configuracion: ConfiguracionItinerario, signal: AbortSignal
-): Promise<Lugar[]> {
-  const respuesta = await peticionApi('/api/candidatos/preparar', {
-    method: 'POST',
-    // Hasta seis consultas independientes, cada una con timeout en el backend.
-    signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(configuracion),
-  })
-  const datos: unknown = await respuesta.json().catch(() => null)
-  if (!respuesta.ok) {
-    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
-      ? datos.mensaje : 'No se han podido buscar los lugares. Comprueba la conexión con el backend y vuelve a intentarlo.')
-  }
-  if (!Array.isArray(datos) || !datos.every(esLugar)) {
-    throw new Error('El servidor ha devuelto una lista de lugares no válida.')
-  }
-  return datos
-}
 function esAlojamiento(valor: unknown): valor is Alojamiento {
   return esObjeto(valor)
     && typeof valor.id === 'string' && valor.id.trim().length > 0
@@ -542,29 +522,6 @@ export function esCandidatoEvaluado(valor: unknown): valor is CandidatoEvaluado 
     && esTextoONulo(valor.horario) && esTextoONulo(valor.horarioFuente)
 }
 
-export async function evaluarCandidatos(
-  configuracion: ConfiguracionItinerario, signal: AbortSignal
-): Promise<EvaluacionCandidatos> {
-  const respuesta = await peticionApi('/api/candidatos/evaluar', {
-    method: 'POST',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(configuracion),
-  })
-  const datos: unknown = await respuesta.json().catch(() => null)
-  if (!respuesta.ok) {
-    throw new Error(esObjeto(datos) && typeof datos.mensaje === 'string'
-      ? datos.mensaje : 'No se han podido evaluar los lugares. Comprueba la conexión y vuelve a intentarlo.')
-  }
-  if (!esObjeto(datos) || !Array.isArray(datos.candidatos) || !datos.candidatos.every(esCandidatoEvaluado)
-    || typeof datos.fallback !== 'boolean' || !esListaDeTextos(datos.advertencias)
-    || typeof datos.minutosDisponibles !== 'number' || !Number.isFinite(datos.minutosDisponibles)
-    || typeof datos.minutosInvestigados !== 'number' || !Number.isFinite(datos.minutosInvestigados)) {
-    throw new Error('El servidor ha devuelto una evaluación de lugares no válida.')
-  }
-  return datos as unknown as EvaluacionCandidatos
-}
-
 function esOpcionComida(valor: unknown): valor is OpcionComida {
   return esObjeto(valor) && typeof valor.id === 'string' && typeof valor.nombre === 'string'
     && (valor.latitud === null || typeof valor.latitud === 'number' && Number.isFinite(valor.latitud))
@@ -612,6 +569,9 @@ export interface ConsumoGeneracion {
   restantes: number
   reinicio: string
   enCurso: boolean
+  limiteMensual: number
+  restantesMensuales: number
+  reinicioMensual: string
 }
 
 export async function obtenerConsumoGeneracion(signal: AbortSignal): Promise<ConsumoGeneracion> {
@@ -623,7 +583,11 @@ export async function obtenerConsumoGeneracion(signal: AbortSignal): Promise<Con
   if (!respuesta.ok || !esObjeto(datos) || typeof datos.limite !== 'number' || !Number.isInteger(datos.limite)
     || datos.limite < 1 || typeof datos.restantes !== 'number' || !Number.isInteger(datos.restantes)
     || datos.restantes < 0 || datos.restantes > datos.limite || typeof datos.enCurso !== 'boolean'
-    || typeof datos.reinicio !== 'string' || !Number.isFinite(Date.parse(datos.reinicio))) {
+    || typeof datos.reinicio !== 'string' || !Number.isFinite(Date.parse(datos.reinicio))
+    || typeof datos.limiteMensual !== 'number' || !Number.isInteger(datos.limiteMensual) || datos.limiteMensual < 1
+    || typeof datos.restantesMensuales !== 'number' || !Number.isInteger(datos.restantesMensuales)
+    || datos.restantesMensuales < 0 || datos.restantesMensuales > datos.limiteMensual
+    || typeof datos.reinicioMensual !== 'string' || !Number.isFinite(Date.parse(datos.reinicioMensual))) {
     throw new Error('No hemos podido consultar las generaciones disponibles. Vuelve a intentarlo.')
   }
   return datos as unknown as ConsumoGeneracion

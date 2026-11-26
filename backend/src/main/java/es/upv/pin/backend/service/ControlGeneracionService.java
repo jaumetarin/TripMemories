@@ -22,43 +22,30 @@ public class ControlGeneracionService {
     private static final String ATRIBUTO_SESION = ControlGeneracionService.class.getName();
     private final GeneracionItinerarioService generacion;
     private final ConfiguracionItinerarioService configuraciones;
-    private final int limite;
-    private final Duration ventana;
+    private final CuotaGeneracionService cuota;
     private final Duration vigencia;
-    private final Clock reloj;
+    private final Clock reloj = Clock.systemUTC();
 
-    @Autowired
     public ControlGeneracionService(GeneracionItinerarioService generacion,
-            ConfiguracionItinerarioService configuraciones,
-            @Value("${itinerarios.consumo.max-generaciones:3}") int limite,
-            @Value("${itinerarios.consumo.ventana-minutos:60}") int ventanaMinutos,
+            ConfiguracionItinerarioService configuraciones, CuotaGeneracionService cuota,
             @Value("${itinerarios.consumo.vigencia-minutos:15}") int vigenciaMinutos) {
-        this(generacion, configuraciones, limite, ventanaMinutos, vigenciaMinutos, Clock.systemUTC());
-    }
-
-    ControlGeneracionService(GeneracionItinerarioService generacion,
-            ConfiguracionItinerarioService configuraciones, int limite,
-            int ventanaMinutos, int vigenciaMinutos, Clock reloj) {
-        if (limite < 1 || ventanaMinutos < 1 || vigenciaMinutos < 1)
-            throw new IllegalArgumentException("Los límites de generación deben ser positivos.");
         this.generacion = generacion;
         this.configuraciones = configuraciones;
-        this.limite = limite;
-        this.ventana = Duration.ofMinutes(ventanaMinutos);
+        this.cuota = cuota;
+        if (vigenciaMinutos < 1) throw new IllegalArgumentException("La vigencia debe ser positiva.");
         this.vigencia = Duration.ofMinutes(vigenciaMinutos);
-        this.reloj = reloj;
     }
 
-    public ConsumoGeneracionDto consultar(HttpSession sesion) {
+    public ConsumoGeneracionDto consultar(UUID usuario, HttpSession sesion) {
         EstadoSesion estado = estadoDe(sesion);
+        var consumo = cuota.consultar(usuario);
         synchronized (estado) {
-            actualizar(estado, reloj.instant());
-            return new ConsumoGeneracionDto(limite, limite - estado.usadas,
-                    estado.inicioPeriodo.plus(ventana), estado.enCurso);
+            return new ConsumoGeneracionDto(consumo.limite(), consumo.restantes(), consumo.reinicio(), estado.enCurso,
+                    consumo.limiteMensual(), consumo.restantesMensuales(), consumo.reinicioMensual());
         }
     }
 
-    public Resultado generar(ConfiguracionItinerarioDto entrada, HttpSession sesion) {
+    public Resultado generar(ConfiguracionItinerarioDto entrada, UUID usuario, HttpSession sesion) {
         // La validación es local. Un formulario inválido no consume una generación.
         ConfiguracionItinerarioDto configuracion = normalizar(configuraciones.validar(entrada));
         EstadoSesion estado = estadoDe(sesion);
@@ -76,12 +63,8 @@ public class ControlGeneracionService {
             }
             if (estado.enCurso) throw new ControlGeneracionException(HttpStatus.CONFLICT,
                     "Ya estamos preparando un itinerario en esta sesión. Espera a que termine y vuelve a intentarlo.", 2);
-            if (estado.usadas >= limite) throw new ControlGeneracionException(HttpStatus.TOO_MANY_REQUESTS,
-                    "Has alcanzado el límite de generaciones de esta sesión. Espera a que se renueve o consulta el último itinerario vigente sin cambiar sus datos.",
-                    Math.max(1, Duration.between(ahora, estado.inicioPeriodo.plus(ventana)).toSeconds() + 1));
-            // La reserva es atómica: dos peticiones no pueden iniciar el mismo trabajo.
+            cuota.reservar(usuario);
             estado.enCurso = true;
-            estado.usadas++;
         }
 
         try {
@@ -151,10 +134,6 @@ public class ControlGeneracionService {
     }
 
     private void actualizar(EstadoSesion estado, Instant ahora) {
-        if (estado.inicioPeriodo == null || !ahora.isBefore(estado.inicioPeriodo.plus(ventana))) {
-            estado.inicioPeriodo = ahora;
-            estado.usadas = 0;
-        }
         if (estado.vigenteHasta != null && !ahora.isBefore(estado.vigenteHasta)) {
             estado.configuracion = null;
             estado.resultado = null;
@@ -191,8 +170,6 @@ public class ControlGeneracionService {
     ) {}
 
     private static class EstadoSesion {
-        private Instant inicioPeriodo;
-        private int usadas;
         private boolean enCurso;
         private ConfiguracionItinerarioDto configuracion;
         private ItinerarioGeneradoDto resultado;
