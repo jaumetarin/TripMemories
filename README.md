@@ -1665,3 +1665,45 @@ En móvil la barra permanece en el flujo de la página para no tapar las tarjeta
 Se conserva el día seleccionado al actualizar el recorrido, se anuncian los cambios
 y se devuelve el foco a la acción editada o al botón para deshacer. La interfaz
 mantiene la alternativa de mover mediante teclado y funciona en pantalla móvil.
+
+### UT28 · Mostrar los trazados del recorrido
+
+El mapa del día dibuja los caminos peatonales de los bloques `TRASLADO` presentes
+en el plan, incluidos alojamiento y restaurantes seleccionados. No añade la vuelta
+al alojamiento ni conexiones que el Planner no haya programado. Las geometrías se
+piden a Directions de OpenRouteService (`foot-walking`, GeoJSON, sin instrucciones),
+usando la misma `ORS_API_KEY` del backend. No se consulta Gemini ni Geoapify.
+
+Se cargan cuando el mapa del día es visible (en móvil, al abrir Mapa). La lista y
+los marcadores siguen disponibles mientras se carga o si falla el proveedor. Un
+aviso identifica los tramos sin geometría y ofrece reintentar; no se inventa una
+línea recta como sustituto. Las coordenadas GeoJSON son longitud/latitud y solo se
+invierten al presentarlas en Leaflet. No se modifican las horas del plan al dibujar.
+
+El servidor resuelve los puntos desde el plan autorizado: no acepta una lista de
+coordenadas arbitrarias del navegador. Los endpoints POST exigen sesión y CSRF:
+
+- `/api/itinerarios/{generacionId}/trazados`: cuerpo `{ "dia": "2027-01-01" }`.
+- `/api/viajes/{viajeId}/trazados`: cuerpo con `dia` y `revision`.
+- `/api/viajes/{viajeId}/edicion/{propuestaId}/trazados`: cuerpo con `dia` y `revision`.
+
+Los viajes y borradores comprueban propiedad y revisión antes de consultar ORS y
+de conservar los resultados. Las propuestas obsoletas se rechazan. Cada consulta
+dispone de 15 segundos y como máximo hay tres peticiones externas simultáneas en
+el servicio; puede devolverse geometría parcial. Las peticiones equivalentes de
+una sesión se comparten y se conservan hasta 256 geometrías correctas en memoria.
+Los fallos no se cachean como éxitos.
+
+El campo opcional `trazados` se guarda en el JSON existente `datos_generacion`, sin
+tablas nuevas. Los viajes antiguos sin ese campo siguen siendo compatibles. Cargar
+un día guardado enriquece únicamente ese caché derivado, con una actualización
+atómica que no cambia actividades, revisión ni fecha del último guardado. En un
+resultado nuevo se conserva en sesión hasta guardar el viaje; en edición se queda
+en el borrador hasta Guardar cambios. Descartar conserva el itinerario guardado.
+
+La clave de cada trazado incluye sentido, identificadores, coordenadas y perfil.
+Al editar se conservan solo los tramos vigentes. El frontend retira inmediatamente
+las líneas de la versión anterior, cancela la solicitud anterior e ignora respuestas
+atrasadas. Las pruebas cubren GeoJSON inválido, errores parciales, deduplicación de
+peticiones, persistencia entre sesiones, permisos, revisiones y retirada de trazados
+después de eliminar actividades.

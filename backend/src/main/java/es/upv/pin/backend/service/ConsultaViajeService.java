@@ -157,7 +157,7 @@ public class ConsultaViajeService {
                     datos.candidatosEvaluados(),
                     datos.candidatosEnMatriz(),
                     datos.candidatos(),
-                    datos.evaluacionFallback(), datos.incidenciasEdicion()
+                    datos.evaluacionFallback(), datos.incidenciasEdicion(), datos.trazados()
             );
 
             return new ViajeGuardadoDto(

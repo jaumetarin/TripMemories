@@ -480,6 +480,111 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
                 .content("{\"revision\":1}")).andExpect(status().isOk()).andReturn();
         return json.readValue(respuesta.getResponse().getContentAsString(), EstadoEdicionDto.class);
     }
+
+    private void geometriaDisponible() {
+        doAnswer(i -> {
+            PuntoRutaDto origen = i.getArgument(0), destino = i.getArgument(1);
+            return new GeometriaTramoDto(List.of(List.of(origen.longitud(), origen.latitud()),
+                    List.of(destino.longitud(), destino.latitud())), "openrouteservice");
+        }).when(cliente).calcularGeometria(any(), any());
+    }
+    private TrazadosDiaDto trazados(String ruta, long revision) throws Exception {
+        var resultado = mvc.perform(post(ruta).session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(new SolicitudTrazadosDto(fecha, revision))))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store")).andReturn();
+        return json.readValue(resultado.getResponse().getContentAsString(), TrazadosDiaDto.class);
+    }
+
+    @Test void guardaTrazadosYLosRecuperaEnOtraSesionSinCambiarLaRevisionNiElPlan() throws Exception {
+        geometriaDisponible();
+        var antes = abrir();
+        var obtenidos = trazados("/api/viajes/" + viaje + "/trazados", 1);
+        assertEquals(2, obtenidos.tramos().size());
+        assertEquals(2, abrir().itinerario().trazados().size());
+        assertEquals(antes.itinerario().dias(), abrir().itinerario().dias());
+        assertEquals(1, abrir().resumen().revision());
+        assertEquals(1, versiones());
+        mvc.perform(post("/api/auth/logout").session(sesion).with(csrf())).andExpect(status().isOk());
+        sesion = entrar(correo);
+        assertEquals(obtenidos, trazados("/api/viajes/" + viaje + "/trazados", 1));
+        verify(cliente, times(2)).calcularGeometria(any(), any());
+    }
+
+    @Test void alEliminarUnaVisitaRetiraSusTrazadosYSoloPersisteElBorradorAlGuardar() throws Exception {
+        geometriaDisponible();
+        var original = trazados("/api/viajes/" + viaje + "/trazados", 1);
+        var anterior = abrir();
+        var inicial = iniciar();
+        var cambiado = cambiar(inicial, "/visitas/" + actividad(anterior, "a") + "/eliminar", new EliminarActividadDto(1L));
+        assertTrue(cambiado.propuesta().itinerario().trazados().isEmpty());
+        assertEquals(2, abrir().itinerario().trazados().size());
+        var actuales = trazados(base() + "/" + cambiado.propuesta().propuestaId() + "/trazados", 1);
+        assertEquals(1, actuales.tramos().size());
+        assertEquals("b", actuales.tramos().getFirst().destinoId());
+        assertTrue(original.tramos().stream().noneMatch(t -> t.clave().equals(actuales.tramos().getFirst().clave())));
+        guardar(cambiado, true).andExpect(status().isOk());
+        assertEquals(1, abrir().itinerario().trazados().size());
+        assertEquals(Set.of(actuales.tramos().getFirst().clave()), abrir().itinerario().trazados().keySet());
+    }
+
+    @Test void noConsultaGeometriasParaUnaPropuestaObsoletaOtroUsuarioONingunCsrf() throws Exception {
+        var inicial = iniciar();
+        var cambiado = cambiar(inicial, "/visitas/" + actividad(abrir(), "b") + "/eliminar", new EliminarActividadDto(1L));
+        var cuerpo = json.writeValueAsString(new SolicitudTrazadosDto(fecha, 1L));
+        mvc.perform(post(base() + "/" + inicial.propuesta().propuestaId() + "/trazados")
+                .session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(cuerpo)).andExpect(status().isConflict());
+        mvc.perform(post("/api/viajes/" + viaje + "/trazados").session(sesion)
+                .contentType(MediaType.APPLICATION_JSON).content(cuerpo)).andExpect(status().isForbidden());
+        var otro = entrar(crearUsuario() + "@example.test");
+        mvc.perform(post("/api/viajes/" + viaje + "/trazados").session(otro).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(cuerpo)).andExpect(status().isNotFound());
+        mvc.perform(post(base() + "/" + cambiado.propuesta().propuestaId() + "/trazados").session(otro).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(cuerpo)).andExpect(status().isNotFound());
+        verify(cliente, never()).calcularGeometria(any(), any());
+    }
+
+    @Test void geometriaNoDisponibleMantieneElPlanYPermiteReintentar() throws Exception {
+        var antes = abrir();
+        when(cliente.calcularGeometria(any(), any())).thenThrow(new IllegalStateException("Proveedor no disponible"));
+        var incompleto = trazados("/api/viajes/" + viaje + "/trazados", 1);
+        assertTrue(incompleto.tramos().stream().allMatch(t -> t.estado().equals("NO_DISPONIBLE") && t.geometria() == null));
+        assertEquals(antes.itinerario().dias(), abrir().itinerario().dias());
+        assertTrue(abrir().itinerario().trazados().isEmpty());
+        geometriaDisponible();
+        assertTrue(trazados("/api/viajes/" + viaje + "/trazados", 1).tramos().stream().allMatch(t -> t.estado().equals("DISPONIBLE")));
+    }
+
+    @Test void admiteUnViajeConElCampoOpcionalDeTrazadosNulo() throws Exception {
+        jdbc.sql("UPDATE itinerario SET datos_generacion=jsonb_set(datos_generacion,'{trazados}','null'::jsonb) WHERE viaje_id=:id")
+                .param("id", viaje).update();
+        assertTrue(abrir().itinerario().trazados().isEmpty());
+        geometriaDisponible();
+        trazados("/api/viajes/" + viaje + "/trazados", 1);
+        assertEquals(2, abrir().itinerario().trazados().size());
+    }
+
+    @Test void reordenarCambiaElSentidoDeLosTramosYNoReutilizaGeometriasInversas() throws Exception {
+        a = candidato("a", "Museo Alfa", "24/7", 39.471, -.371, CostLevel.FREE);
+        var bloques = plan.dias().getFirst().bloques().stream()
+                .map(bloque -> bloque.candidato() != null && bloque.candidato().lugar().id().equals("a")
+                        ? visita(a, 10, 10, 11, 10) : bloque).toList();
+        plan = new ItinerarioGeneradoDto(List.of(new DiaItinerarioDto(fecha, fecha.atTime(10, 0), fecha.atTime(18, 0), bloques)),
+                List.of(), false, 3, 3, List.of(a, b, c), false);
+        viaje = escritura.guardarNuevo(usuario, new GuardarViajeDto("Orden flexible"), config, plan);
+        geometriaDisponible();
+        var originales = trazados("/api/viajes/" + viaje + "/trazados", 1);
+        var anterior = abrir();
+        var cambio = cambiar(iniciar(), "/reordenar", new ReordenarActividadesDto(1L, fecha,
+                List.of(actividad(anterior, "b"), actividad(anterior, "a"))));
+        assertTrue(cambio.propuesta().puedeGuardar());
+        assertTrue(cambio.propuesta().itinerario().trazados().isEmpty());
+        var nuevos = trazados(base() + "/" + cambio.propuesta().propuestaId() + "/trazados", 1);
+        assertEquals(List.of("b", "a"), nuevos.tramos().stream().map(TrazadosDiaDto.TramoDto::destinoId).toList());
+        assertTrue(nuevos.tramos().stream().noneMatch(n -> originales.tramos().stream().anyMatch(o -> o.clave().equals(n.clave()))));
+        guardar(cambio, false).andExpect(status().isOk());
+        assertEquals(TrazadosService.disponibles(nuevos), abrir().itinerario().trazados());
+        verify(cliente, times(4)).calcularGeometria(any(), any());
+    }
     private EstadoEdicionDto cambiar(EstadoEdicionDto estado, String accion, Object cuerpo) throws Exception {
         var respuesta = mvc.perform(peticion(estado, accion, cuerpo)).andExpect(status().isOk()).andReturn();
         assertEquals("no-store", respuesta.getResponse().getHeader("Cache-Control"));

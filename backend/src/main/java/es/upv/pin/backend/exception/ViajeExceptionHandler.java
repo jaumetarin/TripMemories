@@ -2,6 +2,7 @@ package es.upv.pin.backend.exception;
 
 import es.upv.pin.backend.controller.ViajeController;
 import es.upv.pin.backend.controller.EdicionItinerarioController;
+import es.upv.pin.backend.controller.TrazadosController;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
-@RestControllerAdvice(assignableTypes = {ViajeController.class, EdicionItinerarioController.class})
+@RestControllerAdvice(assignableTypes = {ViajeController.class, EdicionItinerarioController.class, TrazadosController.class})
 public class ViajeExceptionHandler {
 
     @ExceptionHandler(RevisionViajeException.class)

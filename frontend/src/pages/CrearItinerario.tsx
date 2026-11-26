@@ -102,6 +102,7 @@ export function CrearItinerario({ onVolver, onVerViajes, viajeInicial }: CrearIt
   const [reintentoConsumo, setReintentoConsumo] = useState(0)
   const [resultadoReutilizado, setResultadoReutilizado] = useState(false)
   const [generacionId, setGeneracionId] = useState<string | null>(null)
+  const [resultadoGuardado, setResultadoGuardado] = useState<DestinoGuardado | null>(null)
   const peticion = useRef<AbortController | null>(null)
   const peticionConfirmacion = useRef<AbortController | null>(null)
   const peticionGeneracion = useRef<AbortController | null>(null)
@@ -371,6 +372,7 @@ export function CrearItinerario({ onVolver, onVerViajes, viajeInicial }: CrearIt
       if (controlador.signal.aborted || peticionGeneracion.current !== controlador) return
       setItinerario(generado.itinerario)
       setGeneracionId(generado.generacionId)
+      setResultadoGuardado(null)
       setResultadoReutilizado(generado.reutilizado)
       setVistaResultado('plan')
       setPaso('resultado')
@@ -527,7 +529,7 @@ export function CrearItinerario({ onVolver, onVerViajes, viajeInicial }: CrearIt
             {' '}Guárdala en tu cuenta para conservarla.</p>
           <GuardarViaje key={generacionId ?? 'sin-identificador'} generacionId={generacionId}
             tituloInicial={destinoGuardado?.titulo ?? `Viaje a ${configuracionConfirmada.destino.nombre}`}
-            destino={destinoGuardado} onGuardado={setDestinoGuardado}
+            destino={destinoGuardado} onGuardado={guardado => { setDestinoGuardado(guardado); setResultadoGuardado(guardado) }}
             onVerViajes={onVerViajes} />
           <nav className="resultado-vistas" aria-label="Vistas del resultado">
             <button type="button" aria-current={vistaResultado === 'plan' ? 'page' : undefined}
@@ -539,6 +541,8 @@ export function CrearItinerario({ onVolver, onVerViajes, viajeInicial }: CrearIt
           <ItinerarioPorDias
             itinerario={itinerario}
             configuracion={configuracionConfirmada}
+            origenTrazados={resultadoGuardado ? { tipo: 'viaje', id: resultadoGuardado.id, revision: resultadoGuardado.revision }
+              : generacionId ? { tipo: 'generacion', id: generacionId } : undefined}
           />
           </div>
           {vistaResultado === 'candidatos' && <CandidatosLugares candidatos={itinerario.candidatos}

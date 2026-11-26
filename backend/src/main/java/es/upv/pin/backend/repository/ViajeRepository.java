@@ -267,6 +267,20 @@ public class ViajeRepository {
                 """)
                 .param("viajeId", viajeId).param("usuarioId", usuarioId).update();
     }
+    /** Enriquecimiento derivado: no cambia las actividades ni incrementa su revisión. */
+    public boolean guardarTrazados(UUID usuario, UUID viaje, long revision, String trazadosJson) {
+        return jdbc.sql("""
+                WITH propio AS (
+                    SELECT id FROM viaje WHERE id = :viaje AND usuario_id = :usuario
+                        AND revision = :revision FOR UPDATE
+                )
+                UPDATE itinerario i SET datos_generacion = jsonb_set(i.datos_generacion, '{trazados}',
+                    (CASE WHEN jsonb_typeof(i.datos_generacion->'trazados') = 'object'
+                        THEN i.datos_generacion->'trazados' ELSE '{}'::jsonb END) || CAST(:trazados AS jsonb), true)
+                FROM propio WHERE i.viaje_id = propio.id AND i.es_actual = true AND i.formato = 1
+                """).param("viaje", viaje).param("usuario", usuario).param("revision", revision)
+                .param("trazados", trazadosJson).update() == 1;
+    }
     private ResumenViajeDto leerResumen(
             ResultSet rs
     ) throws SQLException {

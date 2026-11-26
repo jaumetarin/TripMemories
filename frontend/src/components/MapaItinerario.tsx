@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { divIcon, latLngBounds } from 'leaflet'
 import type { Marker as MarcadorLeaflet } from 'leaflet'
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import type { DiaItinerario } from '../api'
+import { useTrazados } from '../trazados'
+import type { OrigenTrazados } from '../trazados'
 import { agruparUbicaciones, horaLocal } from './visitasItinerario'
 import type { PuntoInicioMapa, UbicacionVisitas, VisitaMapa } from './visitasItinerario'
 import 'leaflet/dist/leaflet.css'
 import './MapaItinerario.css'
 
 interface Props {
+  dia: DiaItinerario
+  origenTrazados?: OrigenTrazados
+  nombres: Map<string, string>
   visitas: VisitaMapa[]
   puntoInicio: PuntoInicioMapa
   seleccion: { clave: string } | null
@@ -18,13 +24,15 @@ interface Props {
 function encuadrar(
   map: ReturnType<typeof useMap>,
   grupos: UbicacionVisitas[],
-  puntoInicio: PuntoInicioMapa
+  puntoInicio: PuntoInicioMapa,
+  caminos: [number, number][] = [],
 ) {
   map.stop()
 
   const posiciones = [
     puntoInicio.posicion,
     ...grupos.map(grupo => grupo.posicion),
+    ...caminos,
   ]
 
   const mismaUbicacion = grupos.every(grupo =>
@@ -32,7 +40,7 @@ function encuadrar(
     && grupo.posicion[1] === puntoInicio.posicion[1]
   )
 
-  if (mismaUbicacion) {
+  if (mismaUbicacion && caminos.length === 0) {
     map.setView(puntoInicio.posicion, 15, { animate: false })
   } else {
     map.fitBounds(latLngBounds(posiciones), {
@@ -47,10 +55,12 @@ function VistaMapa({
   grupos,
   seleccion,
   puntoInicio,
+  caminos,
 }: {
   grupos: UbicacionVisitas[]
   seleccion: Props['seleccion']
   puntoInicio: PuntoInicioMapa
+  caminos: [number, number][]
 }) {
   const map = useMap()
 
@@ -77,7 +87,7 @@ function VistaMapa({
           duration: 0.45,
         })
       } else {
-        encuadrar(map, grupos, puntoInicio)
+        encuadrar(map, grupos, puntoInicio, caminos)
       }
     }
 
@@ -86,15 +96,15 @@ function VistaMapa({
     ajustar()
 
     return () => observador.disconnect()
-  }, [map, grupos, seleccion, puntoInicio])
+  }, [map, grupos, seleccion, puntoInicio, caminos])
 
   return (
     <button type="button" className="mapa-ver-dia" onClick={evento => {
       evento.stopPropagation()
       map.closePopup()
-      encuadrar(map, grupos, puntoInicio)
+      encuadrar(map, grupos, puntoInicio, caminos)
     }}>
-      Ver origen y visitas
+      Ver recorrido del día
     </button>
   )
 }
@@ -193,6 +203,9 @@ function MarcadorVisitas({ grupo, seleccion, onSeleccionar, onVerTarjeta }: {
 }
 
 export default function MapaItinerario({
+  dia,
+  origenTrazados,
+  nombres,
   visitas,
   puntoInicio,
   seleccion,
@@ -201,8 +214,27 @@ export default function MapaItinerario({
 }: Props) {
   const grupos = useMemo(() => agruparUbicaciones(visitas), [visitas])
   const [errorFondo, setErrorFondo] = useState(false)
+  const marco = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    if (!marco.current) return
+    const observador = new IntersectionObserver(([entrada]) => setVisible(entrada.isIntersecting))
+    observador.observe(marco.current)
+    return () => observador.disconnect()
+  }, [])
+  const { tramos, cargando, error, reintentar } = useTrazados(origenTrazados, dia, visible)
+  const caminos = useMemo<[number, number][]>(() => tramos.flatMap(t =>
+    t.geometria?.coordenadas.map(([lon, lat]): [number, number] => [lat, lon]) ?? []), [tramos])
+  const incompletos = tramos.filter(t => t.estado === 'NO_DISPONIBLE' || t.estado === 'COORDENADAS_AUSENTES')
 
-  return <>
+  return <div ref={marco} className="mapa-recorrido">
+    {cargando && <p className="mapa-aviso" role="status">Cargando recorrido… Puedes seguir consultando la lista.</p>}
+    {(error || incompletos.length > 0) && <div className="mapa-aviso" role="status">
+      <p>{error || `No podemos mostrar ${incompletos.length === 1 ? 'un tramo' : `${incompletos.length} tramos`} del recorrido. La lista sigue disponible.`}</p>
+      {incompletos.length > 0 && <details><summary>Ver tramos sin trazado</summary><ul>{incompletos.map((t, indice) =>
+        <li key={indice}>{nombres.get(t.origenId) ?? 'Origen'} → {nombres.get(t.destinoId) ?? 'Destino'}</li>)}</ul></details>}
+      <button type="button" className="boton" onClick={reintentar}>Reintentar trazados</button>
+    </div>}
     {grupos.length === 0 && (
       <p className="mapa-aviso" role="status">
         {visitas.length === 0
@@ -234,7 +266,14 @@ export default function MapaItinerario({
         grupos={grupos}
         seleccion={seleccion}
         puntoInicio={puntoInicio}
+        caminos={caminos}
       />
+
+      {tramos.map((tramo, indice) => tramo.geometria && <Polyline key={`${tramo.clave}:${indice}`}
+        positions={tramo.geometria.coordenadas.map(([lon, lat]): [number, number] => [lat, lon])}
+        pathOptions={{ color: '#087f70', weight: 4, opacity: .85, lineCap: 'round' }}>
+        <Tooltip sticky>{nombres.get(tramo.origenId) ?? 'Origen'} → {nombres.get(tramo.destinoId) ?? 'Destino'} · A pie</Tooltip>
+      </Polyline>)}
 
       <MarcadorInicio puntoInicio={puntoInicio} />
 
@@ -248,5 +287,6 @@ export default function MapaItinerario({
         />
       ))}
     </MapContainer>
-  </>
+    {tramos.some(t => t.estado === 'DISPONIBLE') && <p className="mapa-recorrido-fuente">Recorrido a pie · <a href="https://openrouteservice.org/" target="_blank" rel="noopener noreferrer">openrouteservice</a></p>}
+  </div>
 }

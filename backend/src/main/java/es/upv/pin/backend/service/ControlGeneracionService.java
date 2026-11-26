@@ -139,6 +139,16 @@ public class ControlGeneracionService {
         }
         return estado;
     }
+    public void conservarTrazados(UUID generacionId, java.util.Map<String, es.upv.pin.backend.dto.GeometriaTramoDto> trazados,
+            HttpSession sesion) {
+        var estado = estadoDe(sesion);
+        synchronized (estado) {
+            var vigente = obtenerParaGuardar(generacionId, sesion);
+            var actualizado = vigente.itinerario().conTrazados(trazados);
+            estado.guardable = new GeneracionGuardable(vigente.id(), vigente.configuracion(), actualizado);
+            estado.resultado = actualizado;
+        }
+    }
 
     private void actualizar(EstadoSesion estado, Instant ahora) {
         if (estado.inicioPeriodo == null || !ahora.isBefore(estado.inicioPeriodo.plus(ventana))) {

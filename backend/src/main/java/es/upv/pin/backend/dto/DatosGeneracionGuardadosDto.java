@@ -3,6 +3,7 @@ package es.upv.pin.backend.dto;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public record DatosGeneracionGuardadosDto(
         List<DisponibilidadDiaDto> dias,
@@ -12,10 +13,18 @@ public record DatosGeneracionGuardadosDto(
         int candidatosEnMatriz,
         List<CandidatoEvaluadoDto> candidatos,
         boolean evaluacionFallback,
-        List<IncidenciaEdicionDto> incidenciasEdicion
+        List<IncidenciaEdicionDto> incidenciasEdicion,
+        Map<String, GeometriaTramoDto> trazados
 ) {
     public DatosGeneracionGuardadosDto {
         incidenciasEdicion = incidenciasEdicion == null ? List.of() : List.copyOf(incidenciasEdicion);
+        trazados = trazados == null ? Map.of() : Map.copyOf(trazados);
+    }
+    public DatosGeneracionGuardadosDto(List<DisponibilidadDiaDto> dias, List<String> advertencias, boolean parcial,
+            int candidatosEvaluados, int candidatosEnMatriz, List<CandidatoEvaluadoDto> candidatos,
+            boolean evaluacionFallback, List<IncidenciaEdicionDto> incidenciasEdicion) {
+        this(dias, advertencias, parcial, candidatosEvaluados, candidatosEnMatriz, candidatos,
+                evaluacionFallback, incidenciasEdicion, Map.of());
     }
     public DatosGeneracionGuardadosDto(List<DisponibilidadDiaDto> dias, List<String> advertencias, boolean parcial,
             int candidatosEvaluados, int candidatosEnMatriz, List<CandidatoEvaluadoDto> candidatos, boolean evaluacionFallback) {
@@ -41,7 +50,7 @@ public record DatosGeneracionGuardadosDto(
                 itinerario.candidatosEnMatriz(),
                 List.copyOf(itinerario.candidatos()),
                 itinerario.evaluacionFallback(),
-                itinerario.incidenciasEdicion()
+                itinerario.incidenciasEdicion(), itinerario.trazados()
         );
     }
 

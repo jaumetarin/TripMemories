@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { ItinerarioGenerado, BloqueItinerario, DiaItinerario, CandidatoEvaluado, OpcionComida, ConfiguracionItinerario, } from '../api'
 import { horaLocal as hora, visitasDelDia } from './visitasItinerario'
 import type { PuntoInicioMapa, VisitaMapa } from './visitasItinerario'
+import type { OrigenTrazados } from '../trazados'
 import './ItinerarioPorDias.css'
 
 const MapaItinerario = lazy(() => import('./MapaItinerario'))
@@ -30,6 +31,7 @@ interface Props {
   itinerario: ItinerarioGenerado
   configuracion: ConfiguracionItinerario
   edicion?: EdicionItinerario
+  origenTrazados?: OrigenTrazados
 }
 
 const nombresTipo: Record<BloqueItinerario['tipo'], string> = {
@@ -203,6 +205,7 @@ export default function ItinerarioPorDias({
   itinerario,
   configuracion,
   edicion,
+  origenTrazados,
 }: Props) {
   const destinoNombre = configuracion.destino.nombre
   const alojamiento = configuracion.alojamientoLocalizado
@@ -306,6 +309,9 @@ export default function ItinerarioPorDias({
               <MapaItinerario
                   key={dia.fecha}
                   visitas={visitas}
+                  dia={dia}
+                  origenTrazados={origenTrazados}
+                  nombres={nombres}
                   puntoInicio={puntoInicio}
                   seleccion={seleccionActual}
                   onSeleccionar={clave => seleccionar(clave, 'mapa')}
