@@ -73,7 +73,7 @@ public class SecurityConfig {
                 .requestCache(c -> c.disable())
                 .formLogin(c -> c.disable()).httpBasic(c -> c.disable())
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf", "/api/planes/oferta").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/registro", "/api/auth/login", "/api/auth/reenviar", "/api/auth/verificar", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/**").authenticated().anyRequest().permitAll())
                 .exceptionHandling(e -> e

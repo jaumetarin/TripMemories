@@ -1,0 +1,2 @@
+ALTER TABLE usuario ADD COLUMN plan VARCHAR(16) NOT NULL DEFAULT 'FREE';
+ALTER TABLE usuario ADD CONSTRAINT usuario_plan_check CHECK (plan IN ('FREE', 'PREMIUM'));
