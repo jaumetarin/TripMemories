@@ -6,7 +6,6 @@ import es.upv.pin.backend.dto.PreferenciasDto;
 import es.upv.pin.backend.model.CategoriaTuristica;
 import es.upv.pin.backend.model.NivelGasto;
 import es.upv.pin.backend.model.SubcategoriaTuristica;
-import java.util.HashSet;
 import java.util.List;
 import net.jqwik.api.*;
 import net.jqwik.api.constraints.IntRange;
@@ -16,21 +15,30 @@ class PreferenciasServiceProperties {
 
     @Property(tries = 120)
     void preferenciasSinContradiccionesEliminanDuplicadosConservandoOrden(
-            @ForAll List<CategoriaTuristica> intereses,
-            @ForAll List<CategoriaTuristica> excluidas,
-            @ForAll List<SubcategoriaTuristica> subexcluidas,
-            @ForAll NivelGasto gasto,
-            @ForAll @IntRange(min = 1, max = 10) int distanciaKm) {
-        Assume.that(intereses.stream().noneMatch(excluidas::contains));
+            @ForAll("preferenciasCompatibles") PreferenciasDto entrada) {
+        PreferenciasDto res = servicio.validar(entrada);
 
-        PreferenciasDto res = servicio.validar(new PreferenciasDto(
-                intereses, excluidas, subexcluidas, gasto, (double) distanciaKm));
+        assertEquals(entrada.intereses().stream().distinct().toList(), res.intereses());
+        assertEquals(entrada.categoriasExcluidas().stream().distinct().toList(), res.categoriasExcluidas());
+        assertEquals(entrada.subcategoriasExcluidas().stream().distinct().toList(), res.subcategoriasExcluidas());
+        assertEquals(entrada.nivelGasto(), res.nivelGasto());
+        assertEquals(entrada.distanciaKm(), res.distanciaKm());
+        assertEquals(res, servicio.validar(res));
+    }
 
-        assertEquals(new HashSet<>(intereses).size(), res.intereses().size());
-        assertEquals(new HashSet<>(excluidas).size(), res.categoriasExcluidas().size());
-        assertEquals(new HashSet<>(subexcluidas).size(), res.subcategoriasExcluidas().size());
-        assertEquals(gasto, res.nivelGasto());
-        assertEquals((double) distanciaKm, res.distanciaKm());
+    @Provide
+    Arbitrary<PreferenciasDto> preferenciasCompatibles() {
+        var categorias = Arbitraries.of(CategoriaTuristica.values());
+        return Combinators.combine(
+                categorias.list().ofMaxSize(12),
+                categorias.list().ofMaxSize(12),
+                Arbitraries.of(SubcategoriaTuristica.values()).list().ofMaxSize(12),
+                Arbitraries.of(NivelGasto.values()),
+                Arbitraries.integers().between(1, 10))
+                .as((intereses, excluidas, subexcluidas, gasto, distancia) -> new PreferenciasDto(
+                        intereses,
+                        excluidas.stream().filter(categoria -> !intereses.contains(categoria)).toList(),
+                        subexcluidas, gasto, distancia.doubleValue()));
     }
 
     @Property(tries = 80)

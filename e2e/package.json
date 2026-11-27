@@ -7,6 +7,6 @@
     "test:e2e": "node test-rute.js"
   },
   "dependencies": {
-    "selenium-webdriver": "^4.27.0"
+    "selenium-webdriver": "4.27.0"
   }
 }

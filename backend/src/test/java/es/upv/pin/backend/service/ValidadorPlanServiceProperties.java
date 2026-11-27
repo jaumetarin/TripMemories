@@ -59,7 +59,7 @@ class ValidadorPlanServiceProperties {
     }
 
     @Property(tries = 100)
-    void solapeDeVisitasOExcesoDeVentanaEsDetectadoSiempre(
+    void solapeDeVisitasEsDetectadoSiempre(
             @ForAll @IntRange(min = 1, max = 59) int solapeMin) {
         LocalDateTime inicioV2 = INICIO.plusMinutes(60 - solapeMin);
         BloqueItinerarioDto v1 = new BloqueItinerarioDto(TipoBloqueItinerario.VISITA, INICIO, INICIO.plusMinutes(60),
@@ -73,6 +73,22 @@ class ValidadorPlanServiceProperties {
         ResultadoValidacionPlan res = validador.validar(List.of(dia), null);
         assertFalse(res.valido());
         assertTrue(res.incidencias().stream().anyMatch(s -> s.contains("solapados")));
+    }
+
+    @Property(tries = 80)
+    void visitaFueraDeLaVentanaEsRechazada(
+            @ForAll @IntRange(min = 1, max = 120) int excesoMinutos,
+            @ForAll boolean antesDelInicio) {
+        LocalDateTime inicio = antesDelInicio ? INICIO.minusMinutes(excesoMinutos) : FIN.minusMinutes(30);
+        LocalDateTime fin = antesDelInicio ? INICIO.plusMinutes(30) : FIN.plusMinutes(excesoMinutos);
+        var visita = new BloqueItinerarioDto(TipoBloqueItinerario.VISITA, inicio, fin,
+                candidato("p1", "Museo", 30, CategoriaTuristica.ARTE_MUSEOS),
+                null, null, null, null, null, true, null);
+        var dia = new DiaItinerarioDto(FECHA, INICIO, FIN, List.of(visita));
+
+        ResultadoValidacionPlan res = validador.validar(List.of(dia), null);
+        assertFalse(res.valido());
+        assertTrue(res.incidencias().stream().anyMatch(incidencia -> incidencia.contains("fuera de la ventana")));
     }
 
     @Property(tries = 80)
