@@ -29,8 +29,8 @@ public class OpenRouteServiceClient {
 
     @Autowired
     public OpenRouteServiceClient(
-            @Value("${ors.api-key:}") String apiKey) {
-        this(crearCliente(), apiKey);
+            @Value("${ors.api-key:}") String apiKey, ControlLlamadasProveedor control) {
+        this(crearCliente().mutate().requestInterceptor(control).build(), apiKey);
     }
 
     OpenRouteServiceClient(RestClient restClient, String apiKey) {

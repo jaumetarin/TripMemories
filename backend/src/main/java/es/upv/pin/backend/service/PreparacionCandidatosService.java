@@ -145,7 +145,7 @@ public class PreparacionCandidatosService {
         var ejecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
         List<java.util.concurrent.Future<ResultadoConsulta>> tareas = new ArrayList<>();
         try {
-            consultas.forEach((consulta, paginas) -> tareas.add(ejecutor.submit(() -> consultar(destino, consulta, paginas, texto))));
+            consultas.forEach((consulta, paginas) -> tareas.add(ejecutor.submit(new org.springframework.security.concurrent.DelegatingSecurityContextCallable<>(() -> consultar(destino, consulta, paginas, texto)))));
             List<ResultadoConsulta> resultados = new ArrayList<>();
             // Recoger en orden conserva la misma variedad y un resultado determinista.
             for (var tarea : tareas) resultados.add(tarea.get());

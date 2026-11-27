@@ -66,8 +66,8 @@ class ViajeIntegrationTests extends PostgresTest {
     }
 
     @Test
-    void limiteTecnicoBloqueaAntesDeConsultarProveedor() throws Exception {
-        jdbc.sql("INSERT INTO limite_proveedor(usuario_id, clase, inicio, usadas) VALUES (:id, 'http', now(), 120)")
+    void limiteDePeticionesBloqueaAntesDelControlador() throws Exception {
+        jdbc.sql("INSERT INTO limite_proveedor(usuario_id, clase, inicio, usadas) VALUES (:id, 'peticiones', now(), 1200)")
                 .param("id", usuario).update();
         mvc.perform(get("/api/destinos").param("texto", "Madrid").session(sesion))
                 .andExpect(status().isTooManyRequests()).andExpect(header().exists("Retry-After"));

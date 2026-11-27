@@ -1887,9 +1887,11 @@ esta entrega y debe configurarse a `false` cuando el cambio de plan dependa del
 checkout. No hay precio ni cobro en el sprint 2. Variantes, enlaces compartidos y
 contratación corresponden al sprint 3.
 
-Además del contador de generaciones, las rutas activas de consulta y edición que
-pueden usar proveedores tienen un límite técnico de 120 peticiones por hora y
-cuenta. Las cargas nuevas del catálogo de lugares tienen un máximo independiente
-de 20 por hora y cuenta; reutilizar el catálogo de la sesión no lo consume. Estos
-contadores evitan un consumo ilimitado de proveedores por rutas auxiliares y no
-modifican las generaciones incluidas en Free o Premium.
+Además del contador de generaciones, las llamadas HTTP reales a Geoapify y
+OpenRouteService comparten un máximo de 120 intentos por hora y cuenta. Se cuentan
+al salir hacia el proveedor, incluidos los reintentos; los resultados de caché y
+los parámetros rechazados antes de llamar no consumen esa cuota. Las tareas
+paralelas conservan la identidad de la cuenta para aplicar el mismo contador.
+Las rutas auxiliares mantienen además un límite independiente de 1200 peticiones
+por hora y cuenta para proteger el servidor, también cuando usan caché. Estos
+contadores no modifican las generaciones incluidas en Free o Premium.

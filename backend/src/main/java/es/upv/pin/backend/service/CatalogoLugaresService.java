@@ -13,14 +13,12 @@ public class CatalogoLugaresService {
     private final PreparacionCandidatosService preparacion;
     private final ConfiguracionItinerarioService configuraciones;
     private final MuestraLugaresService muestras;
-    private final LimiteProveedorService limiteProveedor;
 
     public CatalogoLugaresService(PreparacionCandidatosService preparacion, ConfiguracionItinerarioService configuraciones,
-            MuestraLugaresService muestras, LimiteProveedorService limiteProveedor) {
+            MuestraLugaresService muestras) {
         this.preparacion = preparacion;
         this.configuraciones = configuraciones;
         this.muestras = muestras;
-        this.limiteProveedor = limiteProveedor;
     }
 
     public CatalogoLugaresDto buscar(BusquedaLugaresDto consulta, HttpSession sesion) {
@@ -43,11 +41,11 @@ public class CatalogoLugaresService {
                     .filter(Objects::nonNull).forEach(l -> protegidos.add(l.id()));
             String completa = filtros + "|completo";
             if (consulta.completarCatalogo()) {
-                cargar(catalogo, completa, () -> consultaExterna(() -> preparacion.preparar(base)), protegidos);
+                cargar(catalogo, completa, () -> preparacion.preparar(base), protegidos);
             } else if (consulta.ampliar()) {
-                cargar(catalogo, filtros + "|nombre|" + texto, () -> consultaExterna(() -> preparacion.buscar(base, texto)), protegidos);
+                cargar(catalogo, filtros + "|nombre|" + texto, () -> preparacion.buscar(base, texto), protegidos);
             } else if (!vigente(catalogo, completa)) {
-                cargar(catalogo, filtros + "|inicial", () -> consultaExterna(() -> preparacion.muestraInicial(base)), protegidos);
+                cargar(catalogo, filtros + "|inicial", () -> preparacion.muestraInicial(base), protegidos);
             }
             List<String> avisos = new ArrayList<>();
             var selecciones = revisar(consulta.configuracion(), base, catalogo, avisos, false);
@@ -154,16 +152,6 @@ public class CatalogoLugaresService {
             } else resultado.add(new SeleccionLugarDto(lugar, seleccion.estado()));
         }
         return ReglasSeleccionLugares.validar(resultado, base.preferencias());
-    }
-
-    private List<LugarDto> consultaExterna(java.util.function.Supplier<List<LugarDto>> consulta) {
-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof es.upv.pin.backend.model.UsuarioAutenticado usuario) {
-            long espera = limiteProveedor.reservar(usuario.getId(), "lugares", 20);
-            if (espera > 0) throw new es.upv.pin.backend.exception.ControlGeneracionException(
-                    org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "Has alcanzado el limite temporal de busquedas de lugares.", espera);
-        }
-        return consulta.get();
     }
 
     private void cargar(Catalogo catalogo, String clave, java.util.function.Supplier<List<LugarDto>> consulta,

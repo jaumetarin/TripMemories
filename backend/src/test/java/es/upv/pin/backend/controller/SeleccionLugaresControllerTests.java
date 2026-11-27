@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SeleccionLugaresControllerTests {
     private final PreparacionCandidatosService preparacion = mock(PreparacionCandidatosService.class);
     private final CatalogoLugaresService servicio = new CatalogoLugaresService(preparacion,
-            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()), new MuestraLugaresService(), mock(es.upv.pin.backend.service.LimiteProveedorService.class));
+            new ConfiguracionItinerarioService(new FechaHoraService(), new PreferenciasService()), new MuestraLugaresService());
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new SeleccionLugaresController(servicio))
             .setControllerAdvice(new CandidatoExceptionHandler()).build();
     private final String config = """

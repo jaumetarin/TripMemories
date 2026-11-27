@@ -12,7 +12,7 @@ import org.springframework.web.client.RestClient;
 public class GeoapifyConfig {
 
     @Bean
-    public RestClient geoapifyRestClient() {
+    public RestClient geoapifyRestClient(es.upv.pin.backend.client.ControlLlamadasProveedor control) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
@@ -25,6 +25,7 @@ public class GeoapifyConfig {
 
         return RestClient.builder()
                 .baseUrl("https://api.geoapify.com")
+                .requestInterceptor(control)
                 .requestFactory(requestFactory)
                 .build();
     }

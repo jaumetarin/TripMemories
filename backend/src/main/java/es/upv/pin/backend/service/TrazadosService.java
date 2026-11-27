@@ -29,7 +29,7 @@ public class TrazadosService {
         try {
             for (var tramo : tramos) {
                 if (utilizable(tramo) && !mismoPunto(tramo) && !plan.trazados().containsKey(tramo.clave())) {
-                    pendientes.computeIfAbsent(tramo.clave(), clave -> ejecutor.submit(() -> recuperar(tramo, cache)));
+                    pendientes.computeIfAbsent(tramo.clave(), clave -> ejecutor.submit(new org.springframework.security.concurrent.DelegatingSecurityContextCallable<>(() -> recuperar(tramo, cache))));
                 }
             }
             for (var tramo : tramos) {

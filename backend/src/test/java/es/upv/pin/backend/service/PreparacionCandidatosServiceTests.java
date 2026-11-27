@@ -619,4 +619,25 @@ class PreparacionCandidatosServiceTests {
         assertThrows(IllegalArgumentException.class, () -> servicio.preparar(null));
         proveedor.verify();
     }
+    @Test void tareasParalelasConservanLaCuentaParaContarProveedores() {
+        var limite=org.mockito.Mockito.mock(LimiteProveedorService.class);
+        var usuario=org.mockito.Mockito.mock(es.upv.pin.backend.model.UsuarioAutenticado.class);
+        var cuenta=java.util.UUID.randomUUID();
+        org.mockito.Mockito.when(usuario.getId()).thenReturn(cuenta);
+        var contexto=org.springframework.security.core.context.SecurityContextHolder.getContext();
+        contexto.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(usuario,null,List.of()));
+        try {
+            var builder=RestClient.builder().baseUrl("https://geo.test")
+                    .requestInterceptor(new es.upv.pin.backend.client.ControlLlamadasProveedor(limite));
+            var servidor=MockRestServiceServer.bindTo(builder).ignoreExpectOrder(true).build();
+            servidor.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                    org.springframework.test.web.client.match.MockRestRequestMatchers.method(org.springframework.http.HttpMethod.GET))
+                    .andRespond(withSuccess("{\"features\":[]}",MediaType.APPLICATION_JSON));
+            var real=new PreparacionCandidatosService(new GeoapifyClient(builder.build(),"prueba"),
+                    new ConfiguracionItinerarioService(new FechaHoraService(java.time.Clock.fixed(java.time.Instant.parse("2026-01-01T12:00:00Z"), java.time.ZoneOffset.UTC)),new PreferenciasService()),clasificacion);
+            real.muestraInicial(configuracion("\"ARTE_MUSEOS\"", ""));
+            org.mockito.Mockito.verify(limite,org.mockito.Mockito.atLeastOnce()).reservar(cuenta,"proveedores",120);
+            servidor.verify();
+        } finally { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+    }
 }

@@ -28,11 +28,11 @@ public class LimiteProveedorConfig implements WebMvcConfigurer {
                             && java.util.Set.of("alternativas", "recalcular", "sustituir", "eliminar", "restaurar", "reordenar").contains(nombre));
                 var auth = SecurityContextHolder.getContext().getAuthentication();
                 if (!protegida || auth == null || !(auth.getPrincipal() instanceof UsuarioAutenticado usuario)) return true;
-                long espera = limite.reservar(usuario.getId(), "http", 120);
+                long espera = limite.reservar(usuario.getId(), "peticiones", 1200);
                 if (espera == 0) return true;
                 resp.setStatus(429); resp.setHeader("Retry-After", Long.toString(espera));
                 resp.setHeader("Cache-Control", "no-store"); resp.setContentType("application/json");
-                resp.getWriter().write("{\"mensaje\":\"Has alcanzado el límite temporal de consultas. Inténtalo más tarde.\"}");
+                resp.getWriter().write("{\"mensaje\":\"Has alcanzado el límite temporal de peticiones al servidor. Inténtalo más tarde.\"}");
                 return false;
             }
         });
