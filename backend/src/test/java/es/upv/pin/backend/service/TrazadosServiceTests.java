@@ -129,4 +129,20 @@ class TrazadosServiceTests {
         }
         verify(cliente, times(3)).calcularGeometria(any(), any());
     }
+    @Test void cuotaAgotadaConservaGeometriasDisponiblesEInformaReintento() {
+        proveedorDisponible();
+        var base = plan(39.471);
+        var previo = servicio.obtener(config, base, fecha, sesion);
+        var guardado = Map.of(previo.tramos().getFirst().clave(), previo.tramos().getFirst().geometria());
+        reset(cliente);
+        when(cliente.calcularGeometria(any(),any())).thenThrow(new es.upv.pin.backend.exception.LimiteProveedorException(90));
+        var antes = java.time.Instant.now();
+        var resultado = servicio.obtener(config, base.conTrazados(guardado), fecha, new MockHttpSession());
+        assertEquals("DISPONIBLE",resultado.tramos().getFirst().estado());
+        assertEquals(previo.tramos().getFirst().geometria(),resultado.tramos().getFirst().geometria());
+        assertTrue(resultado.tramos().subList(1,3).stream().allMatch(t->t.estado().equals("CUOTA_AGOTADA")));
+        assertNotNull(resultado.reintentarDesde());
+        assertFalse(resultado.reintentarDesde().isBefore(antes.plusSeconds(90)));
+        assertEquals(1,TrazadosService.disponibles(resultado).size());
+    }
 }

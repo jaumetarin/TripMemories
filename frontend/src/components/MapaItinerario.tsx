@@ -222,18 +222,19 @@ export default function MapaItinerario({
     observador.observe(marco.current)
     return () => observador.disconnect()
   }, [])
-  const { tramos, cargando, error, reintentar } = useTrazados(origenTrazados, dia, visible)
+  const { tramos, cargando, error, reintentar, reintentarDesde, esperandoCuota } = useTrazados(origenTrazados, dia, visible)
   const caminos = useMemo<[number, number][]>(() => tramos.flatMap(t =>
     t.geometria?.coordenadas.map(([lon, lat]): [number, number] => [lat, lon]) ?? []), [tramos])
-  const incompletos = tramos.filter(t => t.estado === 'NO_DISPONIBLE' || t.estado === 'COORDENADAS_AUSENTES')
+  const incompletos = tramos.filter(t => t.estado === 'CUOTA_AGOTADA' || t.estado === 'NO_DISPONIBLE' || t.estado === 'COORDENADAS_AUSENTES')
 
   return <div ref={marco} className="mapa-recorrido">
     {cargando && <p className="mapa-aviso" role="status">Cargando recorrido… Puedes seguir consultando la lista.</p>}
     {(error || incompletos.length > 0) && <div className="mapa-aviso" role="status">
+      {reintentarDesde && <p>Has agotado la cuota temporal de consultas de rutas. Puedes reintentar a partir del {new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(reintentarDesde))}. Los trazados disponibles y la lista siguen accesibles.</p>}
       <p>{error || `No podemos mostrar ${incompletos.length === 1 ? 'un tramo' : `${incompletos.length} tramos`} del recorrido. La lista sigue disponible.`}</p>
       {incompletos.length > 0 && <details><summary>Ver tramos sin trazado</summary><ul>{incompletos.map((t, indice) =>
         <li key={indice}>{nombres.get(t.origenId) ?? 'Origen'} → {nombres.get(t.destinoId) ?? 'Destino'}</li>)}</ul></details>}
-      <button type="button" className="boton" onClick={reintentar}>Reintentar trazados</button>
+      <button type="button" className="boton" disabled={cargando || esperandoCuota} onClick={reintentar}>Reintentar trazados</button>
     </div>}
     {grupos.length === 0 && (
       <p className="mapa-aviso" role="status">

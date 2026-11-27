@@ -54,7 +54,7 @@ export function Planes({ usuarioId, onEntrar }: { usuarioId?: string; onEntrar: 
       setActual(null)
       setError(e instanceof Error ? e.message : 'No se ha podido confirmar el cambio de plan.')
       // La petición puede haber llegado al servidor aunque se haya perdido la respuesta.
-      try { const respuesta = await leer('/api/planes/actual'); if (cambio === version.current && esPlanActual(respuesta)) setActual(respuesta) } catch { /* Mantener el estado desconocido. */ }
+      try { const respuesta = await leer('/api/planes/actual'); if (cambio === version.current && esPlanActual(respuesta)) { setActual(respuesta); if (respuesta.plan === plan) setError('') } } catch { /* Mantener el estado desconocido. */ }
     } finally { if (cambio === version.current) setCambiando(false) }
   }
   return <section className="planes" aria-labelledby="planes-titulo">
