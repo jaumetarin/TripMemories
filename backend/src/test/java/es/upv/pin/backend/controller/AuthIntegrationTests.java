@@ -153,7 +153,8 @@ class AuthIntegrationTests extends PostgresTest {
         String token = esperarToken(correo);
         enviar("verificar", Map.of("token", token, "contrasena", "No elegi esta contrasena"), 400);
         assertFalse(usuarios.buscarPorCorreo(correo).orElseThrow().isCorreoVerificado());
-        jdbc.sql("UPDATE verificacion_correo SET expira_en = now() - interval '1 second' WHERE token_hash = :hash")
+        jdbc.sql("UPDATE verificacion_correo SET expira_en = :expira WHERE token_hash = :hash")
+                .param("expira", java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(5))
                 .param("hash", AuthService.hashToken(token)).update();
         enviar("verificar", Map.of("token", token, "contrasena", CLAVE), 400);
         assertFalse(usuarios.buscarPorCorreo(correo).orElseThrow().isCorreoVerificado());
@@ -167,7 +168,8 @@ class AuthIntegrationTests extends PostgresTest {
         String respuesta = enviar("reenviar", Map.of("correo", correo), 202).getResponse().getContentAsString();
         assertEquals(respuesta, enviar("reenviar", Map.of("correo", nuevoCorreo()), 202).getResponse().getContentAsString());
         assertTrue(correos.isEmpty(), "No debe reenviar antes de sesenta segundos");
-        jdbc.sql("UPDATE verificacion_correo SET ultimo_envio_en = now() - interval '61 seconds' WHERE token_hash = :hash")
+        jdbc.sql("UPDATE verificacion_correo SET ultimo_envio_en = :ultimoEnvio WHERE token_hash = :hash")
+                .param("ultimoEnvio", java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(65))
                 .param("hash", AuthService.hashToken(anterior)).update();
         enviar("reenviar", Map.of("correo", correo), 202);
         String nuevo = esperarToken(correo);
