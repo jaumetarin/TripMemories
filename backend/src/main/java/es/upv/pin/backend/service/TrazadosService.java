@@ -24,12 +24,13 @@ public class TrazadosService {
         var cache = cache(sesion);
         List<TramoDto> resultado = new ArrayList<>();
         Map<String, Future<GeometriaTramoDto>> pendientes = new HashMap<>();
+        java.time.Instant reintentarDesde = null;
         long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         var ejecutor = Executors.newVirtualThreadPerTaskExecutor();
         try {
             for (var tramo : tramos) {
                 if (utilizable(tramo) && !mismoPunto(tramo) && !plan.trazados().containsKey(tramo.clave())) {
-                    pendientes.computeIfAbsent(tramo.clave(), clave -> ejecutor.submit(() -> recuperar(tramo, cache)));
+                    pendientes.computeIfAbsent(tramo.clave(), clave -> ejecutor.submit(new org.springframework.security.concurrent.DelegatingSecurityContextCallable<>(() -> recuperar(tramo, cache))));
                 }
             }
             for (var tramo : tramos) {
@@ -40,7 +41,16 @@ public class TrazadosService {
                 else if (geometria == null) {
                     try { geometria = pendientes.get(tramo.clave()).get(Math.max(1, limite - System.nanoTime()), TimeUnit.NANOSECONDS); }
                     catch (InterruptedException e) { Thread.currentThread().interrupt(); estado = "NO_DISPONIBLE"; }
-                    catch (ExecutionException | TimeoutException e) { estado = "NO_DISPONIBLE"; }
+                    catch (ExecutionException e) {
+                        var cuota = cuotaAgotada(e);
+                        if (cuota == null) estado = "NO_DISPONIBLE";
+                        else {
+                            estado = "CUOTA_AGOTADA";
+                            var fechaReintento = java.time.Instant.now().plusSeconds(cuota.getEsperaSegundos());
+                            if (reintentarDesde == null || fechaReintento.isAfter(reintentarDesde)) reintentarDesde = fechaReintento;
+                        }
+                    }
+                    catch (TimeoutException e) { estado = "NO_DISPONIBLE"; }
                 }
                 resultado.add(new TramoDto(tramo.clave(), tramo.origenId(), tramo.destinoId(), estado, geometria));
             }
@@ -48,7 +58,7 @@ public class TrazadosService {
             pendientes.values().forEach(f -> f.cancel(true));
             ejecutor.shutdownNow();
         }
-        return new TrazadosDiaDto(fecha, List.copyOf(resultado));
+        return new TrazadosDiaDto(fecha, List.copyOf(resultado), reintentarDesde);
     }
 
     public static Map<String, GeometriaTramoDto> disponibles(TrazadosDiaDto datos) {
@@ -88,7 +98,13 @@ public class TrazadosService {
 
     private static GeometriaTramoDto esperar(CompletableFuture<GeometriaTramoDto> futuro) throws InterruptedException {
         try { return futuro.get(15, TimeUnit.SECONDS); }
-        catch (ExecutionException | TimeoutException e) { throw new IllegalStateException("Trazado no disponible."); }
+        catch (ExecutionException | TimeoutException e) { throw new IllegalStateException("Trazado no disponible.", e); }
+    }
+    private static es.upv.pin.backend.exception.LimiteProveedorException cuotaAgotada(Throwable error) {
+        for (Throwable causa = error; causa != null; causa = causa.getCause()) {
+            if (causa instanceof es.upv.pin.backend.exception.LimiteProveedorException cuota) return cuota;
+        }
+        return null;
     }
     private static boolean utilizable(Tramo t) { return TramosPlan.localizado(t.origen()) && TramosPlan.localizado(t.destino()); }
     private static boolean mismoPunto(Tramo t) {

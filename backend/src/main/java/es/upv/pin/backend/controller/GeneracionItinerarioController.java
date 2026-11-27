@@ -6,6 +6,8 @@ import es.upv.pin.backend.service.ControlGeneracionService;
 import es.upv.pin.backend.service.CatalogoLugaresService;
 import es.upv.pin.backend.dto.ConsumoGeneracionDto;
 import jakarta.servlet.http.HttpSession;
+import es.upv.pin.backend.model.UsuarioAutenticado;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,9 +30,9 @@ public class GeneracionItinerarioController {
 
     @PostMapping("/generar")
     public ResponseEntity<ItinerarioGeneradoDto> generar(@RequestBody ConfiguracionItinerarioDto configuracion,
-            HttpSession sesion) {
+            @AuthenticationPrincipal UsuarioAutenticado usuario, HttpSession sesion) {
         var resultado = servicio.generar(configuracion == null || configuracion.selecciones() == null || configuracion.selecciones().isEmpty()
-                ? configuracion : lugares.resolver(configuracion, sesion), sesion);
+                ? configuracion : lugares.resolver(configuracion, sesion), usuario.getId(), sesion);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header("X-Itinerario-Reutilizado", Boolean.toString(resultado.reutilizado()))
                 .header("X-Itinerario-Vigente-Hasta", resultado.vigenteHasta().toString())
@@ -39,7 +41,7 @@ public class GeneracionItinerarioController {
     }
 
     @GetMapping("/consumo")
-    public ResponseEntity<ConsumoGeneracionDto> consumo(HttpSession sesion) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(servicio.consultar(sesion));
+    public ResponseEntity<ConsumoGeneracionDto> consumo(@AuthenticationPrincipal UsuarioAutenticado usuario, HttpSession sesion) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(servicio.consultar(usuario.getId(), sesion));
     }
 }

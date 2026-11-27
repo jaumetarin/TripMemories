@@ -32,6 +32,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class GeneracionItinerarioControllerTests {
     private final GeneracionItinerarioService servicio = mock(GeneracionItinerarioService.class);
+    private final es.upv.pin.backend.service.CuotaGeneracionService cuota = mock(es.upv.pin.backend.service.CuotaGeneracionService.class);
+    private final es.upv.pin.backend.model.UsuarioAutenticado usuario = mock(es.upv.pin.backend.model.UsuarioAutenticado.class);
+    private final java.util.UUID usuarioId = java.util.UUID.randomUUID();
     private final ControlGeneracionService control = new ControlGeneracionService(
             servicio,
             new ConfiguracionItinerarioService(
@@ -39,15 +42,30 @@ class GeneracionItinerarioControllerTests {
                             java.time.Instant.parse("2026-01-01T12:00:00Z"),
                             java.time.ZoneOffset.UTC)),
                     new PreferenciasService()),
-            1, 60, 15);
+            cuota, 15);
 
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
             new GeneracionItinerarioController(
                     control,
                     mock(es.upv.pin.backend.service.CatalogoLugaresService.class)))
+            .setCustomArgumentResolvers(new org.springframework.web.method.support.HandlerMethodArgumentResolver() {
+                public boolean supportsParameter(org.springframework.core.MethodParameter p) { return p.getParameterType() == es.upv.pin.backend.model.UsuarioAutenticado.class; }
+                public Object resolveArgument(org.springframework.core.MethodParameter p, org.springframework.web.method.support.ModelAndViewContainer m, org.springframework.web.context.request.NativeWebRequest r, org.springframework.web.bind.support.WebDataBinderFactory b) { return usuario; }
+            })
             .setControllerAdvice(new GeneracionItinerarioExceptionHandler())
             .build();
             
+    @org.junit.jupiter.api.BeforeEach
+    void prepararCuota() {
+        when(usuario.getId()).thenReturn(usuarioId);
+        var contador = new java.util.concurrent.atomic.AtomicInteger();
+        when(cuota.consultar(usuarioId)).thenAnswer(i -> new es.upv.pin.backend.service.CuotaGeneracionService.Estado(1, 1-contador.get(), java.time.Instant.now().plusSeconds(3600), 5, 5-contador.get(), java.time.Instant.now().plusSeconds(86400)));
+        when(cuota.reservar(usuarioId)).thenAnswer(i -> {
+            if (contador.getAndIncrement() > 0) throw new es.upv.pin.backend.exception.ControlGeneracionException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "L?mite alcanzado", 60);
+            return null;
+        });
+    }
+
     private final String configuracion = """
             {"destino":{"id":"madrid","nombre":"Madrid","latitud":40.4,"longitud":-3.7},
              "disponibilidad":{"llegada":"2026-11-10T10:00","salida":"2026-11-10T18:00"},

@@ -159,13 +159,13 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
           : cargandoConsumo ? <p>Consultando las generaciones disponibles…</p>
           : errorConsumo ? <p>{errorConsumo}</p>
           : consumo && <>
-            <p>{consumo.enCurso ? 'Ya se está preparando un itinerario en otra petición de esta sesión. Espera a que termine.'
-              : consumo.restantes > 0
-                ? `Generaciones nuevas disponibles: ${consumo.restantes} de ${consumo.limite}.`
-                : 'Has alcanzado el límite de generaciones nuevas de esta sesión.'}</p>
-            <p>El límite se renueva el {new Intl.DateTimeFormat('es-ES', {
-              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-            }).format(new Date(consumo.reinicio))}. Consultar el último resultado vigente con los mismos datos no consume otra generación.</p>
+            {consumo.enCurso && <p>Ya se está preparando un itinerario en esta sesión. Espera a que termine.</p>}
+            <p>Generaciones nuevas de tu cuenta: {consumo.restantes} de {consumo.limite} en la ventana móvil de 60 minutos; {consumo.restantesMensuales} de {consumo.limiteMensual} este mes.</p>
+            <p>{consumo.restantes === consumo.limite
+              ? 'No hay generaciones consumidas en los últimos 60 minutos.'
+              : `La próxima disponibilidad horaria se recupera el ${new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(consumo.reinicio))}.`}{' '}
+              La mensual se renueva el {new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(consumo.reinicioMensual))} (hora de Madrid).</p>
+            {(consumo.restantes === 0 || consumo.restantesMensuales === 0) && <p>Has agotado una cuota. Puedes comprobar si existe un resultado vigente para estos mismos datos; si no existe, tendrás que esperar a la renovación.</p>}
           </>}
         {!generando && <button type="button" disabled={cargandoConsumo} onClick={onActualizarConsumo}>
           {errorConsumo ? 'Reintentar consulta' : 'Actualizar disponibilidad'}
@@ -178,7 +178,7 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
             disabled={generando || problemasObligatorios.length > 0 || !itinerarioDisponible && (cargandoConsumo || !consumo || consumo.enCurso)} onClick={onGenerar}>
             {generando ? 'Generando itinerario…' : itinerarioDisponible ? 'Ver itinerario'
               : problemasObligatorios.length > 0 ? 'Revisa los lugares obligatorios'
-              : consumo?.restantes === 0 ? 'Consultar itinerario existente'
+              : (consumo?.restantes === 0 || consumo?.restantesMensuales === 0) ? 'Comprobar si existe un itinerario'
               : errorGeneracion ? 'Reintentar generación' : 'Generar itinerario'} <Icon name="flecha" />
           </button>
         ) : (

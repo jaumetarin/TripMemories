@@ -32,6 +32,13 @@ class SeleccionLugaresServiceTests {
         servicio.buscar(new BusquedaLugaresDto(viaje(List.of()), "", false), sesion);
     }
 
+    @Test void reutilizarCatalogoNoVuelveAPrepararLugares() {
+        cargar();
+        servicio.buscar(new BusquedaLugaresDto(viaje(List.of()), "", false), sesion);
+        verify(preparacion, times(1)).muestraInicial(any());
+        verifyNoMoreInteractions(preparacion);
+    }
+
     @Test void unEstadoVigenteSinDuplicarYCambioYRetirada() {
         cargar();
         var config = viaje(List.of());

@@ -66,6 +66,23 @@ class ViajeIntegrationTests extends PostgresTest {
     }
 
     @Test
+    void limiteDePeticionesBloqueaAntesDelControlador() throws Exception {
+        jdbc.sql("INSERT INTO limite_proveedor(usuario_id, clase, inicio, usadas) VALUES (:id, 'peticiones', now(), 1200)")
+                .param("id", usuario).update();
+        mvc.perform(get("/api/destinos").param("texto", "Madrid").session(sesion))
+                .andExpect(status().isTooManyRequests()).andExpect(header().exists("Retry-After"));
+    }
+
+    @Test
+    void rutasLegacyRetiradasNoEstanDisponibles() throws Exception {
+        for (String ruta : List.of("/api/candidatos/preparar", "/api/candidatos/evaluar", "/api/desplazamientos/calcular"))
+            mvc.perform(post(ruta).session(sesion).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isNotFound());
+        for (String ruta : List.of("/api/candidatos/turisticos", "/api/candidatos/gastronomicos"))
+            mvc.perform(get(ruta).session(sesion)).andExpect(status().isNotFound());
+    }
+
+    @Test
     void guardaRecuperaTrasCerrarSesionYRenameSinRegenerar() throws Exception {
         UUID generacion = generar(configuracion);
         UUID viaje = crear(generacion);

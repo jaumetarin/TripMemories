@@ -16,13 +16,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AlbumService {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(AlbumService.class);
     private final AlbumRepository albumes;
     private final AlmacenamientoFotos archivos;
     private final ValidadorFotos validador;
     private final TransactionTemplate transacciones;
+    private final PlanService planes;
     private final Semaphore subidas = new Semaphore(2);
-    public AlbumService(AlbumRepository albumes, AlmacenamientoFotos archivos, ValidadorFotos validador, TransactionTemplate transacciones) {
-        this.albumes=albumes; this.archivos=archivos; this.validador=validador; this.transacciones=transacciones;
+    public AlbumService(AlbumRepository albumes, AlmacenamientoFotos archivos, ValidadorFotos validador, TransactionTemplate transacciones, PlanService planes) {
+        this.albumes=albumes; this.archivos=archivos; this.validador=validador; this.transacciones=transacciones; this.planes=planes;
     }
     public List<AlbumDto> listar(UUID usuario) { return albumes.listar(usuario); }
     private AlbumDto album(UUID usuario, UUID id) {
@@ -30,7 +32,9 @@ public class AlbumService {
     }
     public ContenidoAlbumDto abrir(UUID usuario, UUID id) {
         var album=album(usuario,id);
-        return new ContenidoAlbumDto(album,albumes.fotos(usuario,id),validador.limites(),albumes.bytesUsados(usuario));
+        var limites=validador.limites();
+        var efectivos=new ContenidoAlbumDto.LimitesDto(limites.formatos(), limites.maxArchivoBytes(), limites.maxFotosAlbum(), planes.actual(usuario).cuotaBytes(), limites.maxPixeles());
+        return new ContenidoAlbumDto(album,albumes.fotos(usuario,id),efectivos,albumes.bytesUsados(usuario));
     }
     private FotoPrivada foto(UUID usuario, UUID id) {
         return albumes.fotoPropia(usuario,id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"No se ha encontrado la foto."));
@@ -45,7 +49,7 @@ public class AlbumService {
                 albumes.bloquearCuenta(usuario); comprobarSubida(usuario,albumId);
                 if (albumes.numeroFotos(albumId)>=validador.limites().maxFotosAlbum())
                     throw new ResponseStatusException(HttpStatus.CONFLICT,"El álbum ha alcanzado su límite de fotos.");
-                if (preparada.bytesTotales()>validador.limites().cuotaBytes()-albumes.bytesUsados(usuario))
+                if (preparada.bytesTotales()>planes.actual(usuario).cuotaBytes()-albumes.bytesUsados(usuario))
                     throw new ResponseStatusException(HttpStatus.CONFLICT,"No queda espacio suficiente en tu cuenta para esta foto y su miniatura.");
                 albumes.reservar(id,albumId,preparada);
             });
@@ -57,7 +61,16 @@ public class AlbumService {
             } catch (RuntimeException fallo) {
                 // Si una confirmación ya se hubiera aplicado, conservar la foto completa.
                 var actual=albumes.fotoPropia(usuario,id);
-                if (actual.isPresent() && actual.get().datos().estado().equals("PENDIENTE")) {
+                if (actual.isEmpty()) {
+                    // Un borrado pudo retirar la reserva antigua mientras aún se escribían sus archivos.
+                    // El UUID es exclusivo de esta subida; ninguna otra foto puede usar estas claves.
+                    if (!limpiar(id+"/original",id+"/miniatura"))
+                        LOG.error("No se pudieron limpiar los archivos de una subida sin registro: {}",id);
+                } else if (actual.get().datos().estado().equals("ELIMINANDO")) {
+                    // La eliminación de una foto puede seguir entre el borrado físico y el de su fila.
+                    if (!limpiar(id+"/original",id+"/miniatura"))
+                        LOG.error("No se pudieron limpiar los archivos de una foto en eliminación: {}",id);
+                } else if (actual.get().datos().estado().equals("PENDIENTE")) {
                     boolean limpio=limpiar(id+"/original",id+"/miniatura");
                     if (limpio) albumes.eliminar(usuario,id,"PENDIENTE");
                     else albumes.estado(usuario,id,"ERROR","PENDIENTE");

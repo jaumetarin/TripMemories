@@ -252,7 +252,7 @@ public class EvaluacionCandidatosService {
             throw new IllegalStateException(
                     "Se agotó el tiempo disponible para buscar candidatos.");
         ExecutorService ejecutor = Executors.newVirtualThreadPerTaskExecutor();
-        Future<T> futuro = ejecutor.submit(tarea);
+        Future<T> futuro = ejecutor.submit(new org.springframework.security.concurrent.DelegatingSecurityContextCallable<>(tarea));
         try {
             return futuro.get(restante, TimeUnit.NANOSECONDS);
         } catch (TimeoutException e) {

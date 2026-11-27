@@ -72,6 +72,7 @@ public class AlbumRepository {
                 UPDATE archivo_multimedia f SET estado=:nuevo FROM album a,viaje v
                 WHERE f.album_id=a.id AND a.viaje_id=v.id AND v.usuario_id=:usuario
                     AND f.id=:id AND f.estado=:anterior
+                    AND (:nuevo <> 'DISPONIBLE' OR (NOT a.eliminando AND NOT v.eliminando_recuerdos))
                 """).param("usuario",usuario).param("id",id).param("nuevo",nuevo).param("anterior",anterior).update()==1;
     }
     public boolean eliminar(UUID usuario, UUID id, String estado) {

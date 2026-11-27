@@ -1,6 +1,7 @@
 package es.upv.pin.backend.repository;
 
 import es.upv.pin.backend.model.Usuario;
+import es.upv.pin.backend.model.Plan;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -15,6 +16,13 @@ public class UsuarioRepository {
     private final JdbcClient jdbc;
     public UsuarioRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
+    public Optional<Plan> buscarPlan(UUID id) {
+        return jdbc.sql("SELECT plan FROM usuario WHERE id = :id").param("id", id)
+                .query((rs, n) -> Plan.valueOf(rs.getString(1))).optional();
+    }
+    public boolean cambiarPlan(UUID id, Plan plan) {
+        return jdbc.sql("UPDATE usuario SET plan = :plan WHERE id = :id").param("plan", plan.name()).param("id", id).update() == 1;
+    }
     public Optional<Usuario> buscarPorCorreo(String correo) {
         return jdbc.sql("SELECT * FROM usuario WHERE lower(correo) = :correo").param("correo", correo)
                 .query((rs, n) -> leer(rs)).optional();

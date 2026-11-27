@@ -10,7 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class ValidadorFotosTests {
-    private final ValidadorFotos validador = new ValidadorFotos(10485760, 100, 524288000, 40000000);
+    private final ValidadorFotos validador = new ValidadorFotos(10485760, 100, 40000000);
 
     public static byte[] imagen(Color color) throws IOException {
         var imagen = new BufferedImage(900, 600, BufferedImage.TYPE_INT_RGB);
@@ -49,7 +49,7 @@ public class ValidadorFotosTests {
     }
 
     @Test void compruebaTantoTamanoAnunciadoComoBytesLeidos() throws Exception {
-        var pequeno = new ValidadorFotos(50, 100, 5000, 40000000);
+        var pequeno = new ValidadorFotos(50, 100, 40000000);
         byte[] bytes = imagen(Color.RED);
         assertThrows(ResponseStatusException.class, () -> pequeno.preparar(new MockMultipartFile("foto", "foto.png", "image/png", bytes)));
         var tamanoFalso = new MockMultipartFile("foto", "foto.png", "image/png", bytes) {
@@ -59,7 +59,7 @@ public class ValidadorFotosTests {
     }
 
     @Test void limitaPixelesAntesDeDecodificarLaImagenCompleta() throws Exception {
-        var pequeno = new ValidadorFotos(10485760, 100, 524288000, 1000);
+        var pequeno = new ValidadorFotos(10485760, 100, 1000);
         byte[] bytes = imagen(Color.RED);
         var error = assertThrows(ResponseStatusException.class, () -> pequeno.preparar(new MockMultipartFile("foto", "foto.png", "image/png", bytes)));
         assertTrue(error.getReason().contains("píxeles"));
