@@ -49,4 +49,21 @@ class PlanIntegrationTests extends PostgresTest {
             assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> jdbc.sql("UPDATE "+esquema+".usuario SET plan='OTRO' WHERE id=:id").param("id",id).update());
         } finally { jdbc.sql("DROP SCHEMA IF EXISTS "+esquema+" CASCADE").update(); }
     }
+    @Test void migracionMovilConservaConsumoActivoYMensual() {
+        String esquema="cuota_"+UUID.randomUUID().toString().replace("-","");
+        try {
+            org.flywaydb.core.Flyway.configure().dataSource(base).schemas(esquema).defaultSchema(esquema).target("10").load().migrate();
+            UUID activo=UUID.randomUUID(), caducado=UUID.randomUUID();
+            for (UUID id : java.util.List.of(activo,caducado)) {
+                jdbc.sql("INSERT INTO "+esquema+".usuario(id,nombre,correo,password_hash) VALUES(:id,'Prueba',:correo,'hash')")
+                        .param("id",id).param("correo",id+"@example.test").update();
+                jdbc.sql("INSERT INTO "+esquema+".consumo_generacion(usuario_id,mes,usadas_mes,inicio_hora,usadas_hora) VALUES(:id,current_date,4,now()-cast(:edad AS interval),3)")
+                        .param("id",id).param("edad",id.equals(activo)?"5 minutes":"2 hours").update();
+            }
+            org.flywaydb.core.Flyway.configure().dataSource(base).schemas(esquema).defaultSchema(esquema).target("11").load().migrate();
+            assertEquals(3,jdbc.sql("SELECT count(*) FROM "+esquema+".generacion_reciente WHERE usuario_id=:id").param("id",activo).query(Integer.class).single());
+            assertEquals(0,jdbc.sql("SELECT count(*) FROM "+esquema+".generacion_reciente WHERE usuario_id=:id").param("id",caducado).query(Integer.class).single());
+            assertEquals(4,jdbc.sql("SELECT usadas_mes FROM "+esquema+".consumo_generacion WHERE usuario_id=:id").param("id",activo).query(Integer.class).single());
+        } finally { jdbc.sql("DROP SCHEMA IF EXISTS "+esquema+" CASCADE").update(); }
+    }
 }

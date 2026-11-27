@@ -38,22 +38,29 @@ public class CuotaGeneracionService {
                 return new Estado(plan.generacionesHora(), plan.generacionesHora(), ahora.plusSeconds(3600),
                         plan.generacionesMes(), plan.generacionesMes(), reinicioMes);
             }
-            jdbc.update("INSERT INTO consumo_generacion(usuario_id, mes, inicio_hora) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-                    usuario, mes, java.sql.Timestamp.from(ahora));
-            var estado = jdbc.queryForObject("SELECT mes, usadas_mes, inicio_hora, usadas_hora FROM consumo_generacion WHERE usuario_id = ? FOR UPDATE",
-                    (rs, n) -> new Datos(rs.getObject(1, LocalDate.class), rs.getInt(2), rs.getTimestamp(3).toInstant(), rs.getInt(4)), usuario);
+            jdbc.update("INSERT INTO consumo_generacion(usuario_id, mes) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                    usuario, mes);
+            var estado = jdbc.queryForObject("SELECT mes, usadas_mes FROM consumo_generacion WHERE usuario_id = ? FOR UPDATE",
+                    (rs, n) -> new Datos(rs.getObject(1, LocalDate.class), rs.getInt(2)), usuario);
             int mensual = estado.mes.equals(mes) ? estado.mensual : 0;
-            Instant inicio = ahora.isBefore(estado.inicio.plusSeconds(3600)) ? estado.inicio : ahora;
-            int hora = inicio.equals(estado.inicio) ? estado.hora : 0;
-            if (reservar && hora == 0) inicio = ahora;
+            // La cuenta bloqueada serializa reservas y cambios de plan.
+            jdbc.update("DELETE FROM generacion_reciente WHERE usuario_id=? AND instante<=?",
+                    usuario, java.sql.Timestamp.from(ahora.minusSeconds(3600)));
+            var recientes = jdbc.query("SELECT instante FROM generacion_reciente WHERE usuario_id=? ORDER BY instante",
+                    (rs, n) -> rs.getTimestamp(1).toInstant(), usuario);
+            int hora = recientes.size();
+            Instant reinicio = hora == 0 ? ahora.plusSeconds(3600)
+                    : recientes.get(Math.max(0, hora - plan.generacionesHora())).plusSeconds(3600);
             if (reservar) {
                 if (mensual >= plan.generacionesMes()) throw limite("mensual", ahora, reinicioMes);
-                if (hora >= plan.generacionesHora()) throw limite("por hora", ahora, inicio.plusSeconds(3600));
+                if (hora >= plan.generacionesHora()) throw limite("por hora", ahora, reinicio);
+                jdbc.update("INSERT INTO generacion_reciente(usuario_id, instante) VALUES (?, ?)",
+                        usuario, java.sql.Timestamp.from(ahora));
+                if (hora == 0) reinicio = ahora.plusSeconds(3600);
                 mensual++; hora++;
             }
-            jdbc.update("UPDATE consumo_generacion SET mes=?, usadas_mes=?, inicio_hora=?, usadas_hora=? WHERE usuario_id=?",
-                    mes, mensual, java.sql.Timestamp.from(inicio), hora, usuario);
-            return new Estado(plan.generacionesHora(), Math.max(0, plan.generacionesHora()-hora), inicio.plusSeconds(3600),
+            jdbc.update("UPDATE consumo_generacion SET mes=?, usadas_mes=? WHERE usuario_id=?", mes, mensual, usuario);
+            return new Estado(plan.generacionesHora(), Math.max(0, plan.generacionesHora()-hora), reinicio,
                     plan.generacionesMes(), Math.max(0, plan.generacionesMes()-mensual), reinicioMes);
         });
     }
@@ -62,6 +69,6 @@ public class CuotaGeneracionService {
                 "Has alcanzado el límite " + periodo + " de generaciones de tu cuenta.",
                 Math.max(1, Duration.between(ahora, reinicio).toSeconds() + 1));
     }
-    private record Datos(LocalDate mes, int mensual, Instant inicio, int hora) {}
+    private record Datos(LocalDate mes, int mensual) {}
     public record Estado(int limite, int restantes, Instant reinicio, int limiteMensual, int restantesMensuales, Instant reinicioMensual) {}
 }

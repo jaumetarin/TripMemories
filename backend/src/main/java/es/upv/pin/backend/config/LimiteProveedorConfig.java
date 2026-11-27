@@ -25,7 +25,7 @@ public class LimiteProveedorConfig implements WebMvcConfigurer {
                         || (tipo == es.upv.pin.backend.controller.SeleccionLugaresController.class && nombre.equals("buscar"))
                         || tipo == es.upv.pin.backend.controller.TrazadosController.class
                         || (tipo == es.upv.pin.backend.controller.EdicionItinerarioController.class
-                            && java.util.Set.of("alternativas", "recalcular", "sustituir").contains(nombre));
+                            && java.util.Set.of("alternativas", "recalcular", "sustituir", "eliminar", "restaurar", "reordenar").contains(nombre));
                 var auth = SecurityContextHolder.getContext().getAuthentication();
                 if (!protegida || auth == null || !(auth.getPrincipal() instanceof UsuarioAutenticado usuario)) return true;
                 long espera = limite.reservar(usuario.getId(), "http", 120);

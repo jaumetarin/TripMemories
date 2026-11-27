@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { peticionApi } from '../sesion'
 import './Planes.css'
 
@@ -27,6 +27,7 @@ export function Planes({ usuarioId, onEntrar }: { usuarioId?: string; onEntrar: 
   const [actual, setActual] = useState<PlanActual | null>(null)
   const [error, setError] = useState('')
   const [cambiando, setCambiando] = useState(false)
+  const [intento, setIntento] = useState(0)
   useEffect(() => {
     let vigente = true
     Promise.all([leer('/api/planes/oferta'), usuarioId ? leer('/api/planes/actual') : Promise.resolve(null)]).then(([planes, cuenta]) => {
@@ -34,7 +35,7 @@ export function Planes({ usuarioId, onEntrar }: { usuarioId?: string; onEntrar: 
       if (vigente) { setOferta(planes); setActual(cuenta as PlanActual | null) }
     }).catch(e => { if (vigente) setError(e instanceof Error ? e.message : 'No se han podido cargar los planes.') })
     return () => { vigente = false }
-  }, [usuarioId])
+  }, [usuarioId, intento])
   async function cambiar(plan: NombrePlan) {
     setCambiando(true); setError('')
     try {
@@ -52,6 +53,7 @@ export function Planes({ usuarioId, onEntrar }: { usuarioId?: string; onEntrar: 
     <p className="antetitulo">ELIGE TU EXPERIENCIA</p><h1 id="planes-titulo">Compara los planes</h1>
     <p>Genera itinerarios y guarda los recuerdos de tus viajes. Los límites corresponden a tu cuenta.</p>
     {error && <p role="alert" className="error-viaje">{error}</p>}
+    {error && <button className="boton" type="button" disabled={cambiando} onClick={() => { setError(''); setIntento(i => i + 1) }}>Reintentar consulta</button>}
     {!oferta.length && !error && <p role="status">Cargando planes…</p>}
     <div className="planes-tarjetas">{oferta.map(p => <article className="plan-tarjeta" key={p.plan}>
       <h2>{p.plan === 'FREE' ? 'Free' : 'Premium'}</h2>

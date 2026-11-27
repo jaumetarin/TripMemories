@@ -162,8 +162,8 @@ export function RevisarPlan({ configuracion, confirmada, confirmando, errorConfi
             {consumo.enCurso && <p>Ya se está preparando un itinerario en esta sesión. Espera a que termine.</p>}
             <p>Generaciones nuevas de tu cuenta: {consumo.restantes} de {consumo.limite} en la ventana móvil de 60 minutos; {consumo.restantesMensuales} de {consumo.limiteMensual} este mes.</p>
             <p>{consumo.restantes === consumo.limite
-              ? 'La ventana horaria de 60 minutos comenzará con la siguiente generación.'
-              : `La cuota horaria se renueva el ${new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(consumo.reinicio))}.`}{' '}
+              ? 'No hay generaciones consumidas en los últimos 60 minutos.'
+              : `La próxima disponibilidad horaria se recupera el ${new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(consumo.reinicio))}.`}{' '}
               La mensual se renueva el {new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(consumo.reinicioMensual))} (hora de Madrid).</p>
             {(consumo.restantes === 0 || consumo.restantesMensuales === 0) && <p>Has agotado una cuota. Puedes comprobar si existe un resultado vigente para estos mismos datos; si no existe, tendrás que esperar a la renovación.</p>}
           </>}

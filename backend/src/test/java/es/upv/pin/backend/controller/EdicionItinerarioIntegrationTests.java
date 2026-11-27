@@ -648,4 +648,15 @@ class EdicionItinerarioIntegrationTests extends PostgresTest {
             throw new IllegalArgumentException("Visita no encontrada");
         }
     }
+    @Test void limiteTecnicoBloqueaTodasLasEdicionesQueConsultanProveedores() throws Exception {
+        jdbc.sql("INSERT INTO limite_proveedor(usuario_id,clase,inicio,usadas) VALUES(:id,'http',now(),120)")
+                .param("id",usuario).update();
+        for (String accion : List.of("visitas/"+UUID.randomUUID()+"/eliminar",
+                "visitas/"+UUID.randomUUID()+"/restaurar", "reordenar")) {
+            mvc.perform(post(base()+"/"+UUID.randomUUID()+"/"+accion).session(sesion).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isTooManyRequests()).andExpect(header().exists("Retry-After"));
+        }
+        verifyNoInteractions(cliente);
+    }
 }

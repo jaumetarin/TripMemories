@@ -46,4 +46,35 @@ class CuotaGeneracionIntegrationTests extends PostgresTest {
         assertEquals(5, diciembre.restantesMensuales());
         assertEquals(Instant.parse("2026-12-31T23:00:00Z"), diciembre.reinicioMensual());
     }
+    @Test void ventanaMovilRecuperaSoloLasReservasCaducadas() {
+        UUID id = usuario();
+        servicio("2026-11-20T12:00:00Z").reservar(id);
+        var tarde = servicio("2026-11-20T12:59:00Z");
+        tarde.reservar(id); tarde.reservar(id);
+        var siguiente = servicio("2026-11-20T13:00:00Z");
+        assertEquals(1, siguiente.consultar(id).restantes());
+        siguiente.reservar(id);
+        assertThrows(ControlGeneracionException.class, () -> siguiente.reservar(id));
+        assertEquals(Instant.parse("2026-11-20T13:59:00Z"), siguiente.consultar(id).reinicio());
+        assertEquals(2, servicio("2026-11-20T13:59:00Z").consultar(id).restantes());
+    }
+    @Test void cambioDeMesNoBorraConsumoDeUltimosSesentaMinutos() {
+        UUID id = usuario();
+        var noviembre = servicio("2026-11-30T22:59:00Z");
+        noviembre.reservar(id); noviembre.reservar(id); noviembre.reservar(id);
+        var diciembre = servicio("2026-11-30T23:00:00Z");
+        assertEquals(5, diciembre.consultar(id).restantesMensuales());
+        assertEquals(0, diciembre.consultar(id).restantes());
+        assertThrows(ControlGeneracionException.class, () -> diciembre.reservar(id));
+    }
+    @Test void bajarAFreeEsperaHastaQueQuedenMenosDeTresReservas() {
+        UUID id = usuario(); planes.cambiarDemo(id, es.upv.pin.backend.model.Plan.PREMIUM);
+        servicio("2026-11-20T12:00:00Z").reservar(id);
+        servicio("2026-11-20T12:10:00Z").reservar(id);
+        var tarde = servicio("2026-11-20T12:20:00Z"); tarde.reservar(id); tarde.reservar(id);
+        planes.cambiarDemo(id, es.upv.pin.backend.model.Plan.FREE);
+        assertEquals(Instant.parse("2026-11-20T13:10:00Z"), tarde.consultar(id).reinicio());
+        assertThrows(ControlGeneracionException.class, () -> servicio("2026-11-20T13:00:00Z").reservar(id));
+        servicio("2026-11-20T13:10:00Z").reservar(id);
+    }
 }

@@ -1852,7 +1852,10 @@ sesión abierta no conserva un plan antiguo después de cambiarlo.
 | Almacenamiento privado de fotos | 500 MiB | 2 GiB |
 
 El mes se renueva el día 1 a las 00:00 en la zona `Europe/Madrid`. La ventana
-horaria empieza con la primera generación admitida y dura 60 minutos. Una
+horaria cuenta las generaciones admitidas en los últimos 60 minutos; cada plaza
+se recupera una hora después de su uso. Al migrar desde el contador anterior,
+las reservas horarias aún activas se conservan durante 60 minutos desde la
+migración, porque no se conocen sus horas individuales. Una
 configuración inválida no consume; una ejecución iniciada cuenta aunque falle un
 proveedor, porque pudo haberlo consultado. La última respuesta compatible se
 reutiliza desde la sesión durante 15 minutos sin gastar otra generación. Dos
